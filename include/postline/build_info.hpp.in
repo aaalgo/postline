@@ -1,0 +1,10 @@
+#pragma once
+
+namespace postline::build {
+
+inline constexpr const char* VERSION = "@PROJECT_VERSION@";
+inline constexpr const char* BUILD_TYPE = "@POSTLINE_BUILD_TYPE@";
+inline constexpr const char* GIT_COMMIT = "@GIT_COMMIT_HASH@";
+inline constexpr const char* BUILD_TIME = "@BUILD_TIMESTAMP@";
+
+} // namespace postline::build
