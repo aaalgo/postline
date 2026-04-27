@@ -3,9 +3,11 @@
 #include <cstring>
 #include <cerrno>
 #include <string>
+#include <string_view>
 #include <format>
 #include <vector>
 #include <filesystem>
+#include <iostream>
 #include <spdlog/spdlog.h>
 #include <nlohmann/json.hpp>
 
@@ -59,6 +61,9 @@ namespace postline {
             CHECK(header_raw_.size() <= MAX_HEADER_SIZE);
             CHECK(body_raw_.size() <= MAX_BODY_SIZE);
         }
+
+        void importMultipartBody (std::vector<Message> const &parts);
+
     public:
         Message (json &&header,
                  std::string &&body_raw = "")
@@ -71,14 +76,28 @@ namespace postline {
             CHECK(body_raw_.size() <= MAX_BODY_SIZE);
         }
 
+        Message (json &&header, std::vector<Message> const &parts)
+              : header_raw_(header.dump()),
+              access_id_(NO_ACCESS_ID),
+              header_(std::move(header))
+        {
+            importMultipartBody(parts);
+            CHECK(header_raw_.size() <= MAX_HEADER_SIZE);
+            CHECK(body_raw_.size() <= MAX_BODY_SIZE);
+        }
+
         void updateHeader (std::function<void(json &)> callback) {
             callback(header_);
             header_raw_ = header_.dump();
         }
 
         size_t write(int fd) const;     // returns number of bytes written
+                                        //
         static Message read(int fd);    // stream version
         static Message read(int fd, uint64_t offset, unsigned segment); // pread version
+
+        void formatEmail (std::ostream &os, bool compact = false) const;
+        static Message parseEmail (std::string_view);    // without parsing body
 
         AccessID access_id() const { return access_id_; }
         bool has_access_id() const { return access_id_ >= 0; }
@@ -87,6 +106,7 @@ namespace postline {
 
         size_t serialized_size () const;
     };
+
 } // namespace postline
   //
 #include "protocol.h"

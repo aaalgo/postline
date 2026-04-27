@@ -8,7 +8,7 @@ endif()
 
 include(FetchContent)
 
-set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
@@ -100,7 +100,7 @@ configure_file(
 
 add_library(postline
     src/common.cpp
-    #src/email.cpp
+    src/parser.cpp
     src/environ.cpp
 )
 add_library(postline::postline ALIAS postline)
@@ -218,6 +218,12 @@ if(POSTLINE_BUILD_TESTS)
 
     add_executable(test_poller tests/test_poller.cpp)
     target_link_libraries(test_poller PRIVATE postline::postline)
+
+    add_executable(test_email tests/test_email.cpp)
+    target_link_libraries(test_email PRIVATE postline::postline CLI11::CLI11)
+
+    add_executable(test_shell tests/test_shell.cpp)
+    target_link_libraries(test_shell PRIVATE postline::postline)
 
     add_test(NAME test_journal COMMAND test_journal)
 endif()

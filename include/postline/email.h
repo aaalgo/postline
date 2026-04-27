@@ -9,7 +9,6 @@
 #include <generator>
 #include <stdexcept>
 #include <cctype>
-//#include <postline/generator_compat.h>
 
 namespace postline {
 
