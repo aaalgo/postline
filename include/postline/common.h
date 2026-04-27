@@ -40,7 +40,7 @@ namespace postline {
 
     // High-level message abstraction
     class Message {
-        std::string header_raw_;
+        //std::string header_raw_;
         std::string body_raw_;
         AccessID access_id_;
         json header_;
@@ -48,53 +48,55 @@ namespace postline {
         static constexpr std::size_t MAX_HEADER_SIZE = 0x100000;
         static constexpr std::size_t MAX_BODY_SIZE = 0x100000000ULL;
 
-        uint32_t crc () const;
-
-        Message(std::string&& header_raw,
+        Message(std::string const &header_raw,
                 std::string&& body_raw,
                 AccessID access_id = NO_ACCESS_ID)
-            : header_raw_(std::move(header_raw)),
+            : //header_raw_(std::move(header_raw)),
             body_raw_(std::move(body_raw)),
             access_id_(access_id),
-            header_(json::parse(header_raw_))
+            header_(json::parse(header_raw))
         {
-            CHECK(header_raw_.size() <= MAX_HEADER_SIZE);
+            //CHECK(header_raw_.size() <= MAX_HEADER_SIZE);
             CHECK(body_raw_.size() <= MAX_BODY_SIZE);
         }
 
         void importMultipartBody (std::vector<Message> const &parts);
 
     public:
+        Message ()
+            : access_id_(NO_ACCESS_ID)
+        {}
+
         Message (json &&header,
                  std::string &&body_raw = "")
-              : header_raw_(header.dump()),
+              : //header_raw_(header.dump()),
               body_raw_(std::move(body_raw)),
               access_id_(NO_ACCESS_ID),
               header_(std::move(header))
         {
-            CHECK(header_raw_.size() <= MAX_HEADER_SIZE);
+            //CHECK(header_raw_.size() <= MAX_HEADER_SIZE);
             CHECK(body_raw_.size() <= MAX_BODY_SIZE);
         }
 
         Message (json &&header, std::vector<Message> const &parts)
-              : header_raw_(header.dump()),
+              : //header_raw_(header.dump()),
               access_id_(NO_ACCESS_ID),
               header_(std::move(header))
         {
             importMultipartBody(parts);
-            CHECK(header_raw_.size() <= MAX_HEADER_SIZE);
+            //CHECK(header_raw_.size() <= MAX_HEADER_SIZE);
             CHECK(body_raw_.size() <= MAX_BODY_SIZE);
         }
 
         void updateHeader (std::function<void(json &)> callback) {
             callback(header_);
-            header_raw_ = header_.dump();
+            //header_raw_ = header_.dump();
         }
 
         size_t write(int fd) const;     // returns number of bytes written
                                         //
         static Message read(int fd);    // stream version
-        static Message read(int fd, uint64_t offset, unsigned segment); // pread version
+        static Message read(int fd, uint64_t offset, unsigned segment, size_t *read_size = nullptr); // pread version
 
         void formatEmail (std::ostream &os, bool compact = false) const;
         static Message parseEmail (std::string_view);    // without parsing body
@@ -103,8 +105,6 @@ namespace postline {
         bool has_access_id() const { return access_id_ >= 0; }
 
         json const& header() const { return header_; }
-
-        size_t serialized_size () const;
     };
 
 } // namespace postline

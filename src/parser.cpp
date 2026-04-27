@@ -178,8 +178,8 @@ static std::generator<FieldView> parse_headers (std::string_view &range) {
 
 static const std::vector<std::tuple<char const *, bool, bool>> CANONICAL = {
     // field,   is_list,    is_essential
-    {"From",    true,       true},
-    {"To",      true,       true},
+    {"From",    false,       true},
+    {"To",      false,       true},
     {"Cc",      true,       true},
     {"Subject", false,      true},
     {"Content-Type", false, false}, // default is plain text
@@ -371,7 +371,9 @@ void Message::formatEmail(std::ostream& os, bool compact) const
 const char POSTLINE_DELIM[] = "========== POSTLINE MESSAGE ==========";
 
 void Message::importMultipartBody (std::vector<Message> const &parts) {
-    header_["Content-Type"] = BOUNDARY_PREFIX + POSTLINE_DELIM;
+    updateHeader([](json &header) {
+        header["Content-Type"] = BOUNDARY_PREFIX + POSTLINE_DELIM;
+    });
     std::ostringstream ss;
     for (auto const &part: parts) {
         ss << "--" << POSTLINE_DELIM << '\n';

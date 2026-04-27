@@ -71,11 +71,12 @@ public:
             off_t off = 0;
 
             while (off < end) {
-                Message message = Message::read(fd, off, segment);
+                size_t read_size;
+                Message message = Message::read(fd, off, segment, &read_size);
                 if (off > 0) {
                     replay(message);
                 }
-                off += message.serialized_size();
+                off += read_size;
             }
         }
 

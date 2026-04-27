@@ -11,6 +11,7 @@ include(FetchContent)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-fPIC>)
 
 if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
     set(CMAKE_INSTALL_PREFIX "${CMAKE_BINARY_DIR}/install" CACHE PATH "Install path prefix" FORCE)
@@ -159,11 +160,28 @@ set_target_properties(echo_actor PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/install/bin/actors"
 )
 
+add_executable(shell_actor
+    src/actors/shell.cpp
+)
+target_link_libraries(shell_actor PRIVATE postline::postline)
+set_target_properties(shell_actor PROPERTIES
+    OUTPUT_NAME shell
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/install/bin/actors"
+)
+
 add_executable(run_actor
     src/run_actor.cpp
 )
 target_link_libraries(run_actor PRIVATE postline_install_bin_deps)
 set_target_properties(run_actor PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/install/bin"
+)
+
+add_executable(dump_journal
+    src/dump_journal.cpp
+)
+target_link_libraries(dump_journal PRIVATE postline_install_bin_deps)
+set_target_properties(dump_journal PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/install/bin"
 )
 
@@ -180,6 +198,7 @@ target_include_directories(_postline
 
 target_link_libraries(_postline
     PRIVATE
+    	postline::postline
         Python3::Module
         pybind11::headers
         nlohmann_json::nlohmann_json

@@ -106,7 +106,8 @@ void split_access_id(AccessID access_id, uint32_t *segment, uint64_t *offset)
     *offset = value & ACCESS_OFFSET_MASK;
 }
 
-uint32_t Message::crc () const {
+uint32_t crc (std::string_view header_raw_,
+              std::string_view body_raw_) {
     uint32_t crc;
 	crc = CRC::Calculate(header_raw_.data(), header_raw_.size(), CRC::CRC_32());
 	crc = CRC::Calculate(body_raw_.data(), body_raw_.size(), CRC::CRC_32(), crc);
@@ -115,11 +116,12 @@ uint32_t Message::crc () const {
 
 size_t Message::write(int fd) const
 {
+    std::string header_raw_(header_.dump());
     RecordHeader rh{};
     rh.magic = RECORD_MAGIC;
     rh.header_size = header_raw_.size();
     rh.body_size = body_raw_.size();
-    rh.crc = crc();
+    rh.crc = crc(header_raw_, body_raw_);
 
     write_all(fd, &rh, sizeof(rh));
     write_all(fd, header_raw_.data(), header_raw_.size());
@@ -142,13 +144,15 @@ Message Message::read(int fd)
     body_raw.resize(rh.body_size);
     read_all(fd, body_raw.data(), body_raw.size());
 
-    Message msg(std::move(header_raw), std::move(body_raw));
-    CHECK(msg.crc() == rh.crc);
+    CHECK(crc(header_raw, body_raw) == rh.crc);
+
+    Message msg(header_raw, std::move(body_raw));
     return msg;
 }
 
-Message Message::read(int fd, uint64_t offset, unsigned segment)
+Message Message::read(int fd, uint64_t offset, unsigned segment, size_t *read_size)
 {
+    uint64_t offset0 = offset;
     AccessID access_id = make_access_id(segment, offset);
     RecordHeader rh{};
     pread_all(fd, &rh, sizeof(rh), offset);
@@ -166,13 +170,13 @@ Message Message::read(int fd, uint64_t offset, unsigned segment)
     pread_all(fd, body_raw.data(), body_raw.size(), offset);
     offset += body_raw.size();
 
-    Message msg(std::move(header_raw), std::move(body_raw), access_id);
-    CHECK(msg.crc() == rh.crc);
-    return msg;
-}
+    CHECK(crc(header_raw, body_raw) == rh.crc);
+    Message msg(header_raw, std::move(body_raw), access_id);
 
-size_t Message::serialized_size () const {
-    return sizeof(RecordHeader) + header_raw_.size() + body_raw_.size();
+    if (read_size) {
+        *read_size = offset - offset0;
+    }
+    return msg;
 }
 
 } // namespace postline
