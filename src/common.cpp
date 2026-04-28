@@ -146,8 +146,7 @@ Message Message::read(int fd)
 
     CHECK(crc(header_raw, body_raw) == rh.crc);
 
-    Message msg(header_raw, std::move(body_raw));
-    return msg;
+    return Message(header_raw, std::move(body_raw));
 }
 
 Message Message::read(int fd, uint64_t offset, unsigned segment, size_t *read_size)
@@ -171,12 +170,11 @@ Message Message::read(int fd, uint64_t offset, unsigned segment, size_t *read_si
     offset += body_raw.size();
 
     CHECK(crc(header_raw, body_raw) == rh.crc);
-    Message msg(header_raw, std::move(body_raw), access_id);
 
     if (read_size) {
         *read_size = offset - offset0;
     }
-    return msg;
+    return Message(header_raw, std::move(body_raw), access_id);
 }
 
 } // namespace postline

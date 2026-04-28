@@ -38,8 +38,32 @@ namespace postline {
     AccessID make_access_id(uint32_t segment, uint64_t offset);
     void split_access_id(AccessID access_id, uint32_t *segment, uint64_t *offset);
 
+    struct noncopyable {
+    protected:
+        noncopyable() = default;
+        ~noncopyable() = default;
+
+        noncopyable(noncopyable const&) = delete;
+        noncopyable& operator=(noncopyable const&) = delete;
+
+        noncopyable(noncopyable&&) noexcept = default;
+        noncopyable& operator=(noncopyable&&) noexcept = default;
+    };
+
+    struct immobile {
+    protected:
+        immobile() = default;
+        ~immobile() = default;
+
+        immobile(immobile const&) = delete;
+        immobile& operator=(immobile const&) = delete;
+
+        immobile(immobile&&) = delete;
+        immobile& operator=(immobile&&) = delete;
+    };
+
     // High-level message abstraction
-    class Message {
+    class Message: noncopyable {
         //std::string header_raw_;
         std::string body_raw_;
         AccessID access_id_;

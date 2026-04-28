@@ -20,7 +20,7 @@
 #include <ftxui/dom/elements.hpp>
 #include <ftxui/screen/color.hpp>
 #include <ftxui/screen/box.hpp>
-#include <postline/common.h>
+#include <postline/runtime.h>
 #include <postline/ui/rich_log_view.hpp>
 #include "build_info.hpp"
 

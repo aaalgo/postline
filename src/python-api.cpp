@@ -10,8 +10,6 @@ class PyMessage: public Message {
 public:
     PyMessage () {}
 
-    PyMessage(const Message& msg): Message(msg) {}
-
     PyMessage(Message&& msg): Message(std::move(msg)) {}
 
     py::object get (std::string const &key) const {

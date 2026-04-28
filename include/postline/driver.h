@@ -20,7 +20,7 @@ enum class DriverHistoryMode : std::uint16_t
     ALL  = 1
 };
 
-class Driver {
+class Driver: noncopyable {
     DriverSpawnType spawn_;
     DriverHistoryMode history_;
 
@@ -100,12 +100,6 @@ public:
             waitpid(pid_, &status, 0);
         }
     }
-
-    Driver(Driver const&) = delete;
-    Driver& operator=(Driver const&) = delete;
-
-    Driver(Driver&&) = delete;
-    Driver& operator=(Driver&&) = delete;
 
     DriverSpawnType spawn_type() const noexcept { return spawn_; }
     DriverHistoryMode history_mode() const noexcept { return history_; }
