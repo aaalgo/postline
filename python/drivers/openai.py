@@ -1,0 +1,83 @@
+#!/usr/bin/env python3
+import sys
+from openai import OpenAI
+from postline import Message
+
+MODEL='gpt-5.4-mini'
+
+
+class History:
+
+    def __init__ (self):
+        self.history = []
+
+    def append (self, msg):
+        From = msg.get('From')
+        if From == 'user':
+            role = "user"
+        else:
+            role = "assistant"
+        content = msg.format(True)
+        self.history.append({'role': role, 'content': content})
+
+
+    def respond (self, client):
+        print(self.history, file=sys.stderr)
+        response = client.responses.create(model=MODEL,
+                                           input = self.history)
+
+        #print("=" * 20, file=sys.stderr)
+        #print(response.output_text)
+        #print("=" * 20, file=sys.stderr)
+        msg = Message.parse(response.output_text)
+        return msg
+
+def main():
+
+    fd_in = sys.stdin.fileno()
+    fd_out = sys.stdout.fileno()
+
+    msg = Message()
+    msg.set('type', 'driver:hello')
+    msg.set('spawn_type', 0)
+    msg.set('history_mode', 1)
+    msg.write(fd_out)
+
+    msg = Message.read(fd_in);
+
+
+    client = OpenAI()
+
+    history = History()
+    if msg.get('type') == 'driver:begin_history':
+        while True:
+            msg = Message.read(fd_in);
+            if msg.get('type') == 'driver:end_history':
+                msg = None
+                break;
+            # handle history
+            history.append(msg)
+
+
+    while True:
+        try:
+            if msg is None:
+                msg = Message.read(fd_in)
+        except EOFError:
+            break
+
+        if msg.get('type') == 'driver:bye':
+            break
+
+        history.append(msg)
+
+        msg = history.respond(client)
+        history.append(msg)
+
+        msg.write(fd_out)
+
+        msg = None
+
+
+if __name__ == "__main__":
+    main()

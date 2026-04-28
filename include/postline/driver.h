@@ -8,27 +8,27 @@
 namespace postline {
 
 
-enum class ActorSpawnType : std::uint16_t
+enum class DriverSpawnType : std::uint16_t
 {
     ADDRESS = 0,
     SCOPE  = 1
 };
 
-enum class ActorHistoryMode : std::uint16_t
+enum class DriverHistoryMode : std::uint16_t
 {
     NONE = 0,
     ALL  = 1
 };
 
-class Actor {
-    ActorSpawnType spawn_;
-    ActorHistoryMode history_;
+class Driver {
+    DriverSpawnType spawn_;
+    DriverHistoryMode history_;
 
     int input_fd_ = -1;
     int output_fd_ = -1;
     pid_t pid_ = -1;
 public:
-    explicit Actor(std::string const &command)
+    explicit Driver(std::string const &command)
     {
         int stdin_pipe[2] = {-1, -1};
         int stdout_pipe[2] = {-1, -1};
@@ -71,17 +71,17 @@ public:
         output_fd_ = stdout_pipe[0];
 
         // read hello
-        protocol::actor::Hello hello(recv());
+        protocol::driver::Hello hello(recv());
 
-        spawn_ = static_cast<ActorSpawnType>(hello.spawn_type);
-        history_ = static_cast<ActorHistoryMode>(hello.history_mode);
+        spawn_ = static_cast<DriverSpawnType>(hello.spawn_type);
+        history_ = static_cast<DriverHistoryMode>(hello.history_mode);
     }
 
-    ~Actor()
+    ~Driver()
     {
         try {
             if (input_fd_ >= 0) {
-                send(protocol::actor::Bye::make());
+                send(protocol::driver::Bye::make());
             }
         } catch (...) {
         }
@@ -101,14 +101,14 @@ public:
         }
     }
 
-    Actor(Actor const&) = delete;
-    Actor& operator=(Actor const&) = delete;
+    Driver(Driver const&) = delete;
+    Driver& operator=(Driver const&) = delete;
 
-    Actor(Actor&&) = delete;
-    Actor& operator=(Actor&&) = delete;
+    Driver(Driver&&) = delete;
+    Driver& operator=(Driver&&) = delete;
 
-    ActorSpawnType spawn_type() const noexcept { return spawn_; }
-    ActorHistoryMode history_mode() const noexcept { return history_; }
+    DriverSpawnType spawn_type() const noexcept { return spawn_; }
+    DriverHistoryMode history_mode() const noexcept { return history_; }
 
     void send(Message const& msg)
     {

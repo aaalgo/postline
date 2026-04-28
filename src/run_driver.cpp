@@ -10,7 +10,7 @@
 #include "build_info.hpp"
 #include "postline/common.h"
 #include "postline/journal.h"
-#include "postline/actor.h"
+#include "postline/driver.h"
 
 using namespace postline;
 
@@ -18,13 +18,13 @@ int main(int argc, char** argv) {
   // Parse CLI options
   std::string address = "agent@localhost";
   std::string from = "user@localhost";
-  std::string actor_name = "echo";
+  std::string driver_name = "echo";
   std::string journal_path;
   {
-    CLI::App app{"Postline actor testor"};
+    CLI::App app{"Postline driver tester"};
     argv = app.ensure_utf8(argv);
-    app.add_option("-n,--name", actor_name, "actor address");
-    app.add_option("-a,--address", address, "actor address");
+    app.add_option("-n,--name", driver_name, "driver name");
+    app.add_option("-a,--address", address, "driver address");
     app.add_option("--from", from, "from address");
     app.add_option("-j,--journal", journal_path, "journal path");
     CLI11_PARSE(app, argc, argv);
@@ -32,32 +32,32 @@ int main(int argc, char** argv) {
 
   setup_environ();
 
-  std::string cmd = (POSTLINE_HOME/"bin"/"actors"/actor_name).string();
-  log::info("actor: {}", cmd);
+  std::string cmd = (POSTLINE_HOME/"bin"/"drivers"/driver_name).string();
+  log::info("driver: {}", cmd);
 
-  Actor* actor = new Actor(cmd);
+  Driver* driver = new Driver(cmd);
   Journal *journal = nullptr;
   if (!journal_path.empty()) {
-      bool hist = actor->history_mode() == ActorHistoryMode::ALL;
+      bool hist = driver->history_mode() == DriverHistoryMode::ALL;
       if (hist) {
           log::info("begin_history");
-          Message msg(json{{"type", "actor:begin_history"}});
-          actor->send(msg);
+          Message msg(json{{"type", "driver:begin_history"}});
+          driver->send(msg);
       }
       if (!fs::exists(journal_path)) {
           // create journal
           Journal tmp(journal_path, std::string(), [](Message const &){});
       }
-      journal = new Journal(std::string(), journal_path, [hist, actor](Message const &msg){
+      journal = new Journal(std::string(), journal_path, [hist, driver](Message const &msg){
                 if (hist) {
                     log::info("send history");
-                    actor->send(msg);
+                    driver->send(msg);
                 }
               });
       if (hist) {
           log::info("end_history");
-          Message msg(json{{"type", "actor:end_history"}});
-          actor->send(msg);
+          Message msg(json{{"type", "driver:end_history"}});
+          driver->send(msg);
       }
   }
 
@@ -80,11 +80,11 @@ int main(int argc, char** argv) {
         if (journal) {
             journal->append(to);
         }
-        actor->send(to);
+        driver->send(to);
         std::cout << ">>>" << std::endl;
         to.formatEmail(std::cout, true);
 
-        Message echoed = actor->recv();
+        Message echoed = driver->recv();
         if (journal) {
             journal->append(echoed);
         }
@@ -92,7 +92,7 @@ int main(int argc, char** argv) {
         std::cout << "<<<" << std::endl;
         echoed.formatEmail(std::cout, true);
     }
-    delete actor;
+    delete driver;
     if (journal) {
         delete journal;
     }

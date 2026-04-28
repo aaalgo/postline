@@ -1,4 +1,4 @@
-#include <postline/actor.h>
+#include <postline/driver.h>
 #include <postline/poller.h>
 
 #include <algorithm>
@@ -12,20 +12,20 @@ using namespace postline;
 
 namespace {
 
-constexpr std::size_t kActorCount = 5;
+constexpr std::size_t kDriverCount = 5;
 
-bool parse_actor_id(const std::string& line, Poller::Token* actor_id)
+bool parse_driver_id(const std::string& line, Poller::Token* driver_id)
 {
     unsigned value = 0;
     const char* begin = line.data();
     const char* end = begin + line.size();
     auto [ptr, ec] = std::from_chars(begin, end, value);
 
-    if (ec != std::errc() || ptr != end || value >= kActorCount) {
+    if (ec != std::errc() || ptr != end || value >= kDriverCount) {
         return false;
     }
 
-    *actor_id = value;
+    *driver_id = value;
     return true;
 }
 
@@ -35,31 +35,31 @@ int main()
 {
     setup_environ();
     Poller poller;
-    std::array<std::unique_ptr<Actor>, kActorCount> actors;
-    std::array<int, kActorCount> registered_fds{};
+    std::array<std::unique_ptr<Driver>, kDriverCount> drivers;
+    std::array<int, kDriverCount> registered_fds{};
 
-    for (std::size_t i = 0; i < actors.size(); ++i) {
-        auto actor = std::make_unique<Actor>("./actors/echo");
-        Poller::Token actor_id = static_cast<Poller::Token>(i);
-        registered_fds[i] = actor->read_fd();
-        poller.add(registered_fds[i], actor_id);
-        actors[i] = std::move(actor);
+    for (std::size_t i = 0; i < drivers.size(); ++i) {
+        auto driver = std::make_unique<Driver>("./install/bin/drivers/echo");
+        Poller::Token driver_id = static_cast<Poller::Token>(i);
+        registered_fds[i] = driver->read_fd();
+        poller.add(registered_fds[i], driver_id);
+        drivers[i] = std::move(driver);
     }
 
     for (;;) {
-        std::cout << "Actor ID (0-" << (kActorCount-1) << "): " << std::flush;
+        std::cout << "Driver ID (0-" << (kDriverCount-1) << "): " << std::flush;
 
-        std::string actor_line;
-        if (!std::getline(std::cin, actor_line)) {
+        std::string driver_line;
+        if (!std::getline(std::cin, driver_line)) {
             break;
         }
-        if (actor_line.empty()) {
+        if (driver_line.empty()) {
             break;
         }
 
-        Poller::Token actor_id = 0;
-        if (!parse_actor_id(actor_line, &actor_id)) {
-            std::cerr << "invalid actor ID\n";
+        Poller::Token driver_id = 0;
+        if (!parse_driver_id(driver_line, &driver_id)) {
+            std::cerr << "invalid driver ID\n";
             continue;
         }
 
@@ -73,10 +73,10 @@ int main()
             break;
         }
 
-        const std::size_t actor_index = static_cast<std::size_t>(actor_id);
-        Actor& actor = *actors[actor_index];
+        const std::size_t driver_index = static_cast<std::size_t>(driver_id);
+        Driver& driver = *drivers[driver_index];
 
-        actor.send(Message(json{
+        driver.send(Message(json{
             {"type", "user:message"},
             {"From", ""},
             {"To", ""},
@@ -86,21 +86,21 @@ int main()
         auto events = poller.wait();
         CHECK(!events.empty());
 
-        auto it = std::find_if(events.begin(), events.end(), [actor_id](const Poller::Event& event) {
-            return event.t == actor_id;
+        auto it = std::find_if(events.begin(), events.end(), [driver_id](const Poller::Event& event) {
+            return event.t == driver_id;
         });
         CHECK(it != events.end());
 
         const Poller::Event& event = *it;
-        CHECK(event.t == actor_id);
+        CHECK(event.t == driver_id);
 
         // Poller reports tokens, so use the token-to-fd registration map to
-        // assert the ready event came from the actor we selected.
-        CHECK(registered_fds[actor_index] == actor.read_fd());
+        // assert the ready event came from the driver we selected.
+        CHECK(registered_fds[driver_index] == driver.read_fd());
 
-        Message echoed = actor.recv();
+        Message echoed = driver.recv();
         std::cout
-            << "from actor " << actor_id
+            << "from driver " << driver_id
             << ": " << echoed.header().value("Subject", std::string())
             << '\n';
     }

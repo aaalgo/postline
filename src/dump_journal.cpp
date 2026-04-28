@@ -10,7 +10,7 @@
 #include "build_info.hpp"
 #include "postline/common.h"
 #include "postline/journal.h"
-#include "postline/actor.h"
+#include "postline/driver.h"
 
 using namespace postline;
 

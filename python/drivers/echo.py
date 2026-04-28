@@ -10,7 +10,7 @@ def main():
     fd_out = sys.stdout.fileno()
 
     msg = Message()
-    msg.set('type', 'actor:hello')
+    msg.set('type', 'driver:hello')
     msg.set('spawn_type', 0)
     msg.set('history_mode', 0)
     msg.write(fd_out)
@@ -21,7 +21,7 @@ def main():
         except EOFError:
             break
 
-        if msg.get('type') == 'actor:bye':
+        if msg.get('type') == 'driver:bye':
             break
 
         From = msg.get("From")

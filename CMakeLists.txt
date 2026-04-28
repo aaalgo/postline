@@ -152,28 +152,28 @@ set_target_properties(postline_bin PROPERTIES
 )
 
 add_executable(echo_actor
-    src/actors/echo.cpp
+    src/drivers/echo.cpp
 )
 target_link_libraries(echo_actor PRIVATE postline::postline)
 set_target_properties(echo_actor PROPERTIES
     OUTPUT_NAME echo
-    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/install/bin/actors"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/install/bin/drivers"
 )
 
 add_executable(shell_actor
-    src/actors/shell.cpp
+    src/drivers/shell.cpp
 )
 target_link_libraries(shell_actor PRIVATE postline::postline)
 set_target_properties(shell_actor PROPERTIES
     OUTPUT_NAME shell
-    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/install/bin/actors"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/install/bin/drivers"
 )
 
-add_executable(run_actor
-    src/run_actor.cpp
+add_executable(run_driver
+    src/run_driver.cpp
 )
-target_link_libraries(run_actor PRIVATE postline_install_bin_deps)
-set_target_properties(run_actor PROPERTIES
+target_link_libraries(run_driver PRIVATE postline_install_bin_deps)
+set_target_properties(run_driver PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/install/bin"
 )
 
@@ -217,11 +217,11 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/python/postline")
             "${CMAKE_CURRENT_SOURCE_DIR}/python/postline"
             "${CMAKE_BINARY_DIR}/install/python/postline"
     )
-    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/python/scripts")
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/python/drivers")
         add_custom_command(TARGET copy_python_tree POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_directory
-                "${CMAKE_CURRENT_SOURCE_DIR}/python/scripts"
-                "${CMAKE_BINARY_DIR}/install/bin"
+                "${CMAKE_CURRENT_SOURCE_DIR}/python/drivers"
+                "${CMAKE_BINARY_DIR}/install/bin/drivers"
         )
     endif()
 endif()
@@ -248,14 +248,14 @@ if(POSTLINE_BUILD_TESTS)
 endif()
 
 install(TARGETS echo_actor
-    RUNTIME DESTINATION lib/postline/actors
+    RUNTIME DESTINATION lib/postline/drivers
 )
 
 install(TARGETS postline_bin
     RUNTIME DESTINATION bin
 )
 
-install(TARGETS run_actor
+install(TARGETS run_driver
     RUNTIME DESTINATION bin
 )
 

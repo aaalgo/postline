@@ -38,10 +38,10 @@ struct Root : public View {
 
 }
 
-namespace actor {
+namespace driver {
 
 struct Hello : public View {
-    static constexpr std::string_view type = "actor:hello";
+    static constexpr std::string_view type = "driver:hello";
     int spawn_type;
     int history_mode;
 
@@ -63,7 +63,7 @@ struct Hello : public View {
 };
 
 struct Bye : public View {
-    static constexpr std::string_view type = "actor:bye";
+    static constexpr std::string_view type = "driver:bye";
 
     explicit Bye(Message const& msg)
         : View(msg, type)
@@ -79,4 +79,3 @@ struct Bye : public View {
 
 }
 }} // namespaces
-
