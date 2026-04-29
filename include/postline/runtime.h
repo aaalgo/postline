@@ -204,13 +204,16 @@ public:
         (void)::write(wake_fd, &one, sizeof(one));
     }
 
+    void handle_runtime_message (Message const &msg) {
+    }
+
     void process (Message const &msg, bool replay) {
         //std::cout << "======== replay: " <<  replay << std::endl;
         json const &header = msg.header();
         if (!header.contains("To")) CHECK(0, "No header: To");
         std::string to = header["To"].get<std::string>();
 
-        if (to = "runtime") {
+        if (to == "runtime") {
             if (!replay) {
                 handle_runtime_message(msg);
             }

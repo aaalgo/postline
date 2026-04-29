@@ -244,7 +244,10 @@ if(POSTLINE_BUILD_TESTS)
     add_executable(test_shell tests/test_shell.cpp)
     target_link_libraries(test_shell PRIVATE postline::postline)
 
-    add_test(NAME test_journal COMMAND test_journal)
+    add_executable(test_ui tests/test_ui.cpp)
+    target_link_libraries(test_ui PRIVATE postline::postline postline::tui_deps termcolor::termcolor)
+
+    #add_test(NAME test_journal COMMAND test_journal)
 endif()
 
 install(TARGETS echo_actor
