@@ -77,15 +77,22 @@ public:
         //  - an agent "ai" inherited from root
         Group& default_group = groups.get(groups.create("local"));
         Agent& ai = agents.get(agents.spawn(special.root->id));
+        ai.driver_name = "echo";
         default_group.hosts["ai"] = ai.id;
+
+        Agent& shell = agents.get(agents.spawn(special.root->id));
+        shell.driver_name = "shell";
+        default_group.hosts["shell"] = shell.id;
+
         default_group.hosts["user"] = special.user->id;
-        ai.driver_name = "openai";
+        //ai.driver_name = "openai";
         // to trigger off the conversation
         // send a message from runtime to user
         // with a ReplyTo set to ai@local
         json header{
             {"From", "runtime"},
             {"To", "user@local"},
+            {"Cc", "shell@local"},
             {"Reply-To", "ai@local"},
             {"Subject", "hello"}
         };
