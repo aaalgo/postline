@@ -62,7 +62,7 @@ void read_all(int fd, void* buf, std::size_t n)
             CHECK(0);
         }
         if (r == 0) {   // EOF
-            CHECK(0);
+            CHECK(0, "EOF");
         }
         off += static_cast<std::size_t>(r);
     }

@@ -79,7 +79,7 @@ public:
         Agent& ai = agents.get(agents.spawn(special.root->id));
         default_group.hosts["ai"] = ai.id;
         default_group.hosts["user"] = special.user->id;
-        ai.driver_name = "openai.py";
+        ai.driver_name = "openai";
         // to trigger off the conversation
         // send a message from runtime to user
         // with a ReplyTo set to ai@local
@@ -98,8 +98,6 @@ public:
 
     void handle_runtime_message (Message &&msg) {
 
-        std::cout << "====";
-        msg.formatEmail(std::cout);
         if (msg.header()["type"].get_ref<std::string const &>() == "agent:bye") {
             stop_requested = true;
             log::info("Stop request received.");
@@ -108,6 +106,10 @@ public:
     }
 
     void process (Message &&msg, Agent *from) {
+        std::cout << "--------" << std::endl;
+        msg.formatEmail(std::cout);
+        std::cout << std::endl;
+
         json const &header = msg.header();
         if ((!header.contains("To")) || header["To"].is_null()) {
             log::error("header doesn't contain To");
@@ -142,7 +144,8 @@ public:
             }
             fs::path cmd = POSTLINE_HOME / "bin" / "drivers" / agent->driver_name;
             log::info("Creating driver for agent {} {}: {}", agent_id, to, agent->driver_name);
-            agent->driver = std::make_unique<ShellDriver>(cmd.string());
+            agent->driver = std::make_unique<ShellDriver>(
+                    std::format("{} 2> agent-{}.log", cmd.string(), agent->id));
             CHECK(agent->driver);
             poller.add(agent->driver->read_fd(), agent->id);
         }

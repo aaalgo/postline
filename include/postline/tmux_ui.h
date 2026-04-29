@@ -53,6 +53,10 @@ public:
         if (fake) {
             bottom_cmd = "echo run from terminal the following commnad; echo " + bottom_cmd + "; sleep infinity";
         }
+        else {
+            bottom_cmd = bottom_cmd + " 2> user.log";
+        }
+
 
         run_cmd({
             "tmux", "split-window",

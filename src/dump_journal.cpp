@@ -21,7 +21,7 @@ int main(int argc, char** argv) {
           std::string type;
           json const &header = msg.header();
           auto it = header.find("type");
-          if (it != header.end()) {
+          if (it != header.end() && !it->is_null()) {
             type = it->get<std::string>();
           }
           std::cout << "======== " << cnt << " : " << type << std::endl;
