@@ -2,21 +2,22 @@
 #pragma once
 
 #include <sys/epoll.h>
+#include <sys/eventfd.h>
 #include <unistd.h>
 #include <array>
 
 namespace postline {
 
-class Poller {
+class Poller: immobile {
     static constexpr std::uint32_t default_events =
-        EPOLLIN | EPOLLERR | EPOLLHUP | EPOLLRDHUP;
+        EPOLLIN | EPOLLERR | EPOLLHUP | EPOLLRDHUP | EPOLLONESHOT;
     static constexpr std::size_t wait_capacity = 64;
     int epoll_fd_ = -1;
 public:
-    using Token = std::uint64_t;
+    using Token = std::int64_t;
 
     struct Event {
-        Token t = 0;
+        Token token = 0;
         std::uint32_t flags = 0;  // Raw epoll flags.
     };
 
@@ -31,16 +32,11 @@ public:
         ::close(epoll_fd_);
     }
 
-    Poller(const Poller&) = delete;
-    Poller& operator=(const Poller&) = delete;
-    Poller(Poller&& other) = delete;
-    Poller& operator=(Poller&& other) noexcept = delete;
-
     void add(int fd, Token t)
     {
         epoll_event ev{};
         ev.events = default_events;
-        ev.data.u64 = t;
+        ev.data.u64 = static_cast<std::uint64_t>(t);
 
         if (::epoll_ctl(epoll_fd_, EPOLL_CTL_ADD, fd, &ev) < 0) {
             CHECK(0);
@@ -74,7 +70,7 @@ public:
 
         for (int i = 0; i < count; ++i) {
             out.push_back(Event{
-                .t = ready[static_cast<std::size_t>(i)].data.u64,
+                .token = static_cast<Token>(ready[static_cast<std::size_t>(i)].data.u64),
                 .flags = ready[static_cast<std::size_t>(i)].events,
             });
         }

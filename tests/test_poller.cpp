@@ -87,12 +87,12 @@ int main()
         CHECK(!events.empty());
 
         auto it = std::find_if(events.begin(), events.end(), [driver_id](const Poller::Event& event) {
-            return event.t == driver_id;
+            return event.token == driver_id;
         });
         CHECK(it != events.end());
 
         const Poller::Event& event = *it;
-        CHECK(event.t == driver_id);
+        CHECK(event.token == driver_id);
 
         // Poller reports tokens, so use the token-to-fd registration map to
         // assert the ready event came from the driver we selected.

@@ -31,9 +31,12 @@ struct AgentLink {
 struct Agent: immobile {
     AgentLink link;
     std::vector<AccessID> memory;
+    std::unique_ptr<Driver> driver;
 
     explicit Agent(AgentLink link_)
         : link(std::move(link_)) {}
+
+
 };
 
 class AgentStore: immobile {
@@ -150,19 +153,94 @@ struct Address {
     std::string domain;
 };
 
-class Runtime {
+class Runtime: immobile {
     AgentStore agents;
     GroupStore groups;
-public:
+    Journal    journal;
 
-    Runtime() {
+    int wake_fd;
+    // for async interaction
+    mutable std::mutex mutex;
+    std::vector<Message> pending;
+    bool stop_requested;
+
+public:
+    struct Config {
+        std::string journal_path;
+        std::string journal_chain_path;
+    };
+
+    Runtime(Config const &config)
+        : journal(config.journal_path,
+                  config.journal_chain_path,
+                  [this](Message const&msg) {
+                        this->process(msg, true);
+                  }),
+        stop_requested(false)
+    {
+        wake_fd = eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
+        CHECK(wake_fd >= 0);
     }
 
-    Runtime(Runtime const&) = delete;
-    Runtime& operator=(Runtime const&) = delete;
+    ~Runtime() {
+        ::close(wake_fd);
+    }
 
-    Runtime(Runtime&&) = delete;
-    Runtime& operator=(Runtime&&) = delete;
+    void stop () {
+        {
+            std::lock_guard<std::mutex> lock(mutex);
+            stop_requested = true;
+        }
+        uint64_t one = 1;
+        write(wake_fd, &one, sizeof(one));
+    }
+
+    void enqueue (Message &msg) {
+        {
+            std::lock_guard<std::mutex> lock(mutex);
+            pending.push_back(std::move(msg));
+        }
+        uint64_t one = 1;
+        write(wake_fd, &one, sizeof(one));
+    }
+
+    void process (Message const &msg, bool replay) {
+
+    }
+
+    void run () {
+        Poller poller;
+        poller.add(wake_fd, NOT_AN_AGENT);
+
+        for (;;) {
+            auto events = poller.wait();
+            CHECK(!events.empty());
+            std::vector<Message> todo;
+            for (auto const &e: events) {
+                if (e.token < 0) {  // wake_fd
+                    std::lock_guard<std::mutex> lock(mutex);
+                    todo.swap(pending);
+                    continue;
+                }
+                Agent &agent = agents.get(e.token);
+                CHECK(agent.driver);
+                todo.emplace_back(agent.driver->recv());
+            }
+            // all messages received
+            {   // check stop
+                std::lock_guard<std::mutex> lock(mutex);
+                if (stop_requested) {
+                    log::info("Stop requested, ignoring {} pending messages.", todo.size());
+                    break;
+                }
+            }
+            for (Message const &msg: todo) {
+                process(msg, false);
+            }
+        }
+        // gracefully shutdown all pending
+        log::info("Make sure you come back to close drivers.");
+    }
 
     AgentID spawn_agent(AgentID parent, AccessID anchor = NO_ACCESS_ID) {
         return agents.spawn(parent, anchor);
