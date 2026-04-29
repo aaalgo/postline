@@ -10,7 +10,7 @@ namespace postline {
 
 class Poller: immobile {
     static constexpr std::uint32_t default_events =
-        EPOLLIN | EPOLLERR | EPOLLHUP | EPOLLRDHUP | EPOLLONESHOT;
+        EPOLLIN | EPOLLERR | EPOLLHUP | EPOLLRDHUP;
     static constexpr std::size_t wait_capacity = 64;
     int epoll_fd_ = -1;
 public:
@@ -39,14 +39,14 @@ public:
         ev.data.u64 = static_cast<std::uint64_t>(t);
 
         if (::epoll_ctl(epoll_fd_, EPOLL_CTL_ADD, fd, &ev) < 0) {
-            CHECK(0);
+            CHECK_ERRNO(0);
         }
     }
 
     void remove(int fd)
     {
         if (::epoll_ctl(epoll_fd_, EPOLL_CTL_DEL, fd, nullptr) < 0) {
-            CHECK(0);
+            CHECK_ERRNO(0);
         }
     }
 

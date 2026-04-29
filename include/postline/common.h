@@ -25,6 +25,7 @@ namespace postline {
     } while (0)
 
 #define CHECK_FD(fd)  CHECK(fd >= 0, "errno: {} ({})", errno, std::strerror(errno));
+#define CHECK_ERRNO(cond)  CHECK(cond, "errno: {} ({})", errno, std::strerror(errno));
 
     namespace fs = std::filesystem;
     extern fs::path POSTLINE_HOME;
@@ -127,6 +128,9 @@ namespace postline {
 
         AccessID access_id() const { return access_id_; }
         bool has_access_id() const { return access_id_ >= 0; }
+        void set_access_id (AccessID access_id) {
+            access_id_ = access_id;
+        }
 
         json const& header() const { return header_; }
     };

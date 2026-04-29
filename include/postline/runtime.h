@@ -192,20 +192,36 @@ public:
             stop_requested = true;
         }
         uint64_t one = 1;
-        write(wake_fd, &one, sizeof(one));
+        (void)::write(wake_fd, &one, sizeof(one));
     }
 
-    void enqueue (Message &msg) {
+    void enqueue (Message &&msg) {
         {
             std::lock_guard<std::mutex> lock(mutex);
             pending.push_back(std::move(msg));
         }
         uint64_t one = 1;
-        write(wake_fd, &one, sizeof(one));
+        (void)::write(wake_fd, &one, sizeof(one));
     }
 
     void process (Message const &msg, bool replay) {
+        //std::cout << "======== replay: " <<  replay << std::endl;
+        json const &header = msg.header();
+        if (!header.contains("To")) CHECK(0, "No header: To");
+        std::string to = header["To"].get<std::string>();
 
+        if (to = "runtime") {
+            if (!replay) {
+                handle_runtime_message(msg);
+            }
+        }
+        else {  // common messages
+#if 0           // process logic
+                step 1. expand to_address to canonical form
+                step 2. resolve the address
+                step 3. send the message to agent
+#endif
+        }
     }
 
     void run () {
@@ -218,13 +234,22 @@ public:
             std::vector<Message> todo;
             for (auto const &e: events) {
                 if (e.token < 0) {  // wake_fd
-                    std::lock_guard<std::mutex> lock(mutex);
-                    todo.swap(pending);
+                    {
+                        std::lock_guard<std::mutex> lock(mutex);
+                        todo.swap(pending);
+                    }
+                    uint64_t count;
+                    (void)::read(wake_fd, &count, sizeof(count));
+                    for (auto &msg: todo) {
+                        msg.set_access_id(journal.append(msg));
+                    }
                     continue;
                 }
                 Agent &agent = agents.get(e.token);
                 CHECK(agent.driver);
                 todo.emplace_back(agent.driver->recv());
+                Message &back = todo.back();
+                back.set_access_id(journal.append(back));
             }
             // all messages received
             {   // check stop

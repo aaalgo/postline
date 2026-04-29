@@ -88,9 +88,29 @@ int main(int argc, char** argv) {
     });
 
     std::cout << "Runtime has started, enter a number to stop." << std::endl;
-    int i;
-    std::cin >> i;
+
+    for (;;) {
+        std::string subject, body;
+        std::cout << "Subject: " << std::flush;
+        if (!std::getline(std::cin, subject)) {
+            subject.clear();
+        }
+        if (subject.empty()) break;
+        /*
+        std::cout << "Body: " << std::flush;
+        std::getline(std::cin, body);
+        */
+        json header{
+            {"From", "user"},
+            {"To", "runtime"},
+            {"Subject", subject},
+        };
+        log::info("Sending message.");
+        runtime.enqueue(Message(std::move(header), std::move(body)));
+    }
+    log::info("Requsting runtime to stop.");
     runtime.stop();
+    log::info("Waiting for runtime to shutdown.");
     runtime_thread.join();
     log::info("Runtime has been gracefully shutdown.");
     log::info("Bye.");
