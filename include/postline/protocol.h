@@ -70,7 +70,7 @@ struct Bye : public View {
     {
     }
 
-    static Message make() {
+    static Message make () {
         return Message(json{
             {"type", type},
         });

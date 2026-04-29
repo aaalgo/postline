@@ -24,10 +24,12 @@ enum class DriverHistoryMode : std::uint16_t
 class Driver: noncopyable {
 public:
     virtual ~Driver () {}
-    virtual void send(Message &&msg) = 0;
-    virtual std::vector<Message> recv() = 0;
+    virtual int send(Message &&msg) = 0;
+    virtual int recv(std::vector<Message> &out) = 0;
     Message recv_one () {
-        std::vector<Message> all = recv();
+        std::vector<Message> all;
+        int err = recv(all);
+        CHECK(err == 0);
         CHECK(all.size() == 1);
         return std::move(all[0]);
     }
@@ -122,19 +124,60 @@ public:
     DriverSpawnType spawn_type() const noexcept override { return spawn_; }
     DriverHistoryMode history_mode() const noexcept override { return history_; }
 
-    void send(Message &&msg) override
+    int send(Message &&msg) override
     {
         msg.write(input_fd_);
+        return 0;
     }
 
-    std::vector<Message> recv() override
+    int recv(std::vector<Message> &out) override
     {
-        std::vector<Message> out;
+        out.clear();
         out.emplace_back(Message::read(output_fd_));
-        return out;
+        return 0;
     }
 
     int read_fd () const override { return output_fd_; }
+};
+
+class PipeInputDriver: public Driver {
+    int input_fd_ = -1;
+public:
+    explicit PipeInputDriver(std::string const &path)
+        : input_fd_(::open(path.c_str(), O_RDONLY | O_CLOEXEC))
+    {
+        CHECK_FD(input_fd_);
+    }
+
+    ~PipeInputDriver() override
+    {
+        ::close(input_fd_);
+    }
+
+    int send(Message &&msg) override
+    {
+        (void)msg;
+        return 1;
+    }
+
+    int recv(std::vector<Message> &out) override
+    {
+        out.clear();
+        out.emplace_back(Message::read(input_fd_));
+        return 0;
+    }
+
+    int read_fd () const override { return input_fd_; }
+
+    DriverSpawnType spawn_type() const noexcept override
+    {
+        return DriverSpawnType::ADDRESS;
+    }
+
+    DriverHistoryMode history_mode() const noexcept override
+    {
+        return DriverHistoryMode::NONE;
+    }
 };
 
 class QueueDriver: public Driver {
@@ -152,32 +195,35 @@ public:
         ::close(wake_fd);
     }
 
-    void send(Message && msg) {
+    int send(Message && msg) override {
         {
             std::lock_guard<std::mutex> lock(mutex);
             pending.emplace_back(std::move(msg));
         }
         uint64_t one = 1;
-        (void)::write(wake_fd, &one, sizeof(one));
+        ssize_t rc = ::write(wake_fd, &one, sizeof(one));
+        CHECK(rc == static_cast<ssize_t>(sizeof(one)));
+        return 0;
     }
 
-    std::vector<Message> recv() {
-        std::vector<Message> out;
+    int recv(std::vector<Message> &out) override {
+        out.clear();
         {
             std::lock_guard<std::mutex> lock(mutex);
             out.swap(pending);
         }
         uint64_t count;
-        (void)::read(wake_fd, &count, sizeof(count));
-        return out;
+        ssize_t rc = ::read(wake_fd, &count, sizeof(count));
+        CHECK(rc == static_cast<ssize_t>(sizeof(count)));
+        return 0;
     }
 
-    int read_fd () const {
+    int read_fd () const override {
         return wake_fd;
     }
 
-    DriverSpawnType spawn_type() const noexcept { return DriverSpawnType::ADDRESS;}
-    DriverHistoryMode history_mode() const noexcept { return DriverHistoryMode::NONE; }
+    DriverSpawnType spawn_type() const noexcept override { return DriverSpawnType::ADDRESS;}
+    DriverHistoryMode history_mode() const noexcept override { return DriverHistoryMode::NONE; }
 };
 
 

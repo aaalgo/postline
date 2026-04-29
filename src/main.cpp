@@ -18,6 +18,7 @@
 #include <string>
 #include <CLI/CLI.hpp>
 #include <postline/runtime.h>
+#include <postline/tmux_ui.h>
 #include "build_info.hpp"
 
 using namespace postline;
@@ -25,10 +26,9 @@ using namespace postline;
 inline void welcome ()
 {
     using namespace termcolor;
-    std::cout << "\n"
-              << green
+    termcolor::colorize(std::cout);
+    std::cout << green
               << R"(
-
 ██████╗  ██████╗ ███████╗████████╗██╗     ██╗███╗   ██╗███████╗
 ██╔══██╗██╔═══██╗██╔════╝╚══██╔══╝██║     ██║████╗  ██║██╔════╝
 ██████╔╝██║   ██║███████╗   ██║   ██║     ██║██╔██╗ ██║█████╗
@@ -37,11 +37,10 @@ inline void welcome ()
 ╚═╝      ╚═════╝ ╚══════╝   ╚═╝   ╚══════╝╚═╝╚═╝  ╚═══╝╚══════╝
 )"
               << reset
-              << "\n"
-              << cyan << "Postline Agent Runtime\nBy Ann Arbor Algorithms\n\n" << reset
-              << "  Version: " << postline::build::VERSION << "\n"
-              << "  Build:   " << postline::build::BUILD_TYPE << "\n"
-              << "  Commit:  " << postline::build::GIT_COMMIT << "\n";
+              << cyan << "Postline Agent Runtime\nBy Ann Arbor Algorithms\n" << reset
+              << "Version: " << postline::build::VERSION << "\n"
+              << "Build:   " << postline::build::BUILD_TYPE << "\n"
+              << "Commit:  " << postline::build::GIT_COMMIT << "\n";
 }
 
 std::string make_journal_name()
@@ -77,42 +76,23 @@ int main(int argc, char** argv) {
         CLI11_PARSE(app, argc, argv);
     }
 
+    TMuxUI ui;
+
+    setup_environ();
     welcome();
     init_logging();
-    setup_environ();
+    ui.start_helper(POSTLINE_HOME/"bin"/"tmux_input_helper");
 
+    config.user_input_path = ui.user_input_path();
     Runtime runtime(config);
-
+    /*
     std::thread runtime_thread([&runtime] {
         runtime.run();
-    });
-
-    std::cout << "Runtime has started, enter a number to stop." << std::endl;
-
-    for (;;) {
-        std::string subject, body;
-        std::cout << "Subject: " << std::flush;
-        if (!std::getline(std::cin, subject)) {
-            subject.clear();
-        }
-        if (subject.empty()) break;
-        /*
-        std::cout << "Body: " << std::flush;
-        std::getline(std::cin, body);
-        */
-        json header{
-            {"From", "user"},
-            {"To", "runtime"},
-            {"Subject", subject},
-        };
-        log::info("Sending message.");
-        runtime.enqueue(Message(std::move(header), std::move(body)));
-    }
-    log::info("Requsting runtime to stop.");
-    runtime.stop();
-    log::info("Waiting for runtime to shutdown.");
-    runtime_thread.join();
+    }); */
+    runtime.run();
     log::info("Runtime has been gracefully shutdown.");
+    log::info("Stopping ui.");
+    ui.stop();
     log::info("Bye.");
 
     return 0;

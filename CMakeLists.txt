@@ -151,6 +151,15 @@ set_target_properties(postline_bin PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/install/bin"
 )
 
+add_executable(tmux_input_helper
+    src/tmux_input_helper.cpp
+)
+target_link_libraries(tmux_input_helper PRIVATE postline_install_bin_deps)
+set_target_properties(tmux_input_helper PROPERTIES
+    OUTPUT_NAME tmux_input_helper
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/install/bin"
+)
+
 add_executable(echo_actor
     src/drivers/echo.cpp
 )
@@ -255,6 +264,10 @@ install(TARGETS echo_actor
 )
 
 install(TARGETS postline_bin
+    RUNTIME DESTINATION bin
+)
+
+install(TARGETS tmux_input_helper
     RUNTIME DESTINATION bin
 )
 

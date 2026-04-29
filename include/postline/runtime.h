@@ -28,15 +28,18 @@ class Runtime: immobile {
     struct SpecialAgents {
         Agent *runtime;
         Agent *journal;
+        Agent *user;
         Agent *root;
-        SpecialAgents (AgentStore &agents)
+        SpecialAgents (AgentStore &agents, std::string const &user_input_path)
             :runtime(&agents.get(agents.spawn(NOT_AN_AGENT))),
             journal(&agents.get(agents.spawn(NOT_AN_AGENT))),
+            user(&agents.get(agents.spawn(NOT_AN_AGENT))),
             root(&agents.get(agents.spawn(NOT_AN_AGENT)))
         {
             CHECK(runtime->id == 0);
             CHECK(journal->id == 1);
             runtime->driver = std::make_unique<QueueDriver>();
+            user->driver = std::make_unique<PipeInputDriver>(user_input_path);
         }
     }  special;
 
@@ -48,10 +51,11 @@ public:
     struct Config {
         std::string journal_path;
         std::string journal_chain_path;
+        std::string user_input_path;
     };
 
     Runtime(Config const &config)
-        : special(agents),
+        : special(agents, config.user_input_path),
         journal(config.journal_path,
                   config.journal_chain_path,
                   [this](Message &&msg) {
@@ -64,23 +68,20 @@ public:
     ~Runtime() {
     }
 
-    void stop () {
-        special.runtime->driver->send(protocol::agent::Bye::make());
-    }
-
-    void enqueue (Message &&msg) {
-        special.runtime->driver->send(std::move(msg));
-    }
-
     void handle_runtime_message (Message const &msg) {
+
+        std::cout << "====";
+        msg.formatEmail(std::cout);
         if (msg.header()["type"].get_ref<std::string const &>() == "agent:bye") {
             stop_requested = true;
+            log::info("Stop request received.");
+            log::info("Runtime will shutdown.");
         }
     }
 
     void process (Message const &msg, Agent *from) {
         //std::cout << "======== replay: " <<  replay << std::endl;
-        if (from == special.runtime) {
+        if (from == special.user) {
             log::info("processing runtime message");
             handle_runtime_message(msg);
         }
@@ -102,6 +103,7 @@ public:
     void run () {
         Poller poller;
         poller.add(special.runtime->driver->read_fd(), special.runtime->id);
+        poller.add(special.user->driver->read_fd(), special.user->id);
 
         struct Todo: noncopyable {
             Message message;
@@ -116,7 +118,9 @@ public:
             for (auto const &e: events) {
                 Agent *agent = &agents.get(e.token);
                 CHECK(agent->driver);
-                std::vector<Message> tmp = agent->driver->recv();
+                std::vector<Message> tmp;
+                int err = agent->driver->recv(tmp);
+                CHECK(err == 0);
                 for (auto &msg: tmp) {
                     msg.set_access_id(journal.append(msg));
                     todo.emplace_back(std::move(msg), agent);
