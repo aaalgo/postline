@@ -44,9 +44,17 @@ class ShellDriver: public Driver {
     DriverSpawnType spawn_;
     DriverHistoryMode history_;
 
-    int input_fd_ = -1;
     int output_fd_ = -1;
+    int input_fd_ = -1;
     pid_t pid_ = -1;
+
+    void handshake () {
+        // read hello
+        protocol::agent::Hello hello(recv_one());
+
+        spawn_ = static_cast<DriverSpawnType>(hello.spawn_type);
+        history_ = static_cast<DriverHistoryMode>(hello.history_mode);
+    }
 public:
     explicit ShellDriver(std::string const &command)
     {
@@ -89,12 +97,17 @@ public:
 
         input_fd_ = stdin_pipe[1];
         output_fd_ = stdout_pipe[0];
+        handshake();
 
-        // read hello
-        protocol::agent::Hello hello(recv_one());
+    }
 
-        spawn_ = static_cast<DriverSpawnType>(hello.spawn_type);
-        history_ = static_cast<DriverHistoryMode>(hello.history_mode);
+    explicit ShellDriver(std::string const &cli_input_path,
+                         std::string const &cli_output_path)
+        :output_fd_(::open(cli_output_path.c_str(), O_RDONLY | O_CLOEXEC)),
+        input_fd_(::open(cli_input_path.c_str(), O_WRONLY | O_CLOEXEC))
+    {
+        log::info("shell driver read from {} and write to {}", cli_output_path, cli_input_path);
+        handshake();
     }
 
     ~ShellDriver()
@@ -138,46 +151,6 @@ public:
     }
 
     int read_fd () const override { return output_fd_; }
-};
-
-class PipeInputDriver: public Driver {
-    int input_fd_ = -1;
-public:
-    explicit PipeInputDriver(std::string const &path)
-        : input_fd_(::open(path.c_str(), O_RDONLY | O_CLOEXEC))
-    {
-        CHECK_FD(input_fd_);
-    }
-
-    ~PipeInputDriver() override
-    {
-        ::close(input_fd_);
-    }
-
-    int send(Message &&msg) override
-    {
-        (void)msg;
-        return 1;
-    }
-
-    int recv(std::vector<Message> &out) override
-    {
-        out.clear();
-        out.emplace_back(Message::read(input_fd_));
-        return 0;
-    }
-
-    int read_fd () const override { return input_fd_; }
-
-    DriverSpawnType spawn_type() const noexcept override
-    {
-        return DriverSpawnType::ADDRESS;
-    }
-
-    DriverHistoryMode history_mode() const noexcept override
-    {
-        return DriverHistoryMode::NONE;
-    }
 };
 
 class QueueDriver: public Driver {

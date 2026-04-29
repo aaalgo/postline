@@ -29,7 +29,7 @@ class Runtime: immobile {
         Agent *journal;
         Agent *user;
         Agent *root;
-        SpecialAgents (AgentStore &agents, std::string const &user_input_path)
+        SpecialAgents (AgentStore &agents)
             :runtime(&agents.get(agents.spawn(NOT_AN_AGENT))),
             journal(&agents.get(agents.spawn(NOT_AN_AGENT))),
             user(&agents.get(agents.spawn(NOT_AN_AGENT))),
@@ -38,7 +38,6 @@ class Runtime: immobile {
             CHECK(runtime->id == 0);
             CHECK(journal->id == 1);
             //runtime->driver = std::make_unique<QueueDriver>();
-            user->driver = std::make_unique<PipeInputDriver>(user_input_path);
         }
     }  special;
 
@@ -51,11 +50,12 @@ public:
     struct Config {
         std::string journal_path;
         std::string journal_chain_path;
-        std::string user_input_path;
+        std::string cli_output_path;   // the user driver will read this
+        std::string cli_input_path;    // the user driver will write this
     };
 
     Runtime(Config const &config)
-        : special(agents, config.user_input_path),
+        : special(agents),
         journal(config.journal_path,
                   config.journal_chain_path,
                   [this](Message &&msg) {
@@ -63,8 +63,11 @@ public:
                   }),
         stop_requested(false)
     {
-        //poller.add(special.runtime->driver->read_fd(), special.runtime->id);
+        log::info("Initializing runtime");
+        special.user->driver = std::make_unique<ShellDriver>(config.cli_input_path,
+                                                     config.cli_output_path);
         poller.add(special.user->driver->read_fd(), special.user->id);
+        log::info("Default setup");
         defaultSetup();
     }
 
@@ -75,7 +78,19 @@ public:
         Group& default_group = groups.get(groups.create("local"));
         Agent& ai = agents.get(agents.spawn(special.root->id));
         default_group.hosts["ai"] = ai.id;
-        ai.driver_name = "openai";
+        default_group.hosts["user"] = special.user->id;
+        ai.driver_name = "openai.py";
+        // to trigger off the conversation
+        // send a message from runtime to user
+        // with a ReplyTo set to ai@local
+        json header{
+            {"From", "runtime"},
+            {"To", "user@local"},
+            {"Reply-To", "ai@local"},
+            {"Subject", "hello"}
+        };
+        log::info("Sending message to user");
+        process(Message(std::move(header)), special.runtime);
     }
 
     ~Runtime() {

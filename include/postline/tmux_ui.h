@@ -34,7 +34,7 @@ public:
     TMuxUI(TMuxUI const&) = delete;
     TMuxUI& operator=(TMuxUI const&) = delete;
 
-    void start_helper(std::filesystem::path path_to_helper) {
+    void start_helper(std::filesystem::path path_to_helper, bool fake = false) {
         if (helper_started_) {
             throw std::runtime_error("tmux input helper already started");
         }
@@ -47,12 +47,12 @@ public:
 
         std::string bottom_cmd =
             shell_quote(path_to_helper.string()) + " " +
-            shell_quote(input_fifo_.string()) +
-            "; status=$?; "
-            "echo; "
-            "echo '[tmux_input_helper exited with status' \"$status\" ']'; "
-            "echo 'Press Enter to close this pane.'; "
-            "read _";
+            shell_quote(input_fifo_.string()) + " " +
+            shell_quote(output_fifo_.string());
+
+        if (fake) {
+            bottom_cmd = "echo run from terminal the following commnad; echo " + bottom_cmd + "; sleep infinity";
+        }
 
         run_cmd({
             "tmux", "split-window",
@@ -70,8 +70,12 @@ public:
         helper_started_ = true;
     }    
 
-    std::filesystem::path user_input_path() const {
+    std::filesystem::path cli_input_path() const {
         return input_fifo_;
+    }
+
+    std::filesystem::path cli_output_path() const {
+        return output_fifo_;
     }
 
     std::filesystem::path log_path() const {
@@ -117,6 +121,7 @@ private:
     std::filesystem::path dir_;
     std::filesystem::path log_file_;
     std::filesystem::path input_fifo_;
+    std::filesystem::path output_fifo_;
 
     std::string session_;
 
@@ -219,7 +224,8 @@ private:
              / ("postline-tmux-ui-" + std::to_string(pid));
 
         log_file_ = dir_ / "stdout.log";
-        input_fifo_ = dir_ / "user_input.fifo";
+        input_fifo_ = dir_ / "cli_input.fifo";
+        output_fifo_ = dir_ / "cli_output.fifo";
     }
 
     void create_files() {
@@ -233,6 +239,12 @@ private:
         if (::mkfifo(input_fifo_.c_str(), 0600) < 0) {
             if (errno != EEXIST) {
                 throw std::runtime_error("mkfifo input fifo failed");
+            }
+        }
+
+        if (::mkfifo(output_fifo_.c_str(), 0600) < 0) {
+            if (errno != EEXIST) {
+                throw std::runtime_error("mkfifo output fifo failed");
             }
         }
     }

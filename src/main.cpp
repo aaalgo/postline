@@ -70,10 +70,12 @@ int main(int argc, char** argv) {
     CLI::App app{"Postline Agent Runtime"};
     Runtime::Config config;
     config.journal_path = make_journal_name();
+    bool fake = false;
     {
         CLI::App app{"Postline driver tester"};
         argv = app.ensure_utf8(argv);
         app.add_option("-j,--journal", config.journal_path, "");
+        app.add_flag("-f,--fake", fake, "");
         CLI11_PARSE(app, argc, argv);
     }
 
@@ -82,14 +84,10 @@ int main(int argc, char** argv) {
     setup_environ();
     welcome();
     init_logging();
-    ui.start_helper(POSTLINE_HOME/"bin"/"tmux_input_helper");
-
-    config.user_input_path = ui.user_input_path();
+    ui.start_helper(POSTLINE_HOME/"bin"/"drivers"/"cli", fake);
+    config.cli_input_path = ui.cli_input_path();
+    config.cli_output_path = ui.cli_output_path();
     Runtime runtime(config);
-    /*
-    std::thread runtime_thread([&runtime] {
-        runtime.run();
-    }); */
     log::info("Starting runtime.");
     runtime.run();
     log::info("Runtime has been gracefully shutdown.");

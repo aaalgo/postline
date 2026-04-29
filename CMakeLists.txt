@@ -151,15 +151,6 @@ set_target_properties(postline_bin PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/install/bin"
 )
 
-add_executable(tmux_input_helper
-    src/tmux_input_helper.cpp
-)
-target_link_libraries(tmux_input_helper PRIVATE postline_install_bin_deps)
-set_target_properties(tmux_input_helper PROPERTIES
-    OUTPUT_NAME tmux_input_helper
-    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/install/bin"
-)
-
 add_executable(echo_actor
     src/drivers/echo.cpp
 )
@@ -175,6 +166,15 @@ add_executable(shell_actor
 target_link_libraries(shell_actor PRIVATE postline::postline)
 set_target_properties(shell_actor PROPERTIES
     OUTPUT_NAME shell
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/install/bin/drivers"
+)
+
+add_executable(cli_actor
+    src/drivers/cli.cpp
+)
+target_link_libraries(cli_actor PRIVATE postline::postline)
+set_target_properties(cli_actor PROPERTIES
+    OUTPUT_NAME cli
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/install/bin/drivers"
 )
 
@@ -259,15 +259,7 @@ if(POSTLINE_BUILD_TESTS)
     #add_test(NAME test_journal COMMAND test_journal)
 endif()
 
-install(TARGETS echo_actor
-    RUNTIME DESTINATION lib/postline/drivers
-)
-
 install(TARGETS postline_bin
-    RUNTIME DESTINATION bin
-)
-
-install(TARGETS tmux_input_helper
     RUNTIME DESTINATION bin
 )
 
