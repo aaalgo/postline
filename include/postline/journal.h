@@ -6,7 +6,7 @@
 
 namespace postline {
 
-using journal_replay_fn = std::function<void(Message const&)>;
+using journal_replay_fn = std::function<void(Message &&)>;
 
 class Journal {
 
@@ -74,7 +74,7 @@ public:
                 size_t read_size;
                 Message message = Message::read(fd, off, segment, &read_size);
                 if (off > 0) {
-                    replay(message);
+                    replay(std::move(message));
                 }
                 off += read_size;
             }

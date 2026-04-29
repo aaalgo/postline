@@ -9,144 +9,13 @@
 #include <vector>
 
 #include "common.h"
+#include "agent.h"
 #include "journal.h"
 #include "driver.h"
 #include "poller.h"
 
 namespace postline {
 
-using AgentID = std::int32_t;
-using GroupID = std::int32_t;
-
-inline constexpr AgentID NOT_AN_AGENT = -1;
-inline constexpr AgentID ROOT_AGENT = 0;
-
-inline constexpr GroupID NOT_A_GROUP = -1;
-
-struct AgentLink {
-    AgentID parent;
-    AccessID anchor;
-};
-
-struct Agent: immobile {
-    AgentLink link;
-    std::vector<AccessID> memory;
-    std::unique_ptr<Driver> driver;
-
-    explicit Agent(AgentLink link_)
-        : link(std::move(link_)) {}
-
-
-};
-
-class AgentStore: immobile {
-    std::vector<std::unique_ptr<Agent>> agents_;
-public:
-    AgentStore() {
-        agents_.push_back(std::make_unique<Agent>(AgentLink{
-            .parent = NOT_AN_AGENT,
-            .anchor = NO_ACCESS_ID,
-        }));
-    }
-
-    AgentID spawn(AgentID parent, AccessID anchor = NO_ACCESS_ID) {
-        Agent& p = get(parent);
-
-        if (anchor == NO_ACCESS_ID && !p.memory.empty()) {
-            anchor = p.memory.back();
-        }
-
-        AgentID id = static_cast<AgentID>(agents_.size());
-
-        agents_.push_back(std::make_unique<Agent>(AgentLink{
-            .parent = parent,
-            .anchor = anchor,
-        }));
-
-        return id;
-    }
-
-    Agent& get(AgentID id) {
-        CHECK(exists(id));
-        return *agents_[static_cast<std::size_t>(id)];
-    }
-
-    Agent const& get(AgentID id) const {
-        CHECK(exists(id));
-        return *agents_[static_cast<std::size_t>(id)];
-    }
-
-    bool exists(AgentID id) const {
-        return id >= 0 &&
-               static_cast<std::size_t>(id) < agents_.size() &&
-               agents_[static_cast<std::size_t>(id)] != nullptr;
-    }
-
-    std::size_t size() const {
-        return agents_.size();
-    }
-};
-
-struct Group: immobile {
-    std::string name; // empty => anonymous / temporary group
-    std::unordered_map<std::string, AgentID> hosts;
-
-    explicit Group(std::string name_ = "")
-        : name(std::move(name_)) {}
-};
-
-class GroupStore: immobile {
-    std::vector<std::unique_ptr<Group>> groups_;
-    std::unordered_map<std::string, GroupID> names_;
-
-public:
-    GroupStore() {
-    }
-
-    GroupID create(std::string name = "") {
-        if (!name.empty()) {
-            CHECK(names_.find(name) == names_.end());
-        }
-
-        GroupID id = static_cast<GroupID>(groups_.size());
-
-        groups_.push_back(std::make_unique<Group>(name));
-
-        if (!name.empty()) {
-            names_.emplace(std::move(name), id);
-        }
-
-        return id;
-    }
-
-    Group& get(GroupID id) {
-        CHECK(exists(id));
-        return *groups_[static_cast<std::size_t>(id)];
-    }
-
-    Group const& get(GroupID id) const {
-        CHECK(exists(id));
-        return *groups_[static_cast<std::size_t>(id)];
-    }
-
-    bool exists(GroupID id) const {
-        return id >= 0 &&
-               static_cast<std::size_t>(id) < groups_.size() &&
-               groups_[static_cast<std::size_t>(id)] != nullptr;
-    }
-
-    GroupID find(std::string const& name) const {
-        auto it = names_.find(name);
-        if (it == names_.end()) {
-            return NOT_A_GROUP;
-        }
-        return it->second;
-    }
-
-    std::size_t size() const {
-        return groups_.size();
-    }
-};
 
 struct Address {
     std::string host;
@@ -155,13 +24,24 @@ struct Address {
 
 class Runtime: immobile {
     AgentStore agents;
+
+    struct SpecialAgents {
+        Agent *runtime;
+        Agent *journal;
+        Agent *root;
+        SpecialAgents (AgentStore &agents)
+            :runtime(&agents.get(agents.spawn(NOT_AN_AGENT))),
+            journal(&agents.get(agents.spawn(NOT_AN_AGENT))),
+            root(&agents.get(agents.spawn(NOT_AN_AGENT)))
+        {
+            CHECK(runtime->id == 0);
+            CHECK(journal->id == 1);
+            runtime->driver = std::make_unique<QueueDriver>();
+        }
+    }  special;
+
     GroupStore groups;
     Journal    journal;
-
-    int wake_fd;
-    // for async interaction
-    mutable std::mutex mutex;
-    std::vector<Message> pending;
     bool stop_requested;
 
 public:
@@ -171,54 +51,46 @@ public:
     };
 
     Runtime(Config const &config)
-        : journal(config.journal_path,
+        : special(agents),
+        journal(config.journal_path,
                   config.journal_chain_path,
-                  [this](Message const&msg) {
-                        this->process(msg, true);
+                  [this](Message &&msg) {
+                        this->process(msg, special.journal);
                   }),
         stop_requested(false)
     {
-        wake_fd = eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
-        CHECK(wake_fd >= 0);
     }
 
     ~Runtime() {
-        ::close(wake_fd);
     }
 
     void stop () {
-        {
-            std::lock_guard<std::mutex> lock(mutex);
-            stop_requested = true;
-        }
-        uint64_t one = 1;
-        (void)::write(wake_fd, &one, sizeof(one));
+        special.runtime->driver->send(protocol::agent::Bye::make());
     }
 
     void enqueue (Message &&msg) {
-        {
-            std::lock_guard<std::mutex> lock(mutex);
-            pending.push_back(std::move(msg));
-        }
-        uint64_t one = 1;
-        (void)::write(wake_fd, &one, sizeof(one));
+        special.runtime->driver->send(std::move(msg));
     }
 
     void handle_runtime_message (Message const &msg) {
+        if (msg.header()["type"].get_ref<std::string const &>() == "agent:bye") {
+            stop_requested = true;
+        }
     }
 
-    void process (Message const &msg, bool replay) {
+    void process (Message const &msg, Agent *from) {
         //std::cout << "======== replay: " <<  replay << std::endl;
-        json const &header = msg.header();
-        if (!header.contains("To")) CHECK(0, "No header: To");
-        std::string to = header["To"].get<std::string>();
-
-        if (to == "runtime") {
-            if (!replay) {
-                handle_runtime_message(msg);
-            }
+        if (from == special.runtime) {
+            log::info("processing runtime message");
+            handle_runtime_message(msg);
+        }
+        else if (from == special.journal) {
+            // don't process
         }
         else {  // common messages
+            json const &header = msg.header();
+            if (!header.contains("To")) CHECK(0, "No header: To");
+            std::string to = header["To"].get<std::string>();
 #if 0           // process logic
                 step 1. expand to_address to canonical form
                 step 2. resolve the address
@@ -229,42 +101,36 @@ public:
 
     void run () {
         Poller poller;
-        poller.add(wake_fd, NOT_AN_AGENT);
+        poller.add(special.runtime->driver->read_fd(), special.runtime->id);
+
+        struct Todo: noncopyable {
+            Message message;
+            Agent *agent;
+            Todo(Message&& m, Agent* a): message(std::move(m)), agent(a) {}
+        };
 
         for (;;) {
             auto events = poller.wait();
             CHECK(!events.empty());
-            std::vector<Message> todo;
+            std::vector<Todo> todo;
             for (auto const &e: events) {
-                if (e.token < 0) {  // wake_fd
-                    {
-                        std::lock_guard<std::mutex> lock(mutex);
-                        todo.swap(pending);
-                    }
-                    uint64_t count;
-                    (void)::read(wake_fd, &count, sizeof(count));
-                    for (auto &msg: todo) {
-                        msg.set_access_id(journal.append(msg));
-                    }
-                    continue;
+                Agent *agent = &agents.get(e.token);
+                CHECK(agent->driver);
+                std::vector<Message> tmp = agent->driver->recv();
+                for (auto &msg: tmp) {
+                    msg.set_access_id(journal.append(msg));
+                    todo.emplace_back(std::move(msg), agent);
                 }
-                Agent &agent = agents.get(e.token);
-                CHECK(agent.driver);
-                todo.emplace_back(agent.driver->recv());
-                Message &back = todo.back();
-                back.set_access_id(journal.append(back));
             }
-            // all messages received
-            {   // check stop
-                std::lock_guard<std::mutex> lock(mutex);
+            for (auto &t: todo) {
+                // all messages received
+                process(t.message, t.agent);
                 if (stop_requested) {
                     log::info("Stop requested, ignoring {} pending messages.", todo.size());
                     break;
                 }
             }
-            for (Message const &msg: todo) {
-                process(msg, false);
-            }
+            if (stop_requested) break;
         }
         // gracefully shutdown all pending
         log::info("Make sure you come back to close drivers.");

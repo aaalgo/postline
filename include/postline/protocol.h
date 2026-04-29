@@ -38,7 +38,7 @@ struct Root : public View {
 
 }
 
-namespace driver {
+namespace agent {
 
 struct Hello : public View {
     static constexpr std::string_view type = "driver:hello";
@@ -63,7 +63,7 @@ struct Hello : public View {
 };
 
 struct Bye : public View {
-    static constexpr std::string_view type = "driver:bye";
+    static constexpr std::string_view type = "agent:bye";
 
     explicit Bye(Message const& msg)
         : View(msg, type)

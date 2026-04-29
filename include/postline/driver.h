@@ -1,5 +1,6 @@
 #pragma once
 #include <sys/types.h>
+#include <sys/eventfd.h>
 #include <sys/wait.h>
 #include <unistd.h>
 #include <fcntl.h>
@@ -21,6 +22,23 @@ enum class DriverHistoryMode : std::uint16_t
 };
 
 class Driver: noncopyable {
+public:
+    virtual ~Driver () {}
+    virtual void send(Message &&msg) = 0;
+    virtual std::vector<Message> recv() = 0;
+    Message recv_one () {
+        std::vector<Message> all = recv();
+        CHECK(all.size() == 1);
+        return std::move(all[0]);
+    }
+    virtual int read_fd () const {
+        return -1;
+    }
+    virtual DriverSpawnType spawn_type() const noexcept = 0;
+    virtual DriverHistoryMode history_mode() const noexcept = 0;
+};
+
+class ShellDriver: public Driver {
     DriverSpawnType spawn_;
     DriverHistoryMode history_;
 
@@ -28,7 +46,7 @@ class Driver: noncopyable {
     int output_fd_ = -1;
     pid_t pid_ = -1;
 public:
-    explicit Driver(std::string const &command)
+    explicit ShellDriver(std::string const &command)
     {
         int stdin_pipe[2] = {-1, -1};
         int stdout_pipe[2] = {-1, -1};
@@ -71,17 +89,17 @@ public:
         output_fd_ = stdout_pipe[0];
 
         // read hello
-        protocol::driver::Hello hello(recv());
+        protocol::agent::Hello hello(recv_one());
 
         spawn_ = static_cast<DriverSpawnType>(hello.spawn_type);
         history_ = static_cast<DriverHistoryMode>(hello.history_mode);
     }
 
-    ~Driver()
+    ~ShellDriver()
     {
         try {
             if (input_fd_ >= 0) {
-                send(protocol::driver::Bye::make());
+                send(protocol::agent::Bye::make());
             }
         } catch (...) {
         }
@@ -101,20 +119,66 @@ public:
         }
     }
 
-    DriverSpawnType spawn_type() const noexcept { return spawn_; }
-    DriverHistoryMode history_mode() const noexcept { return history_; }
+    DriverSpawnType spawn_type() const noexcept override { return spawn_; }
+    DriverHistoryMode history_mode() const noexcept override { return history_; }
 
-    void send(Message const& msg)
+    void send(Message &&msg) override
     {
         msg.write(input_fd_);
     }
 
-    Message recv()
+    std::vector<Message> recv() override
     {
-        return Message::read(output_fd_);
+        std::vector<Message> out;
+        out.emplace_back(Message::read(output_fd_));
+        return out;
     }
 
-    int read_fd () const { return output_fd_; }
+    int read_fd () const override { return output_fd_; }
 };
+
+class QueueDriver: public Driver {
+    int wake_fd;
+    std::mutex mutex;
+    std::vector<Message> pending;
+public:
+    QueueDriver ()
+        : wake_fd(eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC))
+    {
+        CHECK(wake_fd >= 0);
+    }
+
+    ~QueueDriver () {
+        ::close(wake_fd);
+    }
+
+    void send(Message && msg) {
+        {
+            std::lock_guard<std::mutex> lock(mutex);
+            pending.emplace_back(std::move(msg));
+        }
+        uint64_t one = 1;
+        (void)::write(wake_fd, &one, sizeof(one));
+    }
+
+    std::vector<Message> recv() {
+        std::vector<Message> out;
+        {
+            std::lock_guard<std::mutex> lock(mutex);
+            out.swap(pending);
+        }
+        uint64_t count;
+        (void)::read(wake_fd, &count, sizeof(count));
+        return out;
+    }
+
+    int read_fd () const {
+        return wake_fd;
+    }
+
+    DriverSpawnType spawn_type() const noexcept { return DriverSpawnType::ADDRESS;}
+    DriverHistoryMode history_mode() const noexcept { return DriverHistoryMode::NONE; }
+};
+
 
 } // namespace postline

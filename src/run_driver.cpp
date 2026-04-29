@@ -35,29 +35,29 @@ int main(int argc, char** argv) {
   std::string cmd = (POSTLINE_HOME/"bin"/"drivers"/driver_name).string();
   log::info("driver: {}", cmd);
 
-  Driver* driver = new Driver(cmd);
+  Driver* driver = new ShellDriver(cmd);
   Journal *journal = nullptr;
   if (!journal_path.empty()) {
       bool hist = driver->history_mode() == DriverHistoryMode::ALL;
       if (hist) {
           log::info("begin_history");
           Message msg(json{{"type", "driver:begin_history"}});
-          driver->send(msg);
+          driver->send(std::move(msg));
       }
       if (!fs::exists(journal_path)) {
           // create journal
           Journal tmp(journal_path, std::string(), [](Message const &){});
       }
-      journal = new Journal(std::string(), journal_path, [hist, driver](Message const &msg){
+      journal = new Journal(std::string(), journal_path, [hist, driver](Message &&msg){
                 if (hist) {
                     log::info("send history");
-                    driver->send(msg);
+                    driver->send(std::move(msg));
                 }
               });
       if (hist) {
           log::info("end_history");
           Message msg(json{{"type", "driver:end_history"}});
-          driver->send(msg);
+          driver->send(std::move(msg));
       }
   }
 
@@ -80,11 +80,12 @@ int main(int argc, char** argv) {
         if (journal) {
             journal->append(to);
         }
-        driver->send(to);
         std::cout << ">>>" << std::endl;
         to.formatEmail(std::cout, true);
 
-        Message echoed = driver->recv();
+        driver->send(std::move(to));
+
+        Message echoed = driver->recv_one();
         if (journal) {
             journal->append(echoed);
         }

@@ -39,7 +39,7 @@ int main()
     std::array<int, kDriverCount> registered_fds{};
 
     for (std::size_t i = 0; i < drivers.size(); ++i) {
-        auto driver = std::make_unique<Driver>("./install/bin/drivers/echo");
+        auto driver = std::make_unique<ShellDriver>("./install/bin/drivers/echo");
         Poller::Token driver_id = static_cast<Poller::Token>(i);
         registered_fds[i] = driver->read_fd();
         poller.add(registered_fds[i], driver_id);
@@ -98,7 +98,7 @@ int main()
         // assert the ready event came from the driver we selected.
         CHECK(registered_fds[driver_index] == driver.read_fd());
 
-        Message echoed = driver.recv();
+        Message echoed = driver.recv_one();
         std::cout
             << "from driver " << driver_id
             << ": " << echoed.header().value("Subject", std::string())

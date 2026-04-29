@@ -2,7 +2,6 @@
 #pragma once
 
 #include <sys/epoll.h>
-#include <sys/eventfd.h>
 #include <unistd.h>
 #include <array>
 

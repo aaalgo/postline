@@ -19,7 +19,7 @@ int main(int argc, char *argv[])
 
     setup_environ();
 
-    Driver* driver = new Driver("./install/bin/drivers/echo");
+    Driver* driver = new ShellDriver("./install/bin/drivers/echo");
 
     for (;;) {
         std::string subject, body;
@@ -40,7 +40,7 @@ int main(int argc, char *argv[])
 
         driver->send(Message(std::move(header)));
 
-        Message echoed = driver->recv();
+        Message echoed = driver->recv_one();
         std::cout << echoed.header().dump() << '\n';
     }
     delete driver;
