@@ -39,8 +39,9 @@ inline void welcome ()
               << reset
               << cyan << "Postline Agent Runtime\nBy Ann Arbor Algorithms\n" << reset
               << "Version: " << postline::build::VERSION << "\n"
-              << "Build:   " << postline::build::BUILD_TYPE << "\n"
-              << "Commit:  " << postline::build::GIT_COMMIT << "\n";
+              << "Commit:  " << postline::build::GIT_COMMIT << "\n"
+              << "Build Type:   " << postline::build::BUILD_TYPE << "\n"
+              << "Build Time:   " << postline::build::BUILD_TIME << "\n";
 }
 
 std::string make_journal_name()
@@ -89,11 +90,10 @@ int main(int argc, char** argv) {
     std::thread runtime_thread([&runtime] {
         runtime.run();
     }); */
+    log::info("Starting runtime.");
     runtime.run();
     log::info("Runtime has been gracefully shutdown.");
-    log::info("Stopping ui.");
+    log::info("Stopping tmux UI.");
     ui.stop();
-    log::info("Bye.");
-
     return 0;
 }

@@ -23,11 +23,22 @@ class Driver;
 struct Agent: immobile {
     AgentID id;
     AgentLink link;
+    std::string driver_name;
     std::vector<AccessID> memory;
     std::unique_ptr<Driver> driver;
+    bool waiting_response;
 
     explicit Agent(AgentID id_, AgentLink link_)
-        : id(id_), link(std::move(link_)) {}
+        : id(id_),
+        link(std::move(link_)),
+        waiting_response(false)
+    {}
+
+    ~Agent() {
+        if (driver) {
+            log::error("Deleting agent {} with open driver.", id);
+        }
+    }
 };
 
 class AgentStore: immobile {

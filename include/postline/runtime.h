@@ -16,7 +16,6 @@
 
 namespace postline {
 
-
 struct Address {
     std::string host;
     std::string domain;
@@ -38,13 +37,14 @@ class Runtime: immobile {
         {
             CHECK(runtime->id == 0);
             CHECK(journal->id == 1);
-            runtime->driver = std::make_unique<QueueDriver>();
+            //runtime->driver = std::make_unique<QueueDriver>();
             user->driver = std::make_unique<PipeInputDriver>(user_input_path);
         }
     }  special;
 
     GroupStore groups;
     Journal    journal;
+    Poller poller;
     bool stop_requested;
 
 public:
@@ -59,16 +59,29 @@ public:
         journal(config.journal_path,
                   config.journal_chain_path,
                   [this](Message &&msg) {
-                        this->process(msg, special.journal);
+                        this->process(std::move(msg), special.journal);
                   }),
         stop_requested(false)
     {
+        //poller.add(special.runtime->driver->read_fd(), special.runtime->id);
+        poller.add(special.user->driver->read_fd(), special.user->id);
+        defaultSetup();
+    }
+
+    void defaultSetup () {
+        // default setup involves
+        //  - a default group
+        //  - an agent "ai" inherited from root
+        Group& default_group = groups.get(groups.create("local"));
+        Agent& ai = agents.get(agents.spawn(special.root->id));
+        default_group.hosts["ai"] = ai.id;
+        ai.driver_name = "openai";
     }
 
     ~Runtime() {
     }
 
-    void handle_runtime_message (Message const &msg) {
+    void handle_runtime_message (Message &&msg) {
 
         std::cout << "====";
         msg.formatEmail(std::cout);
@@ -79,31 +92,51 @@ public:
         }
     }
 
-    void process (Message const &msg, Agent *from) {
-        //std::cout << "======== replay: " <<  replay << std::endl;
-        if (from == special.user) {
-            log::info("processing runtime message");
-            handle_runtime_message(msg);
+    void process (Message &&msg, Agent *from) {
+        json const &header = msg.header();
+        if ((!header.contains("To")) || header["To"].is_null()) {
+            log::error("header doesn't contain To");
+            return;
         }
-        else if (from == special.journal) {
-            // don't process
+        std::string to = header["To"].get<std::string>();
+        Address addr = parse_address(to);
+        if (addr.host == "runtime") {
+            // no matter what is the group,
+            // this is to runtime
+            handle_runtime_message(std::move(msg));
+            return;
         }
-        else {  // common messages
-            json const &header = msg.header();
-            if (!header.contains("To")) CHECK(0, "No header: To");
-            std::string to = header["To"].get<std::string>();
-#if 0           // process logic
-                step 1. expand to_address to canonical form
-                step 2. resolve the address
-                step 3. send the message to agent
-#endif
+
+        GroupID group_id = resolve_domain(addr.domain);
+        if (group_id == NOT_A_GROUP) {
+            log::error("fail to resolve group of {}", to);
+            return;
         }
+        Group &group = groups.get(group_id);
+        auto it = group.hosts.find(addr.host);
+        if (it == group.hosts.end()) {
+            log::error("found group, but fail to find agent {}", to);
+            return;
+        }
+        AgentID agent_id = it->second;
+        Agent *agent = &agents.get(agent_id);
+        if (!agent->driver) {
+            if (agent->driver_name.empty()) {
+                log::error("agent {} {} has empty driver_name", agent_id, to);
+                return;
+            }
+            fs::path cmd = POSTLINE_HOME / "bin" / "drivers" / agent->driver_name;
+            log::info("Creating driver for agent {} {}: {}", agent_id, to, agent->driver_name);
+            agent->driver = std::make_unique<ShellDriver>(cmd.string());
+            CHECK(agent->driver);
+            poller.add(agent->driver->read_fd(), agent->id);
+        }
+        // add to memory
+        agent->driver->send(std::move(msg));
+        agent->waiting_response = true;
     }
 
     void run () {
-        Poller poller;
-        poller.add(special.runtime->driver->read_fd(), special.runtime->id);
-        poller.add(special.user->driver->read_fd(), special.user->id);
 
         struct Todo: noncopyable {
             Message message;
@@ -121,6 +154,7 @@ public:
                 std::vector<Message> tmp;
                 int err = agent->driver->recv(tmp);
                 CHECK(err == 0);
+                agent->waiting_response = false;
                 for (auto &msg: tmp) {
                     msg.set_access_id(journal.append(msg));
                     todo.emplace_back(std::move(msg), agent);
@@ -128,7 +162,7 @@ public:
             }
             for (auto &t: todo) {
                 // all messages received
-                process(t.message, t.agent);
+                process(std::move(t.message), t.agent);
                 if (stop_requested) {
                     log::info("Stop requested, ignoring {} pending messages.", todo.size());
                     break;
@@ -137,7 +171,20 @@ public:
             if (stop_requested) break;
         }
         // gracefully shutdown all pending
-        log::info("Make sure you come back to close drivers.");
+        for (std::size_t i = 0; i < agents.size(); ++i) {
+            Agent *agent = &agents.get(i);
+            if (agent->waiting_response) {
+                CHECK(agent->driver);
+                log::info("Waiting for agent {} to respond...", i);
+                std::vector<Message> msg;
+                agent->driver->recv(msg);  // TODO: add to journal?
+                agent->waiting_response = false;
+            }
+            if (agent->driver) {    // bye
+                log::info("Stopping agent {} driver...", i);
+                agent->driver.reset();
+            }
+        }
     }
 
     AgentID spawn_agent(AgentID parent, AccessID anchor = NO_ACCESS_ID) {
@@ -175,7 +222,6 @@ public:
         if (domain.starts_with("g.")) {
             return parse_group_id(domain);
         }
-
         return groups.find(domain);
     }
 
@@ -198,14 +244,19 @@ public:
 
     static Address parse_address(std::string const& address) {
         auto pos = address.find('@');
-        CHECK(pos != std::string::npos);
-        CHECK(pos > 0);
-        CHECK(pos + 1 < address.size());
-
-        return Address{
-            .host = address.substr(0, pos),
-            .domain = address.substr(pos + 1),
-        };
+        if (pos == std::string::npos) {
+            return Address{
+                .host = address.substr(0, pos)
+            };
+        }
+        else {
+            CHECK(pos > 0);
+            CHECK(pos + 1 < address.size());
+            return Address{
+                .host = address.substr(0, pos),
+                .domain = address.substr(pos + 1),
+            };
+        }
     }
 
     AgentID resolve(std::string const& address) const {
