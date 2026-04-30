@@ -15,6 +15,7 @@ struct View {
 };
 
 namespace journal {
+
 struct Root : public View {
     static constexpr std::string_view type = "journal:root";
     std::string prev;
@@ -38,10 +39,36 @@ struct Root : public View {
 
 }
 
+namespace runtime {
+
+struct Shutdown : public View {
+    static constexpr std::string_view type = "runtime:shutdown";
+    AccessID last_processed_id = NO_ACCESS_ID;
+
+    explicit Shutdown(Message const& msg)
+        : View(msg, type)
+    {
+        auto const &header = msg.header();
+        if (header.contains("last_processed_id") && !header["last_processed_id"].is_null()) {
+            last_processed_id = header["last_processed_id"].get<int>();
+        }
+    }
+
+    static Message make(AccessID last_processed_id) {
+        json header{
+            {"type", type},
+            {"last_processed_id", last_processed_id}
+        };
+        return Message(std::move(header));
+    }
+};
+
+}
+
 namespace agent {
 
 struct Hello : public View {
-    static constexpr std::string_view type = "driver:hello";
+    static constexpr std::string_view type = "agent:hello";
     int spawn_type;
     int history_mode;
 

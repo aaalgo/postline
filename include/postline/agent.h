@@ -2,6 +2,7 @@
 #include <vector>
 #include <memory>
 #include <unordered_map>
+#include "driver.h"
 
 namespace postline {
 
@@ -23,14 +24,16 @@ class Driver;
 struct Agent: immobile {
     AgentID id;
     AgentLink link;
-    std::string driver_name;
+    std::string service;
+    std::string address;
     std::vector<AccessID> memory;
     std::unique_ptr<Driver> driver;
     bool waiting_response;
 
-    explicit Agent(AgentID id_, AgentLink link_)
+    explicit Agent(AgentID id_, AgentLink link_, std::string const &service_)
         : id(id_),
         link(std::move(link_)),
+        service(service_),
         waiting_response(false)
     {}
 
@@ -49,8 +52,10 @@ public:
 
     AgentID spawn(AgentID parent, AccessID anchor = NO_ACCESS_ID) {
 
+        std::string service;
         if (parent != NOT_AN_AGENT && anchor == NO_ACCESS_ID) {
             Agent& p = get(parent);
+            service = p.service;
             if (!p.memory.empty()) {
                 anchor = p.memory.back();
             }
@@ -58,10 +63,10 @@ public:
 
         AgentID id = static_cast<AgentID>(agents_.size());
 
-        agents_.push_back(std::make_unique<Agent>(agents_.size(), AgentLink{
+        agents_.push_back(std::make_unique<Agent>(id, AgentLink{
             .parent = parent,
             .anchor = anchor,
-        }));
+        }, service));
 
         return id;
     }

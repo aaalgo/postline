@@ -23,6 +23,18 @@
 
 using namespace postline;
 
+char const *LOCAL = R"(
+{
+"name": "local",
+"members": [
+{"from": "agent@home", "as": "echo", "service": "shell:echo", "clone": true},
+{"from": "agent@home", "as": "ai", "service": "shell:openai", "clone": true},
+{"from": "agent@home", "as": "shell", "service": "shell:shell", "clone": true},
+{"from": "agent@home", "as": "mcp", "service": "shell:mcp_bridge", "clone": true}
+]
+}
+)";
+
 inline void welcome ()
 {
     using namespace termcolor;
@@ -82,6 +94,12 @@ int main(int argc, char** argv) {
         CLI11_PARSE(app, argc, argv);
     }
 
+
+    json h{{"From", "user@home"},
+           {"To", "runtime@home"},
+           {"Subject", "create_group"}};
+    Message local(std::move(h), std::string(LOCAL));
+
     TMuxUI ui;
 
     setup_environ();
@@ -90,7 +108,10 @@ int main(int argc, char** argv) {
     ui.start_helper(POSTLINE_HOME/"bin"/"servers"/ui_server, detach);
     config.cli_input_path = ui.cli_input_path();
     config.cli_output_path = ui.cli_output_path();
+    log::info("constructing runtime");
     Runtime runtime(config);
+    log::info("enqueue 1st message");
+    runtime.enqueue(std::move(local));
     log::info("Starting runtime.");
     runtime.run();
     log::info("Runtime has been gracefully shutdown.");

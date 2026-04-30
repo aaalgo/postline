@@ -20,6 +20,31 @@
 namespace ftxui {
 using postline::check_fail;
 
+static inline Element waiting(int tick)
+{
+    static const std::array<char const*, 10> frames = {
+        "⠋", "⠙", "⠹", "⠸", "⠼",
+        "⠴", "⠦", "⠧", "⠇", "⠏",
+    };
+
+    static const std::array<Color, 6> colors = {
+        Color::Cyan,
+        Color::Blue,
+        Color::Magenta,
+        Color::Red,
+        Color::Yellow,
+        Color::Green,
+    };
+
+    auto frame = frames[tick % frames.size()];
+    auto fg = colors[tick % colors.size()];
+
+    return hbox({
+        text(frame) | color(fg),
+        text(" Waiting for response ..."),
+    }) | bold;
+}
+
 // CLI displays a compact email composer for the current conversation.
 //
 // Root layout: top row with To/Subject, body editor below.
@@ -33,6 +58,7 @@ class CLI {
     std::string body_;
     int to_selected_ = 0;
     bool can_send_ = false;
+    int tick_ = 0;
 
     std::function<void(postline::Message &&)> send_callback_;
     std::mutex mutex_;
@@ -73,32 +99,6 @@ class CLI {
         if (!address.empty()) {
             to_list_.insert(std::move(address));
         }
-    }
-
-    void addAddressList (postline::json const &value) {
-        if (value.is_array()) {
-            for (auto const &item : value) {
-                CHECK(item.is_string());
-                addAddress(item.get<std::string>());
-            }
-            return;
-        }
-        if (value.is_string()) {
-            std::string_view remaining = value.get_ref<std::string const &>();
-            for (;;) {
-                std::size_t off = remaining.find(',');
-                std::string part;
-                if (off == std::string_view::npos) {
-                    part.assign(remaining);
-                    addAddress(std::move(part));
-                    return;
-                }
-                part.assign(remaining.substr(0, off));
-                addAddress(std::move(part));
-                remaining.remove_prefix(off + 1);
-            }
-        }
-        CHECK(0, "Unexpected Cc header type: {}", value.dump());
     }
 
     void rebuildToEntries () {
@@ -165,7 +165,7 @@ class CLI {
         send_callback_(postline::Message(postline::json{
             {"From", from_},
             {"To", "runtime"},
-            {"Subject", "bye"},
+            {"Subject", "exit"},
         }));
         can_send_ = false;
         return true;
@@ -183,20 +183,19 @@ class CLI {
             }
         }
 
-        std::string to;
-        if (header.contains("From") && !header["From"].is_null()) {
-            to = header["From"].get<std::string>();
-            addAddress(to);
+        from_ = msg.to();
+
+        std::string to = msg.from();
+        addAddress(to);
+        {
+            std::string reply_to = msg.get("Reply-To");
+            if (!reply_to.empty()) {
+                addAddress(reply_to);
+                to.swap(reply_to);
+            }
         }
-        if (header.contains("Reply-To") && !header["Reply-To"].is_null()) {
-            to = header["Reply-To"].get<std::string>();
-            addAddress(to);
-        }
-        if (header.contains("To") && !header["To"].is_null()) {
-            from_ = header["To"].get<std::string>();
-        }
-        if (header.contains("Cc") && !header["Cc"].is_null()) {
-            addAddressList(header["Cc"]);
+        for (std::string const &a: msg.cc()) {
+            addAddress(a);
         }
 
         rebuildToEntries();
@@ -209,6 +208,7 @@ class CLI {
 
         can_send_ = !from_.empty() && !selectedTo().empty();
     }
+
 
     Component makeComponent () {
         rebuildToEntries();
@@ -292,6 +292,13 @@ class CLI {
         });
 
         auto component = Renderer(layout, [&] {
+            if (!can_send_) {
+                return waiting(tick_);
+            }
+
+            Element exit_field = hbox({
+                exit_button_->Render(),
+            }) | bgcolor(Color::DarkRed);
             Element to_field = hbox({
                 text("To: "),
                 to_dropdown_->Render() | flex,
@@ -300,10 +307,7 @@ class CLI {
                 text("Subject: "),
                 subject_input_->Render() | flex,
             }) | bgcolor(Color::Black);
-            Element exit_field = hbox({
-                exit_button_->Render(),
-            }) | bgcolor(Color::DarkRed);
-
+            
             return vbox({
                        hbox({
                            exit_field,
@@ -369,7 +373,20 @@ public:
 
         body_input_->TakeFocus();
         loop_ready_.release();
+
+        std::atomic<bool> running = true;
+        std::thread ticker([&] {
+            while (running) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(500));
+                tick_++;
+                screen.PostEvent(Event::Custom);
+            }
+        });
+
         screen.Loop(component);
+
+        running = false;
+        ticker.join();
 
         {
             std::lock_guard<std::mutex> lock(mutex_);

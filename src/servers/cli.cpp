@@ -15,7 +15,7 @@ protected:
     void exit () {
         std::cout << "Exiting..." << std::endl;
         json h{
-            {"type", "agent:bye"},
+            {"type", "exit"},
             {"To", "runtime"},
             {"From", "from"}
         };

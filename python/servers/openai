@@ -39,7 +39,7 @@ def main():
     fd_out = sys.stdout.fileno()
 
     msg = Message()
-    msg.set('type', 'driver:hello')
+    msg.set('type', 'agent:hello')
     msg.set('spawn_type', 0)
     msg.set('history_mode', 1)
     msg.write(fd_out)
@@ -50,10 +50,10 @@ def main():
     client = OpenAI()
 
     history = History()
-    if msg.get('type') == 'driver:begin_history':
+    if msg.get('type') == 'agent:begin_history':
         while True:
             msg = Message.read(fd_in);
-            if msg.get('type') == 'driver:end_history':
+            if msg.get('type') == 'agent:end_history':
                 msg = None
                 break;
             # handle history

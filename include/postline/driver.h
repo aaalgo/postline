@@ -23,6 +23,10 @@ enum class DriverHistoryMode : std::uint16_t
 
 class Driver: noncopyable {
 public:
+    struct Config {
+        std::string name;
+        std::string params;
+    };
     virtual ~Driver () {}
     virtual int send(Message &&msg) = 0;
     virtual int recv(std::vector<Message> &out) = 0;
@@ -198,6 +202,25 @@ public:
     DriverSpawnType spawn_type() const noexcept override { return DriverSpawnType::ADDRESS;}
     DriverHistoryMode history_mode() const noexcept override { return DriverHistoryMode::NONE; }
 };
+
+static inline std::unique_ptr<Driver> create_driver (std::string const &service) {
+    std::string driver;
+    std::string params;
+    auto off = service.find(':');
+    if (off == service.npos) {
+        driver = service;
+    }
+    else {
+        driver = service.substr(0, off);
+        params = service.substr(off + 1);
+    }
+    if (driver == "shell") {
+        std::string command = (POSTLINE_HOME / "bin" / "servers").string() + "/" + params;
+        return std::make_unique<ShellDriver>(std::string(command));
+    }
+    else CHECK(0, "dynamically createing driver {} not supported", driver);
+    return nullptr;
+}
 
 
 } // namespace postline

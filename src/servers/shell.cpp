@@ -59,7 +59,7 @@ static CommandResult run_command(char const* cmd)
         ::close(out_pipe[1]);
         ::close(err_pipe[1]);
 
-        ::execlp(cmd, cmd, nullptr);
+        ::execl("/bin/sh", "sh", "-c", cmd, nullptr);
         _exit(127);
     }
 

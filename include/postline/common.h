@@ -113,6 +113,53 @@ namespace postline {
             CHECK(body_raw_.size() <= MAX_BODY_SIZE);
         }
 
+        std::string const& get(char const* key) const
+        {
+            auto it = header_.find(key);
+            if (it == header_.end() || it->is_null()) {
+                static const std::string empty;
+                return empty;
+            }
+            CHECK(it->is_string());
+            return it->get_ref<std::string const&>();
+        }
+
+        std::string const &type () const {
+            return get("type");
+        }
+
+        std::string const &from () const {
+            return get("From");
+        }
+
+        std::string const &to () const {
+            return get("To");
+        }
+
+        std::vector<std::string> cc () const {
+            std::vector<std::string> ret;
+            auto it = header_.find("Cc");
+            if (it == header_.end() || it->is_null()) {
+                return ret;
+            }
+            if (it->is_string()) {
+                ret.emplace_back(it->get<std::string>());
+                return ret;
+            }
+            else if (it->is_array()) {
+                for (auto const &item : *it) {
+                    CHECK(item.is_string());
+                    ret.emplace_back(item.get<std::string>());
+                }
+                return ret;
+            }
+            CHECK(0);
+        }
+
+        std::string const &subject () const {
+            return get("Subject");
+        }
+
         void updateHeader (std::function<void(json &)> callback) {
             callback(header_);
             //header_raw_ = header_.dump();
@@ -133,6 +180,8 @@ namespace postline {
         }
 
         json const& header() const { return header_; }
+
+        std::string const &body () const { return body_raw_;}
     };
 
 } // namespace postline
