@@ -43,6 +43,7 @@ class CLI {
     Component to_dropdown_;
     Component subject_input_;
     Component body_input_;
+    Component exit_button_;
 
     static bool IsSubmitShortcut(Event event) {
         return event == Event::F12 ||
@@ -104,6 +105,21 @@ class CLI {
         send_callback_(makeMessage(std::move(to),
                                    std::move(subject),
                                    std::move(body)));
+        can_send_ = false;
+        return true;
+    }
+
+    bool sendExit () {
+        if (!can_send_) {
+            return false;
+        }
+
+        CHECK(send_callback_);
+        send_callback_(postline::Message(postline::json{
+            {"From", from_},
+            {"To", "runtime"},
+            {"Subject", "bye"},
+        }));
         can_send_ = false;
         return true;
     }
@@ -177,11 +193,52 @@ class CLI {
             return state.element;
         };
 
-        to_dropdown_ = Dropdown(&to_entries_, &to_selected_);
+        DropdownOption to_option;
+        to_option.radiobox.entries = &to_entries_;
+        to_option.radiobox.selected = &to_selected_;
+        to_option.checkbox.transform = [](EntryState const& state) {
+            Element prefix = text(state.state ? "v " : "> ");
+            Element label = text(state.label);
+            if (state.focused) {
+                label |= inverted;
+            }
+            return hbox({
+                std::move(prefix),
+                std::move(label),
+            });
+        };
+        to_option.transform =
+            [](bool open, Element checkbox, Element radiobox) {
+                if (open) {
+                    return vbox({
+                        std::move(checkbox),
+                        std::move(radiobox),
+                    });
+                }
+                return std::move(checkbox);
+            };
+        to_dropdown_ = Dropdown(std::move(to_option));
         subject_input_ = Input(&subject_, "Subject", subject_option);
         body_input_ = Input(&body_, "Write here...", body_option);
+        ButtonOption exit_option;
+        exit_option.label = "Exit";
+        exit_option.on_click = [this] {
+            sendExit();
+        };
+        exit_option.transform = [this](EntryState const& state) {
+            Element element = text(state.label);
+            if (!can_send_) {
+                element |= dim;
+            }
+            if (state.focused) {
+                element |= inverted;
+            }
+            return element;
+        };
+        exit_button_ = Button(std::move(exit_option));
 
         auto top = Container::Horizontal({
+            exit_button_,
             to_dropdown_,
             subject_input_,
         });
@@ -194,28 +251,25 @@ class CLI {
             Element to_field = hbox({
                 text("To: "),
                 to_dropdown_->Render() | flex,
-            });
+            }) | bgcolor(Color::Blue);
             Element subject_field = hbox({
                 text("Subject: "),
                 subject_input_->Render() | flex,
-            });
-            Element status =
-                text(can_send_ ? "Alt+Enter or F12 to send"
-                               : "Waiting for a message...") |
-                color(can_send_ ? Color::GreenLight : Color::GrayDark);
+            }) | bgcolor(Color::Black);
+            Element exit_field = hbox({
+                exit_button_->Render(),
+            }) | bgcolor(Color::DarkRed);
 
             return vbox({
                        hbox({
+                           exit_field,
+                           text(" "),
                            to_field | size(WIDTH, EQUAL, 32),
-                           separator(),
+                           text(" "),
                            subject_field | flex,
                        }),
-                       separator(),
-                       body_input_->Render() | frame | vscroll_indicator | flex,
-                       separator(),
-                       status,
+                       body_input_->Render() | flex,
                    }) |
-                   border |
                    flex;
         });
 
@@ -254,7 +308,7 @@ public:
     }
 
     void run () {
-        auto screen = ScreenInteractive::Fullscreen();
+        auto screen = ScreenInteractive::FitComponent();
         auto component = makeComponent();
 
         std::vector<postline::Message> queued_messages;

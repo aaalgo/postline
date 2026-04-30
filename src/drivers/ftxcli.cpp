@@ -16,7 +16,7 @@ using namespace postline;
 
 int main(int argc, char** argv) {
     CHECK(argc == 3, "usage: {} READ_PATH WRITE_PATH", argv[0]);
-    std::cout << "[ftxcli] " << argv[1] << " " << argv[2] << std::endl;
+    //std::cout << "[ftxcli] " << argv[1] << " " << argv[2] << std::endl;
 
     int write_fd = ::open(argv[2], O_WRONLY | O_CLOEXEC);
     CHECK_FD(write_fd);
@@ -32,9 +32,9 @@ int main(int argc, char** argv) {
         can_receive.release();
     });
 
-    std::cout << "Sending hello" << std::endl;
+    //std::cout << "Sending hello" << std::endl;
     protocol::agent::Hello::make(0, 0).write(write_fd);
-    std::cout << "Hello sent, waiting for reply" << std::endl;
+    //std::cout << "Hello sent, waiting for reply" << std::endl;
 
     std::thread reader([&] {
         for (;;) {

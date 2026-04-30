@@ -61,7 +61,7 @@ public:
         run_cmd({
             "tmux", "split-window",
             "-v",
-            "-l", "15%",
+            "-l", "25%",
             "-t", session_ + ":0",
             "bash", "-lc", bottom_cmd
         });

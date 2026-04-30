@@ -64,8 +64,10 @@ public:
         stop_requested(false)
     {
         log::info("Initializing runtime");
+        special.runtime->driver = std::make_unique<QueueDriver>();
         special.user->driver = std::make_unique<ShellDriver>(config.cli_input_path,
                                                      config.cli_output_path);
+        poller.add(special.runtime->driver->read_fd(), special.runtime->id);
         poller.add(special.user->driver->read_fd(), special.user->id);
         log::info("Default setup");
         defaultSetup();
@@ -76,8 +78,13 @@ public:
         //  - a default group
         //  - an agent "ai" inherited from root
         Group& default_group = groups.get(groups.create("local"));
+
+        Agent& echo = agents.get(agents.spawn(special.root->id));
+        echo.driver_name = "echo";
+        default_group.hosts["echo"] = echo.id;
+
         Agent& ai = agents.get(agents.spawn(special.root->id));
-        ai.driver_name = "echo";
+        ai.driver_name = "openai";
         default_group.hosts["ai"] = ai.id;
 
         Agent& shell = agents.get(agents.spawn(special.root->id));
@@ -92,7 +99,7 @@ public:
         json header{
             {"From", "runtime"},
             {"To", "user@local"},
-            {"Cc", json::array({"shell@local"})},
+            {"Cc", json::array({"shell@local", "echo@local"})},
             {"Reply-To", "ai@local"},
             {"Subject", "hello"}
         };
@@ -105,11 +112,33 @@ public:
 
     void handle_runtime_message (Message &&msg) {
 
-        if (msg.header()["type"].get_ref<std::string const &>() == "agent:bye") {
+        json const &header = msg.header();
+        if (header.contains("type") && header["type"].is_string() && header["type"].get_ref<std::string const &>() == "agent:bye") {
             stop_requested = true;
             log::info("Stop request received.");
             log::info("Runtime will shutdown.");
+            return;
         }
+        std::string subject;
+        if (header.contains("Subject") && header["Subject"].is_string()) {
+            subject = header["Subject"].get_ref<std::string const &>();
+        }
+        if (subject == "bye") {
+            stop_requested = true;
+            log::info("Stop request received.");
+            log::info("Runtime will shutdown.");
+            return;
+        }
+        if (subject == "list_agents") {
+            std::cout << "Listing agents:" << std::endl;
+            for (std::size_t i = 0; i < agents.size(); ++i) {
+                std::cout << "[" << i << "]" << std::endl;
+            }
+        }
+        json respHeader{{"From", header["To"]},
+                    {"To", header["From"]},
+                    {"Subject:", "done"}};
+        special.runtime->driver->send(Message(std::move(respHeader)));
     }
 
     void process (Message &&msg, Agent *from) {
