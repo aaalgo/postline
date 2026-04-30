@@ -54,6 +54,52 @@ class CLI {
                event.input() == "\x1B[13;3u";
     }
 
+    static void trimAddress (std::string &address) {
+        auto is_space = [](char c) {
+            return c == ' ' || c == '\t';
+        };
+
+        while (!address.empty() && is_space(address.front())) {
+            address.erase(address.begin());
+        }
+        while (!address.empty() && is_space(address.back())) {
+            address.pop_back();
+        }
+    }
+
+    void addAddress (std::string address) {
+        trimAddress(address);
+        if (!address.empty()) {
+            to_list_.insert(std::move(address));
+        }
+    }
+
+    void addAddressList (postline::json const &value) {
+        if (value.is_array()) {
+            for (auto const &item : value) {
+                CHECK(item.is_string());
+                addAddress(item.get<std::string>());
+            }
+            return;
+        }
+        if (value.is_string()) {
+            std::string_view remaining = value.get_ref<std::string const &>();
+            for (;;) {
+                std::size_t off = remaining.find(',');
+                std::string part;
+                if (off == std::string_view::npos) {
+                    part.assign(remaining);
+                    addAddress(std::move(part));
+                    return;
+                }
+                part.assign(remaining.substr(0, off));
+                addAddress(std::move(part));
+                remaining.remove_prefix(off + 1);
+            }
+        }
+        CHECK(0, "Unexpected Cc header type: {}", value.dump());
+    }
+
     void rebuildToEntries () {
         to_entries_.assign(to_list_.begin(), to_list_.end());
         std::sort(to_entries_.begin(), to_entries_.end());
@@ -139,20 +185,17 @@ class CLI {
         std::string to;
         if (header.contains("From") && !header["From"].is_null()) {
             to = header["From"].get<std::string>();
-            to_list_.insert(to);
+            addAddress(to);
         }
         if (header.contains("Reply-To") && !header["Reply-To"].is_null()) {
             to = header["Reply-To"].get<std::string>();
-            to_list_.insert(to);
+            addAddress(to);
         }
         if (header.contains("To") && !header["To"].is_null()) {
             from_ = header["To"].get<std::string>();
         }
-        if (header.contains("Cc") && header["Cc"].is_array()) {
-            for (auto const& item : header["Cc"]) {
-                std::string cc = item.get<std::string>();
-                to_list_.insert(cc);
-            }
+        if (header.contains("Cc") && !header["Cc"].is_null()) {
+            addAddressList(header["Cc"]);
         }
 
         rebuildToEntries();

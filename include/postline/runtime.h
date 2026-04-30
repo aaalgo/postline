@@ -91,6 +91,10 @@ public:
         shell.driver_name = "shell";
         default_group.hosts["shell"] = shell.id;
 
+        Agent& mcp = agents.get(agents.spawn(special.root->id));
+        mcp.driver_name = "mcp_bridge";
+        default_group.hosts["mcp"] = mcp.id;
+
         default_group.hosts["user"] = special.user->id;
         //ai.driver_name = "openai";
         // to trigger off the conversation
@@ -99,7 +103,7 @@ public:
         json header{
             {"From", "runtime"},
             {"To", "user@local"},
-            {"Cc", json::array({"shell@local", "echo@local"})},
+            {"Cc", json::array({"shell@local", "echo@local", "mcp@local"})},
             {"Reply-To", "ai@local"},
             {"Subject", "hello"}
         };
