@@ -149,7 +149,7 @@ class Runtime: immobile {
             if (member.clone) {
                 id = agents.spawn(from);
                 if (!member.service.empty()) {
-                    Agent &agent = agents.get(from);
+                    Agent &agent = agents.get(id);
                     agent.service = member.service;
                     agent.address = std::format("{}@{}", member.as, conf.name);
                 }
