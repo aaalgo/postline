@@ -46,9 +46,9 @@ public:
         }
 
         std::string bottom_cmd =
-            shell_quote(path_to_helper.string()) + " " +
-            shell_quote(input_fifo_.string()) + " " +
-            shell_quote(output_fifo_.string());
+            shell_quote(path_to_helper.string()) +
+            " --stdin " + shell_quote(input_fifo_.string()) + 
+            " --stdout " + shell_quote(output_fifo_.string());
 
         if (fake) {
             bottom_cmd = "echo run from terminal the following commnad; echo " + bottom_cmd + "; sleep infinity";

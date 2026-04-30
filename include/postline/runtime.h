@@ -49,7 +49,7 @@ class Runtime: immobile {
 public:
     struct Config {
         std::string journal_path;
-        std::string journal_chain_path;
+        std::string resume_path;
         std::string cli_output_path;   // the user driver will read this
         std::string cli_input_path;    // the user driver will write this
     };
@@ -57,7 +57,7 @@ public:
     Runtime(Config const &config)
         : special(agents),
         journal(config.journal_path,
-                  config.journal_chain_path,
+                  config.resume_path,
                   [this](Message &&msg) {
                         this->process(std::move(msg), special.journal);
                   }),
@@ -182,7 +182,7 @@ public:
                 log::error("agent {} {} has empty driver_name", agent_id, to);
                 return;
             }
-            fs::path cmd = POSTLINE_HOME / "bin" / "drivers" / agent->driver_name;
+            fs::path cmd = POSTLINE_HOME / "bin" / "servers" / agent->driver_name;
             log::info("Creating driver for agent {} {}: {}", agent_id, to, agent->driver_name);
             agent->driver = std::make_unique<ShellDriver>(
                     std::format("{} 2> agent-{}.log", cmd.string(), agent->id));

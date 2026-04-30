@@ -38,6 +38,7 @@ class CLI {
     std::mutex mutex_;
     std::vector<postline::Message> pending_messages_;
     ScreenInteractive* screen_ = nullptr;
+    std::binary_semaphore loop_ready_{0};
     Closure exit_loop_;
 
     Component to_dropdown_;
@@ -367,12 +368,28 @@ public:
         }
 
         body_input_->TakeFocus();
+        loop_ready_.release();
         screen.Loop(component);
 
         {
             std::lock_guard<std::mutex> lock(mutex_);
             exit_loop_ = Closure();
             screen_ = nullptr;
+        }
+    }
+
+    void request_exit()
+    {
+        Closure exit;
+        loop_ready_.acquire();
+
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            exit = exit_loop_;
+        }
+
+        if (exit) {
+            exit();
         }
     }
 };

@@ -10,20 +10,20 @@ using journal_replay_fn = std::function<void(Message &&)>;
 
 class Journal {
 
-    std::string chain_head_path_;
+    std::string resume_path_;
     std::vector<int> fds_;
     int write_fd_;          // write_fd_ is fds_.back(), don't close it separately
     unsigned last_segment_; // fds_.size() - 1
     off_t offset_;          // keeping track of write_fd_ size
 
-    void create_new_segment(std::string const& new_segment_path,
-                            std::string const& chain_head_path)
+    void create_new_segment(std::string const& journal_path,
+                            std::string const& resume_path)
     {
-        int fd = ::open(new_segment_path.c_str(),
+        int fd = ::open(journal_path.c_str(),
                         O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC,
                         0644);
         CHECK_FD(fd);
-        protocol::journal::Root::make(chain_head_path).write(fd);
+        protocol::journal::Root::make(resume_path).write(fd);
         ::close(fd);
     }
 
@@ -31,7 +31,7 @@ class Journal {
         std::vector<int> reverse_fds;
         std::unordered_set<std::string> seen;
 
-        std::string path = chain_head_path_;
+        std::string path = resume_path_;
         while (!path.empty()) {
             log::info("Discovered journal segment: {}", path);
             CHECK(!seen.contains(path));
@@ -46,19 +46,19 @@ class Journal {
     }
 
 public:
-    Journal(std::string const& new_segment_path,
-            std::string const& chain_head_path,
+    Journal(std::string const& journal_path,
+            std::string const& resume_path,
             journal_replay_fn replay)
     {
-        if (!new_segment_path.empty()) {
-            log::info("Creating new journal segment: {}", new_segment_path);
-            create_new_segment(new_segment_path, chain_head_path);
-            chain_head_path_ = new_segment_path;
+        if (!journal_path.empty()) {
+            log::info("Creating new journal segment: {}", journal_path);
+            create_new_segment(journal_path, resume_path);
+            resume_path_ = journal_path;
         }
         else {
-            chain_head_path_ = chain_head_path;
+            resume_path_ = resume_path;
         }
-        CHECK(!chain_head_path_.empty());
+        CHECK(!resume_path_.empty());
         discover_chain();
 
         // replay
@@ -82,7 +82,7 @@ public:
 
         // reopen the last fd for append
         ::close(fds_.back());
-        write_fd_ = ::open(chain_head_path_.c_str(), O_RDWR | O_CLOEXEC);
+        write_fd_ = ::open(resume_path_.c_str(), O_RDWR | O_CLOEXEC);
         CHECK_FD(write_fd_);
         fds_.back() = write_fd_;
         last_segment_ = fds_.size() - 1;

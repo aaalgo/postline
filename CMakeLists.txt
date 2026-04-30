@@ -152,40 +152,40 @@ set_target_properties(postline_bin PROPERTIES
 )
 
 add_executable(echo_actor
-    src/drivers/echo.cpp
+    src/servers/echo.cpp
 )
-target_link_libraries(echo_actor PRIVATE postline::postline)
+target_link_libraries(echo_actor PRIVATE postline::postline CLI11::CLI11)
 set_target_properties(echo_actor PROPERTIES
     OUTPUT_NAME echo
-    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/install/bin/drivers"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/install/bin/servers"
 )
 
 add_executable(shell_actor
-    src/drivers/shell.cpp
+    src/servers/shell.cpp
 )
-target_link_libraries(shell_actor PRIVATE postline::postline)
+target_link_libraries(shell_actor PRIVATE postline::postline CLI11::CLI11)
 set_target_properties(shell_actor PROPERTIES
     OUTPUT_NAME shell
-    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/install/bin/drivers"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/install/bin/servers"
 )
 
 add_executable(cli_actor
-    src/drivers/cli.cpp
+    src/servers/cli.cpp
 )
-target_link_libraries(cli_actor PRIVATE postline::postline)
+target_link_libraries(cli_actor PRIVATE postline::postline CLI11::CLI11)
 set_target_properties(cli_actor PROPERTIES
     OUTPUT_NAME cli
-    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/install/bin/drivers"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/install/bin/servers"
 )
 
 add_executable(ftxcli_actor
-    src/drivers/ftxcli.cpp
+    src/servers/ftxcli.cpp
 )
-target_link_libraries(ftxcli_actor PRIVATE postline::postline)
+target_link_libraries(ftxcli_actor PRIVATE postline::postline CLI11::CLI11)
 target_link_libraries(ftxcli_actor PRIVATE postline::tui_deps)
 set_target_properties(ftxcli_actor PROPERTIES
     OUTPUT_NAME ftxcli
-    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/install/bin/drivers"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/install/bin/servers"
 )
 
 add_executable(run_driver
@@ -236,11 +236,11 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/python/postline")
             "${CMAKE_CURRENT_SOURCE_DIR}/python/postline"
             "${CMAKE_BINARY_DIR}/install/python/postline"
     )
-    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/python/drivers")
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/python/servers")
         add_custom_command(TARGET copy_python_tree POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_directory
-                "${CMAKE_CURRENT_SOURCE_DIR}/python/drivers"
-                "${CMAKE_BINARY_DIR}/install/bin/drivers"
+                "${CMAKE_CURRENT_SOURCE_DIR}/python/servers"
+                "${CMAKE_BINARY_DIR}/install/bin/servers"
         )
     endif()
 endif()

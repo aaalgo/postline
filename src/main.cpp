@@ -70,12 +70,15 @@ int main(int argc, char** argv) {
     CLI::App app{"Postline Agent Runtime"};
     Runtime::Config config;
     config.journal_path = make_journal_name();
-    bool fake = false;
+    std::string ui_server = "ftxcli";
+    bool detach = false;
     {
         CLI::App app{"Postline driver tester"};
         argv = app.ensure_utf8(argv);
         app.add_option("-j,--journal", config.journal_path, "");
-        app.add_flag("-f,--fake", fake, "");
+        app.add_option("-r,--resume", config.resume_path, "");
+        app.add_option("--ui", ui_server, "");
+        app.add_flag("--detach", detach, "");
         CLI11_PARSE(app, argc, argv);
     }
 
@@ -84,7 +87,7 @@ int main(int argc, char** argv) {
     setup_environ();
     welcome();
     init_logging();
-    ui.start_helper(POSTLINE_HOME/"bin"/"drivers"/"ftxcli", fake);
+    ui.start_helper(POSTLINE_HOME/"bin"/"servers"/ui_server, detach);
     config.cli_input_path = ui.cli_input_path();
     config.cli_output_path = ui.cli_output_path();
     Runtime runtime(config);

@@ -44,8 +44,8 @@ class ShellDriver: public Driver {
     DriverSpawnType spawn_;
     DriverHistoryMode history_;
 
-    int output_fd_ = -1;
     int input_fd_ = -1;
+    int output_fd_ = -1;
     pid_t pid_ = -1;
 
     void handshake () {
@@ -103,8 +103,8 @@ public:
 
     explicit ShellDriver(std::string const &cli_input_path,
                          std::string const &cli_output_path)
-        :output_fd_(::open(cli_output_path.c_str(), O_RDONLY | O_CLOEXEC)),
-        input_fd_(::open(cli_input_path.c_str(), O_WRONLY | O_CLOEXEC))
+        : input_fd_(::open(cli_input_path.c_str(), O_WRONLY | O_CLOEXEC)),
+        output_fd_(::open(cli_output_path.c_str(), O_RDONLY | O_CLOEXEC))
     {
         log::info("shell driver read from {} and write to {}", cli_output_path, cli_input_path);
         handshake();
