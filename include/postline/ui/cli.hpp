@@ -18,6 +18,7 @@
 #include "ftxui/screen/color.hpp"
 
 namespace ftxui {
+using postline::check_fail;
 
 // CLI displays a compact email composer for the current conversation.
 //
@@ -130,6 +131,12 @@ class CLI {
         }
         if (header.contains("To") && !header["To"].is_null()) {
             from_ = header["To"].get<std::string>();
+        }
+        if (header.contains("Cc") && header["Cc"].is_array()) {
+            for (auto const& item : header["Cc"]) {
+                std::string cc = item.get<std::string>();
+                to_list_.insert(cc);
+            }
         }
 
         rebuildToEntries();

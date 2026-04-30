@@ -105,12 +105,12 @@ int main()
         json respHeader;
 
         auto it = header.find("From");
-        if (it != header.end()) {
+        if (it != header.end() && it->is_string()) {
             respHeader["To"] = *it;
         }
 
         it = header.find("To");
-        if (it != header.end()) {
+        if (it != header.end() && it->is_string()) {
             respHeader["From"] = *it;
         }
 
@@ -136,8 +136,8 @@ int main()
                         json{{"Content-Disposition", "attachment; filename=\"stderr\""}},
                         std::move(result.stderr_));
             }
-            Message resp(json{{"Subject", std::format("exit status {}", result.exit_status)}},
-                            parts);
+            respHeader["Subject"] = std::format("exit status {}", result.exit_status);
+            Message resp(std::move(respHeader), parts);
             resp.write(STDOUT_FILENO);
         }
     }

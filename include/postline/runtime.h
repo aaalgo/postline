@@ -92,7 +92,7 @@ public:
         json header{
             {"From", "runtime"},
             {"To", "user@local"},
-            {"Cc", "shell@local"},
+            {"Cc", json::array({"shell@local"})},
             {"Reply-To", "ai@local"},
             {"Subject", "hello"}
         };

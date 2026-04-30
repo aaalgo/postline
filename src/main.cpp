@@ -84,7 +84,7 @@ int main(int argc, char** argv) {
     setup_environ();
     welcome();
     init_logging();
-    ui.start_helper(POSTLINE_HOME/"bin"/"drivers"/"cli", fake);
+    ui.start_helper(POSTLINE_HOME/"bin"/"drivers"/"ftxcli", fake);
     config.cli_input_path = ui.cli_input_path();
     config.cli_output_path = ui.cli_output_path();
     Runtime runtime(config);

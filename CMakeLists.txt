@@ -178,6 +178,16 @@ set_target_properties(cli_actor PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/install/bin/drivers"
 )
 
+add_executable(ftxcli_actor
+    src/drivers/ftxcli.cpp
+)
+target_link_libraries(ftxcli_actor PRIVATE postline::postline)
+target_link_libraries(ftxcli_actor PRIVATE postline::tui_deps)
+set_target_properties(ftxcli_actor PROPERTIES
+    OUTPUT_NAME ftxcli
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/install/bin/drivers"
+)
+
 add_executable(run_driver
     src/run_driver.cpp
 )
