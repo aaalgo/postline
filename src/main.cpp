@@ -18,7 +18,6 @@
 #include <string>
 #include <CLI/CLI.hpp>
 #include <postline/runtime.h>
-#include <postline/tmux_ui.h>
 #include "build_info.hpp"
 
 using namespace postline;
@@ -89,8 +88,10 @@ int main(int argc, char** argv) {
         argv = app.ensure_utf8(argv);
         app.add_option("-j,--journal", config.journal_path, "");
         app.add_option("-r,--resume", config.resume_path, "");
-        app.add_option("--ui", ui_server, "");
-        app.add_flag("--detach", detach, "");
+        app.add_option("--user-stdin", config.cli_input_path, "");
+        app.add_option("--user-stdout", config.cli_output_path, "");
+        //app.add_option("--ui", ui_server, "");
+        //app.add_flag("--detach", detach, "");
         CLI11_PARSE(app, argc, argv);
     }
 
@@ -100,22 +101,17 @@ int main(int argc, char** argv) {
            {"Subject", "create_group"}};
     Message local(std::move(h), std::string(LOCAL));
 
-    TMuxUI ui;
-
     setup_environ();
     welcome();
     init_logging();
-    ui.start_helper(POSTLINE_HOME/"bin"/"servers"/ui_server, detach);
-    config.cli_input_path = ui.cli_input_path();
-    config.cli_output_path = ui.cli_output_path();
+    //ui.start_helper(POSTLINE_HOME/"bin"/"servers"/ui_server, detach);
     log::info("constructing runtime");
     Runtime runtime(config);
     log::info("enqueue 1st message");
-    runtime.send(std::move(local));
+    runtime.enqueue(std::move(local));
     log::info("Starting runtime.");
     runtime.run();
     log::info("Runtime has been gracefully shutdown.");
-    log::info("Stopping tmux UI.");
-    ui.stop();
+    std::cerr << "[exit]" << std::endl;
     return 0;
 }

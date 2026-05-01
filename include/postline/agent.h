@@ -37,6 +37,19 @@ struct Agent: immobile {
         waiting_response(false)
     {}
 
+    json dump () const {
+        return json{
+            {"id", id},
+            {"link", {
+                {"parent", link.parent},
+                {"anchor", link.anchor}
+            }},
+            {"service", service},
+            {"address", address},
+            {"memory", memory}
+        };
+    }
+
     ~Agent() {
         if (driver) {
             log::error("Deleting agent {} with open driver.", id);
@@ -48,6 +61,14 @@ class AgentStore: immobile {
     std::vector<std::unique_ptr<Agent>> agents_;
 public:
     AgentStore() {
+    }
+
+    json dump () const {
+        json j = json::array();
+        for (auto const &p: agents_) {
+            j.push_back(p->dump());
+        }
+        return j;
     }
 
     AgentID spawn(AgentID parent, AccessID anchor = NO_ACCESS_ID) {
@@ -96,6 +117,30 @@ struct Group: immobile {
     std::string name; // empty => anonymous / temporary group
     std::unordered_map<std::string, AgentID> hosts;
 
+    json dump () const {
+        json j;
+        j["name"] = name;
+
+        std::vector<std::pair<std::string, AgentID>> items(
+            hosts.begin(), hosts.end()
+        );
+
+        std::sort(items.begin(), items.end(),
+            [](auto const& a, auto const& b) {
+                return a.first < b.first;
+            });
+
+        nlohmann::ordered_json h = nlohmann::ordered_json::object();
+        for (auto const& [k, v] : items) {
+            h[k] = v;
+        }
+
+        j["hosts"] = std::move(h);
+
+        return j;
+    }
+
+
     explicit Group(std::string name_ = "")
         : name(std::move(name_)) {}
 };
@@ -106,6 +151,14 @@ class GroupStore: immobile {
 
 public:
     GroupStore() {
+    }
+
+    json dump () const {
+        json j = json::array();
+        for (auto const &p: groups_) {
+            j.push_back(p->dump());
+        }
+        return j;
     }
 
     GroupID create(std::string name = "") {

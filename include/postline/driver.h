@@ -28,7 +28,7 @@ public:
         std::string params;
     };
     virtual ~Driver () {}
-    virtual int send(Message &&msg) = 0;
+    virtual int send(Message const &msg) = 0;
     virtual int recv(std::vector<Message> &out) = 0;
     Message recv_one () {
         std::vector<Message> all;
@@ -141,7 +141,7 @@ public:
     DriverSpawnType spawn_type() const noexcept override { return spawn_; }
     DriverHistoryMode history_mode() const noexcept override { return history_; }
 
-    int send(Message &&msg) override
+    int send(Message const &msg) override
     {
         msg.write(input_fd_);
         return 0;
@@ -184,7 +184,11 @@ public:
         ::close(wake_fd);
     }
 
-    int send(Message && msg) override {
+    int send(Message const &msg) override {
+        CHECK(0);
+    }
+
+    int enqueue (Message && msg) {
         {
             std::lock_guard<std::mutex> lock(mutex);
             pending.emplace_back(std::move(msg));

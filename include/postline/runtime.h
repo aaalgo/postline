@@ -157,6 +157,19 @@ class Runtime: immobile {
         return j[key].get<bool>();
     }
 
+    json dump () const {
+        json j{
+            {"agents", agents.dump()},
+            {"groups", groups.dump()},
+        };
+        return j;
+    }
+
+    void dump (std::string const &path) {
+       std::ofstream ofs(path);
+       ofs << dump().dump(4);   // 4 = pretty print
+    }
+
     void createGroup (Message &&msg, std::vector<std::string> *addrs) {
         json ops = json::array();
 
@@ -359,7 +372,7 @@ public:
         }
 
         if (reply) {
-            send(Message(std::move(respHeader), std::move(respBody)));
+            enqueue(Message(std::move(respHeader), std::move(respBody)));
         }
     }
 
@@ -430,8 +443,8 @@ public:
         }
     }
 
-    void send (Message &&msg) {
-        special.runtime->driver->send(std::move(msg));
+    void enqueue (Message &&msg) {
+        dynamic_cast<LoopDriver*>(special.runtime->driver.get())->enqueue(std::move(msg));
     }
 
     void run () {

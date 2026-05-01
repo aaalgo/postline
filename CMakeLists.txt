@@ -17,6 +17,8 @@ if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
     set(CMAKE_INSTALL_PREFIX "${CMAKE_BINARY_DIR}/install" CACHE PATH "Install path prefix" FORCE)
 endif()
 
+set(POSTLINE_INSTALL_BIN_DIR "${CMAKE_BINARY_DIR}/install/bin")
+
 option(POSTLINE_BUILD_TESTS "Build postline tests" ON)
 
 find_package(Python3 REQUIRED COMPONENTS Interpreter Development.Module)
@@ -148,7 +150,7 @@ target_link_libraries(postline_bin PRIVATE postline_install_bin_deps)
 target_link_libraries(postline_bin PRIVATE postline::tui_deps)
 set_target_properties(postline_bin PROPERTIES
     OUTPUT_NAME postline
-    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/install/bin"
+    RUNTIME_OUTPUT_DIRECTORY "${POSTLINE_INSTALL_BIN_DIR}"
 )
 
 add_executable(echo_actor
@@ -193,7 +195,7 @@ add_executable(run_driver
 )
 target_link_libraries(run_driver PRIVATE postline_install_bin_deps)
 set_target_properties(run_driver PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/install/bin"
+    RUNTIME_OUTPUT_DIRECTORY "${POSTLINE_INSTALL_BIN_DIR}"
 )
 
 add_executable(dump_journal
@@ -201,7 +203,7 @@ add_executable(dump_journal
 )
 target_link_libraries(dump_journal PRIVATE postline_install_bin_deps)
 set_target_properties(dump_journal PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/install/bin"
+    RUNTIME_OUTPUT_DIRECTORY "${POSTLINE_INSTALL_BIN_DIR}"
 )
 
 add_library(_postline MODULE
@@ -245,6 +247,35 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/python/postline")
     endif()
 endif()
 
+file(GLOB POSTLINE_SCRIPTS
+    CONFIGURE_DEPENDS
+    LIST_DIRECTORIES false
+    "${CMAKE_CURRENT_SOURCE_DIR}/scripts/*"
+)
+file(GLOB POSTLINE_PYTHON_SCRIPTS
+    CONFIGURE_DEPENDS
+    LIST_DIRECTORIES false
+    "${CMAKE_CURRENT_SOURCE_DIR}/python/scripts/*"
+)
+set(POSTLINE_INSTALL_BIN_SCRIPTS
+    ${POSTLINE_SCRIPTS}
+    ${POSTLINE_PYTHON_SCRIPTS}
+)
+
+add_custom_target(copy_install_bin_scripts ALL
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${POSTLINE_INSTALL_BIN_DIR}"
+)
+
+foreach(script IN LISTS POSTLINE_INSTALL_BIN_SCRIPTS)
+    add_custom_command(
+        TARGET copy_install_bin_scripts
+        POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${script}"
+            "${POSTLINE_INSTALL_BIN_DIR}/"
+    )
+endforeach()
+
 if(POSTLINE_BUILD_TESTS)
     include(CTest)
 
@@ -280,6 +311,12 @@ install(TARGETS run_driver
 install(TARGETS _postline
     LIBRARY DESTINATION python/postline
 )
+
+if(POSTLINE_INSTALL_BIN_SCRIPTS)
+    install(PROGRAMS ${POSTLINE_INSTALL_BIN_SCRIPTS}
+        DESTINATION bin
+    )
+endif()
 
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/python")
     install(DIRECTORY python/
