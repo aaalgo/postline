@@ -111,7 +111,7 @@ int main(int argc, char** argv) {
     log::info("constructing runtime");
     Runtime runtime(config);
     log::info("enqueue 1st message");
-    runtime.enqueue(std::move(local));
+    runtime.send(std::move(local));
     log::info("Starting runtime.");
     runtime.run();
     log::info("Runtime has been gracefully shutdown.");

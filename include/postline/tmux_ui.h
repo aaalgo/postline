@@ -304,12 +304,12 @@ private:
             "-t", session_,
             "pane-border-status", "off"
         });        
+        /*
         run_cmd({
             "tmux", "set-option",
             "-t", session_,
             "mouse", "on"
         });        
-        /*
         run_cmd({
             "tmux", "unbind", "-n",
             "MouseDrag1Pane"

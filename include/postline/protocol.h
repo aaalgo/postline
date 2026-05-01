@@ -16,6 +16,10 @@ struct View {
 
 namespace journal {
 
+    // these messages never go above Journal
+    // Runtime doesn't see these messages
+    // these messages do not have From/To/... like typical messages
+
 struct Root : public View {
     static constexpr std::string_view type = "journal:root";
     std::string prev;
@@ -40,26 +44,25 @@ struct Root : public View {
 }
 
 namespace runtime {
+    
+    // These are the runtime data structure modifying messages
+    // They are processed by Runtime::commit and should never fail.
+    // these messages do not have From/To/... like typical messages
 
-struct Shutdown : public View {
-    static constexpr std::string_view type = "runtime:shutdown";
-    AccessID last_processed_id = NO_ACCESS_ID;
+struct Commit : public View {
+    static constexpr std::string_view type = "runtime:commit";
+    json ops;    // operations
 
-    explicit Shutdown(Message const& msg)
-        : View(msg, type)
+    explicit Commit(Message const& msg)
+        : View(msg, type),
+        ops(json::parse(msg.body()))
     {
-        auto const &header = msg.header();
-        if (header.contains("last_processed_id") && !header["last_processed_id"].is_null()) {
-            last_processed_id = header["last_processed_id"].get<int>();
-        }
     }
 
-    static Message make(AccessID last_processed_id) {
-        json header{
-            {"type", type},
-            {"last_processed_id", last_processed_id}
-        };
-        return Message(std::move(header));
+    static Message make(json const &ops) {
+        json header{{"type", type}};
+        std::string body = ops.dump();
+        return Message(std::move(header), std::move(body));
     }
 };
 

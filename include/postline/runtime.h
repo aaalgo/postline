@@ -8,6 +8,8 @@
 #include <utility>
 #include <vector>
 
+#include <stdexcept>
+
 #include "common.h"
 #include "driver.h"
 #include "agent.h"
@@ -39,6 +41,12 @@ static inline Address parse_address(std::string const& address) {
 }
 
 
+class commit_error : public std::runtime_error {
+public:
+    using std::runtime_error::runtime_error;
+};
+
+/*
 struct GroupConfig {
     struct MemberConfig {
         Address from;
@@ -99,6 +107,7 @@ struct GroupConfig {
         }
     }
 };
+*/
 
 class Runtime: immobile {
     AgentStore agents;
@@ -133,48 +142,63 @@ class Runtime: immobile {
     bool stop_requested;
     AccessID last_processed_id = NO_ACCESS_ID;
 
-    void createGroup (GroupConfig const &conf) {
-        CHECK(groups.find(conf.name) == NOT_A_GROUP);
-        Group& group = groups.get(groups.create(conf.name));
-        log::info("group names: {}", group.hosts.size());
-        json cc = json::array();
-        for (auto const &member: conf.members) {
-            log::info("adding {} to {}", member.as, conf.name);
-            //CHECK(group.hosts.find(member.as) == group.hosts.end());
-            log::info("OK");
-            AgentID from = resolve(member.from);
-            log::info("{}", from);
-            CHECK(from != NOT_AN_AGENT);
-            AgentID id = from;
-            if (member.clone) {
-                id = agents.spawn(from);
-                if (!member.service.empty()) {
-                    Agent &agent = agents.get(id);
-                    agent.service = member.service;
-                    agent.address = std::format("{}@{}", member.as, conf.name);
-                }
-            }
-            else {
-                CHECK(member.service.empty(), "cannot relace service of existing agent");
-            }
-            group.hosts[member.as] = id;
-            log::info("{}@{} = {}, {}", member.as, conf.name, id, member.service);
-            cc.push_back(std::format("{}@{}", member.as, conf.name));
-        }
-        for (auto const &p: group.hosts) {
-            log::info("{} => {}", p.first, p.second);
-        }
-        listAgents();
+    static std::string const &commit_get_string (json const &j, std::string const &key) {
+        if (!j.contains(key)) throw commit_error(std::format("missing {}", key));
+        if (!j[key].is_string()) throw commit_error(std::format("{} is not string", key));
+        return j[key].get_ref<std::string const &>();
+    }
 
-        json header{
-            {"From", "runtime"},
-            {"To", "user@home"},
-            {"Cc", cc},
-            {"Reply-To", "ai@local"},
-            {"Subject", "hello"}
-        };
-        log::info("Sending message to user");
-        enqueue(Message(std::move(header)));
+    static bool commit_get_bool (json const &j, std::string const &key) {
+        if (!j.contains(key)) throw commit_error(std::format("missing {}", key));
+        if (!j[key].is_boolean()) throw commit_error(std::format("{} is not string", key));
+        return j[key].get<bool>();
+    }
+
+    void createGroup (Message &&msg, std::vector<std::string> *addrs) {
+        json ops = json::array();
+
+        json j(json::parse(msg.body()));
+
+        std::string const &group_name = commit_get_string(j, "name");
+        if (groups.find(group_name) != NOT_A_GROUP) throw commit_error("group already exists");
+
+        ops.push_back(json{{"op", "group_create"}, {"group", group_name}});
+
+        if (!j.contains("members")) throw commit_error("missing members");
+        auto const &arr = j["members"];
+        if (!arr.is_array()) throw commit_error("members is not array");
+
+        std::unordered_set<std::string> seen;
+        for (size_t i = 0; i < arr.size(); ++i) {
+            auto const &m = arr[i];
+            if (!m.is_object()) throw commit_error("member is not object");
+            std::string const &from = commit_get_string(m, "from");
+            std::string const &as = commit_get_string(m, "as");
+            std::string service;
+            bool clone = true;
+            if (m.contains("service")) {
+                service = commit_get_string(m, "service");
+            }
+            if (m.contains("clone")) {
+                clone = commit_get_bool(m, "clone");
+            }
+
+            if ((!clone) && (!service.empty())) throw commit_error("cannot rewrite service");
+
+            AgentID from_id = resolve(from);
+            if (from_id == NOT_AN_AGENT) throw commit_error(std::format("cannot resolve from {}", from));
+            if (seen.find(as) != seen.end()) throw commit_error(std::format("{} appears twice", as));
+
+            ops.push_back(json{{"op", "group_add"},
+                               {"group", group_name},
+                               {"from", from},
+                               {"as", as},
+                               {"service", service},
+                               {"clone", clone}});
+            addrs->emplace_back(std::format("{}@{}", as, group_name));
+        }
+        journal.append(protocol::runtime::Commit::make(ops));
+        commit(ops);
     }
 
     void listAgents() {
@@ -183,6 +207,42 @@ class Runtime: immobile {
                 auto &agent = agents.get(i);
                 log::info("{}: {} {}", i, agent.address, agent.service);
             }
+    }
+
+    void commit (json const &ops) {
+        CHECK(ops.is_array());
+        for (size_t i = 0; i < ops.size(); ++i) {
+            auto const &m = ops[i];
+            CHECK(m.is_object());
+            std::string const &op = commit_get_string(m, "op");
+            if (op == "group_create") {
+                std::string const &group_name = commit_get_string(m, "group");
+                groups.create(group_name);
+                log::info("create group {}", group_name);
+            }
+            else if (op == "group_add") {
+                std::string const &group_name = commit_get_string(m, "group");
+                Group &group = groups.get(groups.find(group_name));
+                std::string const &from = commit_get_string(m, "from");
+                std::string const &as = commit_get_string(m, "as");
+                std::string const &service = commit_get_string(m, "service");
+                bool clone = commit_get_bool(m, "clone");
+                AgentID from_id = resolve(from);
+                AgentID id = from_id;
+                if (clone) {
+                    id = agents.spawn(from_id);
+                    Agent &agent = agents.get(id);
+                    agent.service = service;
+                    agent.address = std::format("{}@{}", as, group_name);
+                    log::info("create agent {}: {}", id, agent.address);
+                }
+                group.hosts[as] = id;
+            }
+            else if (op == "shutdown") {
+                ;
+            }
+            else CHECK(0, "UNKNOWN OP");
+        }
     }
 
 public:
@@ -198,12 +258,18 @@ public:
         journal(config.journal_path,
                   config.resume_path,
                   [this](Message &&msg) {
-                        this->process(std::move(msg), special.journal);
+                        if (msg.type().starts_with("agent:")) {
+                            this->process(std::move(msg), special.journal);
+                        }
+                        else {
+                            protocol::runtime::Commit c(msg);
+                            commit(c.ops);
+                        }
                   }),
         stop_requested(false)
     {
         log::info("Initializing runtime");
-        special.runtime->driver = std::make_unique<QueueDriver>();
+        special.runtime->driver = std::make_unique<LoopDriver>();
         special.user->driver = std::make_unique<ShellDriver>(config.cli_input_path,
                                                      config.cli_output_path);
         poller.add(special.runtime->driver->read_fd(), special.runtime->id);
@@ -253,7 +319,14 @@ public:
     }
     */
 
-    void handle_runtime_message (Message &&msg) {
+    void recv (Message &&msg) {
+
+        json respHeader{{"From", msg.to()},
+                    {"To", msg.from()},
+                    {"Subject", "OK"},
+                    };
+        std::string respBody;
+        bool reply = true;
 
         std::string const &command = msg.subject();
 
@@ -261,86 +334,96 @@ public:
             stop_requested = true;
             log::info("Stop request received.");
             log::info("Runtime will shutdown.");
-            // "exit" command doesn't reply
-            return;
+            reply = false;
         }
         if (command == "list_agents") {
             listAgents();
-            json respHeader{{"From", msg.to()},
-                        {"To", msg.from()}};
-            enqueue(Message(std::move(respHeader)));
-            return;
         }
         else if (command == "create_group") {
-            createGroup(GroupConfig(msg));
-            return;
+            try {
+                std::vector<std::string> members;
+                createGroup(std::move(msg), &members);
+                json cc = json::array();
+                for (auto const &addr: members) {
+                    cc.push_back(addr);
+                }
+                respHeader["Cc"] = cc;
+            }
+            catch (commit_error &e) {
+                respHeader["Subjet"] = e.what();
+            }
         }
-        json respHeader{{"From", msg.to()},
-                    {"To", msg.from()},
-                    {"Subject", "Unknown command"}};
-        enqueue(Message(std::move(respHeader)));
+
+        if (reply) {
+            send(Message(std::move(respHeader), std::move(respBody)));
+        }
     }
 
     void process (Message &&msg, Agent *from) {
-        if (from == special.journal) return;    // TODO FIX
+        // if from == journal, then it is journal replay
+        CHECK(msg.has_access_id());
+        bool is_replay = (from == special.journal);
+
         std::cout << "--------" << std::endl;
         msg.formatEmail(std::cout);
         std::cout << std::endl;
 
-/*
-        std::string const &from = msg.from();
-        std::string const &to = msg.from();
-        auto out = msg.cc();
-        */
-        
-        // for each message
-        // resolve
-        // put save
-        // for to and cc, send
+        int constexpr LEVEL_FROM = 0;   // save, don't deliver
+        int constexpr LEVEL_CC = 1;     // send, don't expect return
+        int constexpr LEVEL_TO = 2;     // send, expect return
+                                        // the numbers cannot change
+        std::vector<std::pair<Agent *, int>> todo;
 
-        json const &header = msg.header();
-        if ((!header.contains("To")) || header["To"].is_null()) {
-            log::error("header doesn't contain To");
-            return;
-        }
-        std::string to = header["To"].get<std::string>();
-        Address addr = parse_address(to);
-        if (addr.host == "runtime") {
-            // no matter what is the group,
-            // this is to runtime
-            handle_runtime_message(std::move(msg));
-            return;
-        }
-
-        GroupID group_id = resolve_domain(addr.domain);
-        if (group_id == NOT_A_GROUP) {
-            log::error("fail to resolve group of {}", to);
-            return;
-        }
-        Group &group = groups.get(group_id);
-        auto it = group.hosts.find(addr.host);
-        if (it == group.hosts.end()) {
-            log::error("found group, but fail to find agent {}", to);
-            return;
-        }
-        AgentID agent_id = it->second;
-        Agent *agent = &agents.get(agent_id);
-        if (!agent->driver) {
-            if (agent->service.empty()) {
-                log::error("agent {} {} has empty service", agent_id, to);
-                return;
+        {   // process from
+            std::string const &addr  = msg.from();
+            Agent *agent = &agents.get(resolve(addr));
+            if (!is_replay) {   // if not replay, we cannot
+                                // let agent add to other's mailbox
+                //CHECK(agent == from); // TODO: handle the initial message from main
+                                        // which is from user but handled via runtime
+                ;
             }
-            log::info("Creating driver for agent {} {}: {}", agent_id, to, agent->service);
-            agent->driver = create_driver(agent->service);
-            CHECK(agent->driver);
-            poller.add(agent->driver->read_fd(), agent->id);
+            todo.emplace_back(agent, LEVEL_FROM);
         }
-        // add to memory
-        agent->driver->send(std::move(msg));
-        agent->waiting_response = true;
+        {   // process to
+            std::string const &addr  = msg.to();
+            Agent *agent = &agents.get(resolve(addr));
+            todo.emplace_back(agent, LEVEL_TO);
+        }
+
+        for (auto const &addr: msg.cc()) {
+            Agent *agent = &agents.get(resolve(addr));
+            todo.emplace_back(agent, LEVEL_CC);
+        }
+
+        for (auto [agent, level]: todo) {
+            agent->memory.push_back(msg.access_id());   // save to memory
+            if ((level >= LEVEL_CC) && !is_replay) {
+                if (agent == special.runtime) {
+                    recv(std::move(msg));
+                }
+                else {  // deliver
+                    if (!agent->driver) {
+                        if (agent->service.empty()) {
+                            log::error("agent {} {} has empty service", agent->id, agent->address);
+                            return;
+                        }
+                        log::info("Creating driver for agent {} {}: {}", agent->id, agent->address, agent->service);
+                        agent->driver = create_driver(agent->service);
+                        CHECK(agent->driver);
+                        poller.add(agent->driver->read_fd(), agent->id);
+                    }
+                    // add to memory
+                    agent->driver->send(std::move(msg));
+                }
+                if (level == LEVEL_TO) {
+                    agent->waiting_response = true;
+                }
+            }
+        }
     }
 
-    void enqueue (Message &&msg) {
+    void send (Message &&msg) {
         special.runtime->driver->send(std::move(msg));
     }
 
@@ -403,24 +486,12 @@ public:
             }
         }
         log::info("{} messages unprocessed.", trailing);
-        journal.append(protocol::runtime::Shutdown::make(last_processed_id));
+        json ops = json::array();
+        json op{{"op", "shutdown"},
+                {"last_processed_id", last_processed_id}};
+        ops.push_back(op);
+        journal.append(protocol::runtime::Commit::make(ops));
         log::info("runtime shutdown.");
-    }
-
-    AgentID spawn_agent(AgentID parent, AccessID anchor = NO_ACCESS_ID) {
-        return agents.spawn(parent, anchor);
-    }
-
-    GroupID create_group(std::string name = "") {
-        return groups.create(std::move(name));
-    }
-
-    void bind(GroupID group_id, std::string host, AgentID agent_id) {
-        CHECK(agents.exists(agent_id));
-
-        Group& group = groups.get(group_id);
-        auto [it, inserted] = group.hosts.emplace(std::move(host), agent_id);
-        CHECK(inserted);
     }
 
     AgentID resolve(Address const& addr) const {

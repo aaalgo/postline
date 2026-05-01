@@ -157,18 +157,30 @@ public:
     int read_fd () const override { return output_fd_; }
 };
 
-class QueueDriver: public Driver {
+class LoopDriver: public Driver {
+    // LoopDriver is a local API
+    // to send messages to the runtime
+    // There are two cases:
+    // - Runtime sends message to itself
+    //      via LoopDriver so that the message
+    //      goes through standard processing
+    // - Other entities in the same process as Runtime
+    //      to send message to runtime
+    // 
+    // The send is not exposed; use
+    // Runtime::send
+    //
     int wake_fd;
     std::mutex mutex;
     std::vector<Message> pending;
 public:
-    QueueDriver ()
+    LoopDriver ()
         : wake_fd(eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC))
     {
         CHECK(wake_fd >= 0);
     }
 
-    ~QueueDriver () {
+    ~LoopDriver () {
         ::close(wake_fd);
     }
 
