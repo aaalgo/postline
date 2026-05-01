@@ -15,6 +15,7 @@ class Journal {
     int write_fd_;          // write_fd_ is fds_.back(), don't close it separately
     unsigned last_segment_; // fds_.size() - 1
     off_t offset_;          // keeping track of write_fd_ size
+    bool read_only_;
 
     void create_new_segment(std::string const& journal_path,
                             std::string const& resume_path)
@@ -49,15 +50,22 @@ public:
     Journal(std::string const& journal_path,
             std::string const& resume_path,
             journal_replay_fn replay)
+        : write_fd_(-1),
+          last_segment_(0),
+          offset_(0),
+          read_only_(true)
     {
+        bool read_only = true;
         if (!journal_path.empty()) {
             log::info("Creating new journal segment: {}", journal_path);
             create_new_segment(journal_path, resume_path);
             resume_path_ = journal_path;
+            read_only = false;
         }
         else {
             resume_path_ = resume_path;
         }
+        read_only_ = read_only;
         CHECK(!resume_path_.empty());
         discover_chain();
 
@@ -81,13 +89,15 @@ public:
         }
 
         // reopen the last fd for append
-        ::close(fds_.back());
-        write_fd_ = ::open(resume_path_.c_str(), O_RDWR | O_CLOEXEC);
-        CHECK_FD(write_fd_);
-        fds_.back() = write_fd_;
+        if (!read_only_) {
+            ::close(fds_.back());
+            write_fd_ = ::open(resume_path_.c_str(), O_RDWR | O_CLOEXEC);
+            CHECK_FD(write_fd_);
+            fds_.back() = write_fd_;
+            offset_ = ::lseek(write_fd_, 0, SEEK_END);
+            CHECK(offset_ > 0);
+        }
         last_segment_ = fds_.size() - 1;
-        offset_ = ::lseek(write_fd_, 0, SEEK_END);
-        CHECK(offset_ > 0);
     }
 
     ~Journal() {
@@ -98,6 +108,7 @@ public:
     Journal& operator=(Journal const&) = delete;
 
     AccessID append(Message const &message) {
+        if (write_fd_ < 0) return NO_ACCESS_ID;
         AccessID access_id = make_access_id(last_segment_, offset_);
         offset_ += message.write(write_fd_);
         return access_id;

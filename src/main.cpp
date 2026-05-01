@@ -95,20 +95,28 @@ int main(int argc, char** argv) {
         CLI11_PARSE(app, argc, argv);
     }
 
-
-    json h{{"From", "user@home"},
-           {"To", "runtime@home"},
-           {"Subject", "create_group"}};
-    Message local(std::move(h), std::string(LOCAL));
-
     setup_environ();
     welcome();
     init_logging();
     //ui.start_helper(POSTLINE_HOME/"bin"/"servers"/ui_server, detach);
     log::info("constructing runtime");
     Runtime runtime(config);
-    log::info("enqueue 1st message");
-    runtime.enqueue(std::move(local));
+
+    if (config.resume_path.empty()) {
+        log::info("Sending kick off message.");
+        json h{{"From", "user@home"},
+               {"To", "runtime@home"},
+               {"Subject", "create_group"}};
+        Message local(std::move(h), std::string(LOCAL));
+        runtime.enqueue(std::move(local));
+    }
+    else {
+        log::info("Sending message.");
+        json h{{"From", "runtime@home"},
+               {"To", "user@home"},
+               {"Subject", "hello"}};
+        runtime.enqueue(Message(std::move(h)));
+    }
     log::info("Starting runtime.");
     runtime.run();
     log::info("Runtime has been gracefully shutdown.");

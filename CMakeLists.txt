@@ -105,6 +105,7 @@ add_library(postline
     src/common.cpp
     src/parser.cpp
     src/environ.cpp
+    src/runtime.cpp
 )
 add_library(postline::postline ALIAS postline)
 
@@ -118,6 +119,7 @@ target_include_directories(postline
 
 target_link_libraries(postline
     PUBLIC
+        CLI11::CLI11
         nlohmann_json::nlohmann_json
         spdlog::spdlog_header_only
     PRIVATE
@@ -203,6 +205,14 @@ add_executable(dump_journal
 )
 target_link_libraries(dump_journal PRIVATE postline_install_bin_deps)
 set_target_properties(dump_journal PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${POSTLINE_INSTALL_BIN_DIR}"
+)
+
+add_executable(inspect_journal
+    src/inspect_journal.cpp
+)
+target_link_libraries(inspect_journal PRIVATE postline_install_bin_deps)
+set_target_properties(inspect_journal PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${POSTLINE_INSTALL_BIN_DIR}"
 )
 
