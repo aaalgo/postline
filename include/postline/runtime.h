@@ -150,7 +150,7 @@ class Runtime: immobile {
 
     static bool commit_get_bool (json const &j, std::string const &key) {
         if (!j.contains(key)) throw commit_error(std::format("missing {}", key));
-        if (!j[key].is_boolean()) throw commit_error(std::format("{} is not string", key));
+        if (!j[key].is_boolean()) throw commit_error(std::format("{} is not bool", key));
         return j[key].get<bool>();
     }
 
@@ -188,6 +188,7 @@ class Runtime: immobile {
             AgentID from_id = resolve(from);
             if (from_id == NOT_AN_AGENT) throw commit_error(std::format("cannot resolve from {}", from));
             if (seen.find(as) != seen.end()) throw commit_error(std::format("{} appears twice", as));
+            seen.insert(as);
 
             ops.push_back(json{{"op", "group_add"},
                                {"group", group_name},
@@ -350,7 +351,7 @@ public:
                 respHeader["Cc"] = cc;
             }
             catch (commit_error &e) {
-                respHeader["Subjet"] = e.what();
+                respHeader["Subject"] = e.what();
             }
         }
 
