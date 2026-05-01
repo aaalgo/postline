@@ -83,6 +83,8 @@ class Runtime: immobile {
     void recv (Message &&msg);
     void process (Message &&msg, Agent *from);
 
+    void updateMemory (Agent *);
+
 
     AgentID resolve(Address const& addr) const;
     GroupID resolve_domain(std::string const& domain) const;

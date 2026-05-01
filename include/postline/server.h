@@ -12,6 +12,7 @@
 
 #include <CLI/CLI.hpp>
 #include <postline/common.h>
+#include <postline/protocol.h>
 
 
 namespace postline {
@@ -192,7 +193,7 @@ public:
             std::string type =
                 msg.header().value("type", std::string{});
 
-            if (type == "agent:bye") {
+            if (type == protocol::handshake::Bye::type) {
                 break;
             }
 
@@ -208,7 +209,7 @@ protected:
 
     virtual Message hello()
     {
-        return protocol::agent::Hello::make(0, 0);
+        return protocol::handshake::Hello::make(0, 0);
     }
 
     virtual void bye() {}

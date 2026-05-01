@@ -10,6 +10,7 @@
 #include <vector>
 
 #include <postline/common.h>
+#include <postline/protocol.h>
 
 #include "ftxui/component/component.hpp"
 #include "ftxui/component/component_options.hpp"
@@ -172,15 +173,13 @@ class CLI {
     }
 
     void process (postline::Message &&msg) {
-        postline::json const& header = msg.header();
-        if (header.contains("type") && !header["type"].is_null()) {
-            if (header.value("type", std::string()) == "agent:bye") {
-                can_send_ = false;
-                if (exit_loop_) {
-                    exit_loop_();
-                }
-                return;
+        std::string const &type = msg.type();
+        if (type == postline::protocol::handshake::Bye::type) {
+            can_send_ = false;
+            if (exit_loop_) {
+                exit_loop_();
             }
+            return;
         }
 
         from_ = msg.to();
@@ -196,6 +195,16 @@ class CLI {
         }
         for (std::string const &a: msg.cc()) {
             addAddress(a);
+        }
+
+        if (type == "ui:update_agents") {
+            postline::json j = postline::json::parse(msg.body());
+            for (size_t i = 0; i < j.size(); ++i) {
+                auto const &m = j[i];
+                if (m.contains("address")) {
+                    addAddress(m["address"].get<std::string>());
+                }
+            }
         }
 
         rebuildToEntries();

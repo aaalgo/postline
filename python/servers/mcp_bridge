@@ -153,7 +153,7 @@ def main():
     fd_out = sys.stdout.buffer
 
     Message({
-        "type": "agent:hello",
+        "type": "handshake:hello",
         "spawn_type": 0,
         "history_mode": 0,
     }).write(fd_out)
@@ -174,7 +174,7 @@ def main():
             except EOFError:
                 break
 
-            if msg.get("type") == "agent:bye":
+            if msg.get("type") == "handshake:bye":
                 break
 
             try:

@@ -17,16 +17,18 @@ using namespace postline;
 int main(int argc, char** argv) {
   if (argc != 2) return 1;
   int cnt = 0;
-  Journal j(std::string(), argv[1], [&cnt](Message const &msg){
-          std::string type;
-          json const &header = msg.header();
-          auto it = header.find("type");
-          if (it != header.end() && !it->is_null()) {
-            type = it->get<std::string>();
-          }
-          std::cout << "======== " << cnt << " : " << type << std::endl;
-          msg.formatEmail(std::cout);
-          std::cout << std::endl;
+  Journal j(std::string(), argv[1], [&cnt](Message const &message){
+        std::cout << "======== access_id=" << message.access_id() << '\n';
+        if (message.header().contains("To")) {
+            message.formatEmail(std::cout);
+        }
+        else {
+            std::cout << message.header().dump(4) << std::endl;
+            if (!message.body().empty()) {
+                std::cout << message.body() << std::endl;
+            }
+        }
+        std::cout << std::endl;
   });
   return 0;
 }

@@ -68,10 +68,14 @@ struct Commit : public View {
 
 }
 
-namespace agent {
+namespace handshake {
+
+    // these messages shouldn't go into journal
+    // therefore they don't go through Runtime::process
+    // and they shouldn't go into agent memory either
 
 struct Hello : public View {
-    static constexpr std::string_view type = "agent:hello";
+    static constexpr std::string_view type = "haneshake:hello";
     int spawn_type;
     int history_mode;
 
@@ -92,8 +96,28 @@ struct Hello : public View {
     }
 };
 
+struct BeginMemory {
+    static constexpr std::string_view type = "handshake:begin_memory";
+
+    static Message make() {
+        return Message(json{
+            {"type", type},
+        });
+    }
+};
+
+struct EndMemory {
+    static constexpr std::string_view type = "handshake:end_memory";
+
+    static Message make() {
+        return Message(json{
+            {"type", type},
+        });
+    }
+};
+
 struct Bye : public View {
-    static constexpr std::string_view type = "agent:bye";
+    static constexpr std::string_view type = "handshake:bye";
 
     explicit Bye(Message const& msg)
         : View(msg, type)

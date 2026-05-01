@@ -37,6 +37,11 @@ struct Agent: immobile {
         waiting_response(false)
     {}
 
+    AccessID anchor () const {
+        if (memory.empty()) return NO_ACCESS_ID;
+        return memory.back();
+    }
+
     json dump () const {
         return json{
             {"id", id},
@@ -77,9 +82,7 @@ public:
         if (parent != NOT_AN_AGENT && anchor == NO_ACCESS_ID) {
             Agent& p = get(parent);
             service = p.service;
-            if (!p.memory.empty()) {
-                anchor = p.memory.back();
-            }
+            anchor = p.anchor();
         }
 
         AgentID id = static_cast<AgentID>(agents_.size());

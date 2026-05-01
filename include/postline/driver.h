@@ -54,7 +54,7 @@ class ShellDriver: public Driver {
 
     void handshake () {
         // read hello
-        protocol::agent::Hello hello(recv_one());
+        protocol::handshake::Hello hello(recv_one());
 
         spawn_ = static_cast<DriverSpawnType>(hello.spawn_type);
         history_ = static_cast<DriverHistoryMode>(hello.history_mode);
@@ -118,7 +118,7 @@ public:
     {
         try {
             if (input_fd_ >= 0) {
-                send(protocol::agent::Bye::make());
+                send(protocol::handshake::Bye::make());
             }
         } catch (...) {
         }

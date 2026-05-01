@@ -41,8 +41,7 @@ int main(int argc, char** argv) {
       bool hist = driver->history_mode() == DriverHistoryMode::ALL;
       if (hist) {
           log::info("begin_history");
-          Message msg(json{{"type", "agent:begin_history"}});
-          driver->send(std::move(msg));
+          driver->send(protocol::handshake::BeginMemory::make());
       }
       if (!fs::exists(journal_path)) {
           // create journal
@@ -56,8 +55,7 @@ int main(int argc, char** argv) {
               });
       if (hist) {
           log::info("end_history");
-          Message msg(json{{"type", "agent:end_history"}});
-          driver->send(std::move(msg));
+          driver->send(protocol::handshake::EndMemory::make());
       }
   }
 

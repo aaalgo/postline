@@ -97,14 +97,6 @@ void Runtime::createGroup(Message &&msg, std::vector<std::string> *addrs) {
     commit(ops);
 }
 
-void Runtime::listAgents() {
-    std::cout << "Listing agents:" << std::endl;
-    for (std::size_t i = 0; i < agents.size(); ++i) {
-        auto &agent = agents.get(i);
-        log::info("{}: {} {}", i, agent.address, agent.service);
-    }
-}
-
 void Runtime::commit(json const &ops) {
     CHECK(ops.is_array());
     for (size_t i = 0; i < ops.size(); ++i) {
@@ -149,6 +141,7 @@ void Runtime::recv(Message &&msg) {
     std::string respBody;
 
     bool reply = true;
+    if (msg.to().empty()) reply = false;
 
     do {
 
@@ -179,7 +172,8 @@ void Runtime::recv(Message &&msg) {
             break;
         }
         if (*cmd_list_agents) {
-            listAgents();
+            respHeader["type"] = "ui:update_agents";
+            respBody = agents.dump().dump();
             break;
         }
         if (*cmd_create_group) {
@@ -256,6 +250,9 @@ void Runtime::process(Message &&msg, Agent *from) {
                               agent->service);
                     agent->driver = create_driver(agent->service);
                     CHECK(agent->driver);
+
+                    updateMemory(agent);
+
                     poller.add(agent->driver->read_fd(), agent->id);
                 }
                 agent->driver->send(std::move(msg));
@@ -265,6 +262,36 @@ void Runtime::process(Message &&msg, Agent *from) {
             }
         }
     }
+}
+
+void Runtime::updateMemory (Agent *agent) {
+    if (agent->driver->history_mode() == DriverHistoryMode::NONE) return;
+    std::vector<AgentLink> links;
+    links.emplace_back(agent->id, agent->anchor());
+    Agent *cur = agent;
+    while (cur) {
+        links.emplace_back(cur->link);
+        if (cur->link.parent == NOT_AN_AGENT) {
+            cur = nullptr;
+        }
+        else {
+            cur = &agents.get(cur->link.parent);
+        }
+    }
+    
+    agent->driver->send(protocol::handshake::BeginMemory::make());
+    for (auto it = links.rbegin(); it != links.rend(); ++it) {
+        auto link = *it;
+        cur = &agents.get(link.parent);
+        for (AccessID id: cur->memory) {
+            if (id > link.anchor) break;
+            Message msg = journal.read(id);
+            //std::string const &type = msg.type();
+            agent->driver->send(msg);
+        }
+    }
+    agent->driver->send(protocol::handshake::EndMemory::make());
+
 }
 
 void Runtime::run() {
@@ -347,7 +374,7 @@ AgentID Runtime::resolve(Address const &addr) const {
     }
 
     GroupID group_id = resolve_domain(addr.domain);
-    CHECK(group_id != NOT_A_GROUP);
+    CHECK(group_id != NOT_A_GROUP, "group {} not found", addr.domain);
 
     Group const &group = groups.get(group_id);
     auto it = group.hosts.find(addr.host);
@@ -405,7 +432,5 @@ Address parse_address(std::string const& address) {
         };
     }
 }
-
-
 
 }  // namespace postline
