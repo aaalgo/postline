@@ -175,6 +175,7 @@ class CLI {
     void process (postline::Message &&msg) {
         std::string const &type = msg.type();
         if (type == postline::protocol::handshake::Bye::type) {
+            std::cerr << "BYE RECEIVED" << std::endl;
             can_send_ = false;
             if (exit_loop_) {
                 exit_loop_();

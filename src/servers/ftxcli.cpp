@@ -54,5 +54,7 @@ int main(int argc, char **argv)
     server.configure(app);
     CLI11_PARSE(app, argc, argv);
 
-    return server.run();
+    server.run();
+    std::cerr << "ftxcli exit" << std::endl;
+    return 0;
 }

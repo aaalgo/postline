@@ -217,10 +217,11 @@ void Runtime::process(Message &&msg, Agent *from) {
 
     {
         std::string const &addr = msg.from();
-        Agent *agent = &agents.get(resolve(addr));
-        if (!is_replay) {
+        AgentID id = resolve(addr);
+        if (id != NOT_AN_AGENT) {
+            Agent *agent = &agents.get(resolve(addr));
+            todo.emplace_back(agent, LEVEL_FROM);
         }
-        todo.emplace_back(agent, LEVEL_FROM);
     }
     {
         std::string const &addr = msg.to();

@@ -116,11 +116,8 @@ public:
 
     ~ShellDriver()
     {
-        try {
-            if (input_fd_ >= 0) {
-                send(protocol::handshake::Bye::make());
-            }
-        } catch (...) {
+        if (input_fd_ >= 0) {
+            send(protocol::handshake::Bye::make());
         }
 
         if (input_fd_ >= 0) {

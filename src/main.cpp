@@ -27,6 +27,7 @@ char const *LOCAL = R"(
 "name": "local",
 "members": [
 {"from": "agent@home", "as": "echo", "service": "shell:echo", "clone": true},
+{"from": "agent@home", "as": "memory", "service": "shell:echo -m", "clone": true},
 {"from": "agent@home", "as": "ai", "service": "shell:openai", "clone": true},
 {"from": "agent@home", "as": "shell", "service": "shell:shell", "clone": true},
 {"from": "agent@home", "as": "mcp", "service": "shell:mcp_bridge", "clone": true}
@@ -104,7 +105,7 @@ int main(int argc, char** argv) {
 
     if (config.resume_path.empty()) {
         log::info("Sending kick off message.");
-        json h{{"From", "user@home"},
+        json h{{"From", ""},
                {"To", "runtime@home"},
                {"Subject", "create_group"}};
         Message local(std::move(h), std::string(LOCAL));

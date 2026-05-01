@@ -190,8 +190,22 @@ public:
         for (;;) {
             Message msg = Message::read(read_fd_);
 
-            std::string type =
-                msg.header().value("type", std::string{});
+            std::string type = msg.type();
+
+            std::cerr << "RECEIVED " << type << std::endl;
+
+            if (type == protocol::handshake::BeginMemory::type) {
+                for (;;) {
+                    msg = Message::read(read_fd_);
+                    if (msg.type() == protocol::handshake::EndMemory::type) {
+                        break;
+                    }
+                    else {
+                        updateMemory(std::move(msg));
+                    }
+                }
+                continue;
+            }
 
             if (type == protocol::handshake::Bye::type) {
                 break;
@@ -205,6 +219,9 @@ public:
     }
 
 protected:
+    virtual void updateMemory(Message&& msg) {
+    };
+
     virtual void recv(Message&& msg) = 0;
 
     virtual Message hello()

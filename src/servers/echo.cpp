@@ -4,15 +4,46 @@
 using namespace postline;
 
 class EchoServer : public ServerBase {
+    bool remember;
+    json memory;
+
 protected:
+
+    void updateMemory(Message&& message) override
+    {
+        if (remember) {
+            memory.emplace_back(message.header());
+        }
+    }
+
     void recv(Message&& message) override
     {
-        message.updateHeader([](json& header) {
-            std::swap(header["From"], header["To"]);
-        });
-
-        send(std::move(message));
+        memory.emplace_back(message.header());
+        if (remember) {
+            json header{{"From", message.to()},
+                        {"To", message.from()},
+                        {"Subject", "memory"}};
+            std::string body = memory.dump(4);
+            send(Message(std::move(header), std::move(body)));
+        }
+        else {
+            message.updateHeader([](json& header) {
+                std::swap(header["From"], header["To"]);
+            });
+            send(std::move(message));
+        }
+        return;
     }
+public:
+    EchoServer (): remember(false), memory(json::array()) {
+    }
+
+    void configure(CLI::App& app) override {
+        ServerBase::configure(app);
+        app.add_flag("-m,--memory", remember, "with memory");
+    }
+
+
 };
 
 int main(int argc, char** argv)
