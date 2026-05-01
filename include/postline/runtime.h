@@ -127,6 +127,9 @@ class Runtime: immobile {
             user(&agents.get(agents.spawn(NOT_AN_AGENT))),
             root(&agents.get(agents.spawn(NOT_AN_AGENT)))
         {
+            runtime->address = "runtime@home";
+            user->address = "user@home";
+            root->address = "agent@home";
             CHECK(runtime->id == 0);
             CHECK(journal->id == 1);
             //runtime->driver = std::make_unique<QueueDriver>();
@@ -259,12 +262,12 @@ public:
         journal(config.journal_path,
                   config.resume_path,
                   [this](Message &&msg) {
-                        if (msg.type().starts_with("agent:")) {
-                            this->process(std::move(msg), special.journal);
-                        }
-                        else {
+                        if (msg.type() == "runtime:commit") {
                             protocol::runtime::Commit c(msg);
                             commit(c.ops);
+                        }
+                        else {
+                            this->process(std::move(msg), special.journal);
                         }
                   }),
         stop_requested(false)
@@ -399,7 +402,10 @@ public:
 
         for (auto [agent, level]: todo) {
             agent->memory.push_back(msg.access_id());   // save to memory
-            if ((level >= LEVEL_CC) && !is_replay) {
+            // TODO:  DON'T SEND TO CC YET
+            // because send(move()) cannot be used multiple times
+            // also Cc is used to return group members
+            if ((level >= LEVEL_TO) && !is_replay) {
                 if (agent == special.runtime) {
                     recv(std::move(msg));
                 }
@@ -416,9 +422,9 @@ public:
                     }
                     // add to memory
                     agent->driver->send(std::move(msg));
-                }
-                if (level == LEVEL_TO) {
-                    agent->waiting_response = true;
+                    if (level == LEVEL_TO) {
+                        agent->waiting_response = true;
+                    }
                 }
             }
         }
