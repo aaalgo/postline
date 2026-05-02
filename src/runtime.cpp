@@ -92,7 +92,8 @@ void Runtime::createGroup(Message &&msg) {
                            {"clone", clone}});
     }
 
-    journal.append(protocol::runtime::Commit::make(ops));
+    Message entry = protocol::runtime::Commit::make(ops);
+    journal.append(entry);
     commit(ops);
 }
 
@@ -256,10 +257,10 @@ void Runtime::process(Message &&msg, Agent *from) {
 
                     poller.add(agent->driver->read_fd(), agent->id);
                 }
-                agent->driver->send(std::move(msg));
                 if (level == LEVEL_TO) {
-                    agent->waiting_response = true;
+                    agent->expecting.push(msg.access_id());
                 }
+                agent->driver->send(msg);
             }
         }
         agent->memory.push_back(msg.access_id());
@@ -319,10 +320,14 @@ void Runtime::run() {
             std::vector<Message> tmp;
             int err = agent->driver->recv(tmp);
             CHECK(err == 0);
-            agent->waiting_response = false;
-
             for (auto &msg : tmp) {
-                msg.set_access_id(journal.append(msg));
+                if (!agent->expecting.empty()) {
+                    msg.updateHeader([agent](json &header){
+                    header["In-Reply-To"] = std::format("{}", agent->expecting.top());
+                    });
+                    agent->expecting.pop();
+                }
+                journal.append(msg);
                 todo.emplace_back(std::move(msg), agent);
             }
         }
@@ -344,16 +349,22 @@ void Runtime::run() {
 
     for (std::size_t i = 0; i < agents.size(); ++i) {
         Agent *agent = &agents.get(i);
-        if (agent->waiting_response) {
+        if (agent->expecting.size()) {
             CHECK(agent->driver);
             log::info("Waiting for agent {} to respond...", i);
 
             std::vector<Message> tmp;
             agent->driver->recv(tmp);
-            agent->waiting_response = false;
+            for (auto &msg: tmp) {
+                if (agent->expecting.empty()) break;
+                msg.updateHeader([agent](json &header){
+                    header["In-Reply-To"] = std::format("{}", agent->expecting.top());
+                    });
+                agent->expecting.pop();
+            }
             trailing += tmp.size();
             for (auto &msg : tmp) {
-                msg.set_access_id(journal.append(msg));
+                journal.append(msg);
             }
         }
         if (agent->driver) {
@@ -366,7 +377,8 @@ void Runtime::run() {
     json ops = json::array();
     json op{{"op", "shutdown"}, {"last_processed_id", last_processed_id}};
     ops.push_back(op);
-    journal.append(protocol::runtime::Commit::make(ops));
+    Message msg = protocol::runtime::Commit::make(ops);
+    journal.append(msg);
     log::info("runtime shutdown.");
 }
 

@@ -55,8 +55,10 @@ void test_replay_existing_chain_and_append_new_segment(const fs::path& root) {
 
     {
         postline::Journal first(first_segment.string(), "", [](const postline::Message&) {});
-        first.append(make_message("seed", 10));
-        first.append(make_message("seed", 11));
+        auto seed10 = make_message("seed", 10);
+        auto seed11 = make_message("seed", 11);
+        first.append(seed10);
+        first.append(seed11);
     }
 
     std::vector<std::string> replayed_types;
@@ -72,7 +74,8 @@ void test_replay_existing_chain_and_append_new_segment(const fs::path& root) {
         expect(replayed_types[0] == "seed", "first replayed record mismatch");
         expect(replayed_types[1] == "seed", "second replayed record mismatch");
 
-        postline::AccessID chained_id = second.append(make_message("fresh", 12));
+        auto fresh = make_message("fresh", 12);
+        postline::AccessID chained_id = second.append(fresh);
         auto chained_read = second.read(chained_id);
         expect(chained_read.header().at("type") == "fresh", "new chained record mismatch");
     }

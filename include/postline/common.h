@@ -177,6 +177,7 @@ namespace postline {
         bool has_access_id() const { return access_id_ >= 0; }
         void set_access_id (AccessID access_id) {
             access_id_ = access_id;
+            header_["Message-ID"] = std::format("{}", access_id);
         }
 
         json const& header() const { return header_; }

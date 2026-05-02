@@ -116,6 +116,24 @@ struct EndMemory {
     }
 };
 
+struct Multi : public View {
+    static constexpr std::string_view type = "handshake:multi";
+    size_t count;
+
+    explicit Multi(Message const& msg)
+        : View(msg, type)
+    {
+        count = msg.header()["count"].get<size_t>();
+    }
+
+    static Message make (size_t count) {
+        return Message(json{
+            {"type", type},
+            {"count", count}
+        });
+    }
+};
+
 struct Bye : public View {
     static constexpr std::string_view type = "handshake:bye";
 

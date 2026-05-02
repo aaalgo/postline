@@ -107,9 +107,10 @@ public:
     Journal(Journal const&) = delete;
     Journal& operator=(Journal const&) = delete;
 
-    AccessID append(Message const &message) {
+    AccessID append(Message &message) {
         if (write_fd_ < 0) return NO_ACCESS_ID;
         AccessID access_id = make_access_id(last_segment_, offset_);
+        message.set_access_id(access_id);
         offset_ += message.write(write_fd_);
         return access_id;
     }

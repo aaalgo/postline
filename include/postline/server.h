@@ -215,6 +215,15 @@ public:
                 continue;
             }
 
+            if (type == protocol::handshake::Multi::type) {
+                protocol::handshake::Multi multi(msg);
+                for (size_t i = 0; i < multi.count; ++i) {
+                    Message msg = Message::read(read_fd_);
+                    recv(std::move(msg));
+                }
+                continue;
+            }
+
             if (type == protocol::handshake::Bye::type) {
                 break;
             }

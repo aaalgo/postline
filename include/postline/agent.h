@@ -1,6 +1,7 @@
 #pragma once
 #include <vector>
 #include <memory>
+#include <stack>
 #include <unordered_map>
 #include "driver.h"
 
@@ -28,13 +29,13 @@ struct Agent: immobile {
     std::string address;
     std::vector<AccessID> memory;
     std::unique_ptr<Driver> driver;
-    bool waiting_response;
+    std::stack<AccessID> expecting; // the next incoming messages
+                                    // is in reply to expecting.back()
 
     explicit Agent(AgentID id_, AgentLink link_, std::string const &service_)
         : id(id_),
         link(std::move(link_)),
-        service(service_),
-        waiting_response(false)
+        service(service_)
     {}
 
     AccessID anchor () const {

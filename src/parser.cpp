@@ -281,6 +281,7 @@ void write_headers (std::ostream &os, json const &header, bool compact) {
             if (used.contains(key)) continue;
             os << key << ": ";
             write_header_value(os, value, false);
+            os << '\n';
         }
     }
 }
