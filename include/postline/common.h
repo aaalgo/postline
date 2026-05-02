@@ -132,6 +132,15 @@ namespace postline {
             return get("From");
         }
 
+        std::string const &replyTo () const {
+            auto it = header_.find("Reply-To");
+            if (it == header_.end() || it->is_null()) {
+                return from();
+            }
+            CHECK(it->is_string());
+            return it->get_ref<std::string const&>();
+        }
+
         std::string const &to () const {
             return get("To");
         }

@@ -154,6 +154,7 @@ public:
     int read_fd () const override { return output_fd_; }
 };
 
+
 class LoopDriver: public Driver {
     // LoopDriver is a local API
     // to send messages to the runtime
@@ -170,9 +171,12 @@ class LoopDriver: public Driver {
     int wake_fd;
     std::mutex mutex;
     std::vector<Message> pending;
+    std::function<int(Message const &)> callback;
+
 public:
-    LoopDriver ()
-        : wake_fd(eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC))
+    LoopDriver (std::function<int(Message const &)> callback_)
+        : wake_fd(eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC)),
+        callback(callback_)
     {
         CHECK(wake_fd >= 0);
     }
@@ -182,7 +186,7 @@ public:
     }
 
     int send(Message const &msg) override {
-        CHECK(0);
+        return callback(msg);
     }
 
     int enqueue (Message && msg) {
@@ -204,7 +208,8 @@ public:
         }
         uint64_t count;
         ssize_t rc = ::read(wake_fd, &count, sizeof(count));
-        CHECK(rc == static_cast<ssize_t>(sizeof(count)));
+        //CHECK(rc == static_cast<ssize_t>(sizeof(count))); // TODO
+        //after we fix the calling graph we should restore this line
         return 0;
     }
 

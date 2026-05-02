@@ -23,16 +23,14 @@
 using namespace postline;
 
 char const *LOCAL = R"(
-{
-"name": "local",
-"members": [
-{"from": "agent@home", "as": "echo", "service": "shell:echo", "clone": true},
-{"from": "agent@home", "as": "memory", "service": "shell:echo -m", "clone": true},
-{"from": "agent@home", "as": "ai", "service": "shell:openai", "clone": true},
-{"from": "agent@home", "as": "shell", "service": "shell:shell", "clone": true},
-{"from": "agent@home", "as": "mcp", "service": "shell:mcp_bridge", "clone": true}
+[
+{"from": "root", "address": "echo", "service": "shell:echo", "clone": false},
+{"from": "root", "address": "ai", "service": "shell:openai", "clone": false},
+{"from": "root", "address": "shell", "service": "shell:shell", "clone": false},
+{"from": "root", "address": "mcp", "service": "shell:mcp_bridge", "clone": false},
+{"from": "root", "address": "memory", "service": "shell:echo -m", "clone": false},
+{"from": "root", "address": "clone", "service": "shell:echo", "clone": true}
 ]
-}
 )";
 
 inline void welcome ()
@@ -105,17 +103,18 @@ int main(int argc, char** argv) {
 
     if (config.resume_path.empty()) {
         log::info("Sending kick off message.");
-        json h{{"From", ""},
-               {"To", "runtime@home"},
-               {"Subject", "create_group"}};
+        json h{{"From", "boot"},
+               {"To", "runtime"},
+               {"Subject", "spawn"}};
         Message local(std::move(h), std::string(LOCAL));
-        runtime.enqueue(std::move(local));
+        runtime.enqueue_boot(std::move(local));
     }
     log::info("Sending message.");
-    json h{{"From", "user@home"},
-           {"To", "runtime@home"},
+    json h{{"From", "boot"},
+           {"To", "runtime"},
+           {"Reply-To", "user"},
            {"Subject", "list_agents"}};
-    runtime.enqueue(Message(std::move(h)));
+    runtime.enqueue_boot(Message(std::move(h)));
     log::info("Starting runtime.");
     runtime.run();
     log::info("Runtime has been gracefully shutdown.");

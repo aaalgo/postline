@@ -25,17 +25,25 @@ class Driver;
 struct Agent: immobile {
     AgentID id;
     AgentLink link;
-    std::string service;
     std::string address;
+    std::string service;
+    bool clone;
+    int next_clone_id;
     std::vector<AccessID> memory;
     std::unique_ptr<Driver> driver;
+    // important:
+    // expecting is the protocol with driver
     std::stack<AccessID> expecting; // the next incoming messages
                                     // is in reply to expecting.back()
 
-    explicit Agent(AgentID id_, AgentLink link_, std::string const &service_)
+
+    explicit Agent(AgentID id_, AgentLink link_, std::string const &address_, std::string const &service_, bool clone_)
         : id(id_),
         link(std::move(link_)),
-        service(service_)
+        address(address_),
+        service(service_),
+        clone(clone_),
+        next_clone_id(0)
     {}
 
     AccessID anchor () const {
@@ -50,8 +58,8 @@ struct Agent: immobile {
                 {"parent", link.parent},
                 {"anchor", link.anchor}
             }},
-            {"service", service},
             {"address", address},
+            {"service", service},
             {"memory", memory}
         };
     }
@@ -65,6 +73,7 @@ struct Agent: immobile {
 
 class AgentStore: immobile {
     std::vector<std::unique_ptr<Agent>> agents_;
+    std::unordered_map<std::string, AgentID> lookup_;
 public:
     AgentStore() {
     }
@@ -77,23 +86,39 @@ public:
         return j;
     }
 
-    AgentID spawn(AgentID parent, AccessID anchor = NO_ACCESS_ID) {
-
-        std::string service;
-        if (parent != NOT_AN_AGENT && anchor == NO_ACCESS_ID) {
-            Agent& p = get(parent);
-            service = p.service;
-            anchor = p.anchor();
-        }
-
+    AgentID spawn(std::string const &address, AgentID parent, AccessID anchor = NO_ACCESS_ID, std::string service = std::string(), bool clone = false) {
         AgentID id = static_cast<AgentID>(agents_.size());
+        auto [it, inserted] = lookup_.insert(std::make_pair(address, id));
+        if (!inserted) return NOT_AN_AGENT;   // already exists
+                                              //
+
+        if (parent != NOT_AN_AGENT) { // && anchor == NO_ACCESS_ID) {
+            Agent& p = get(parent);
+            if (service.empty()) {
+                service = p.service;
+            }
+            if (anchor == NO_ACCESS_ID) {
+                anchor = p.anchor();
+            }
+            if (clone) {
+                CHECK(!p.clone, "a clone of a cloning parent cannot be cloning");
+            }
+        }
 
         agents_.push_back(std::make_unique<Agent>(id, AgentLink{
             .parent = parent,
             .anchor = anchor,
-        }, service));
+        }, address, service, clone));
 
         return id;
+    }
+
+    AgentID find(std::string const& name) const {
+        auto it = lookup_.find(name);
+        if (it == lookup_.end()) {
+            return NOT_AN_AGENT;
+        }
+        return it->second;
     }
 
     Agent& get(AgentID id) {
@@ -117,6 +142,7 @@ public:
     }
 };
 
+#if 0
 struct Group: immobile {
     std::string name; // empty => anonymous / temporary group
     std::unordered_map<std::string, AgentID> hosts;
@@ -148,6 +174,7 @@ struct Group: immobile {
     explicit Group(std::string name_ = "")
         : name(std::move(name_)) {}
 };
+
 
 class GroupStore: immobile {
     std::vector<std::unique_ptr<Group>> groups_;
@@ -209,4 +236,5 @@ public:
         return groups_.size();
     }
 };
+#endif
 }

@@ -34,26 +34,14 @@ void Runtime::dump (std::string const &path) const {
     ofs << dump().dump(4);
 }
 
-void Runtime::createGroup(Message &&msg) {
+void Runtime::spawn(Message const &msg) {
     json ops = json::array();
-    json j(json::parse(msg.body()));
+    json arr(json::parse(msg.body()));
 
-    std::string const &group_name = commit_get_string(j, "name");
-    if (groups.find(group_name) != NOT_A_GROUP) {
-        throw commit_error("group already exists");
-    }
-
-    ops.push_back(json{{"op", "group_create"}, {"group", group_name}});
-
-    if (!j.contains("members")) {
-        throw commit_error("missing members");
-    }
-    auto const &arr = j["members"];
     if (!arr.is_array()) {
-        throw commit_error("members is not array");
+        throw commit_error("agent list is not array");
     }
 
-    std::unordered_set<std::string> seen;
     for (size_t i = 0; i < arr.size(); ++i) {
         auto const &m = arr[i];
         if (!m.is_object()) {
@@ -61,35 +49,47 @@ void Runtime::createGroup(Message &&msg) {
         }
 
         std::string const &from = commit_get_string(m, "from");
-        std::string const &as = commit_get_string(m, "as");
+        std::string const &address = commit_get_string(m, "address");
         std::string service;
-        bool clone = true;
+        bool clone = false;
+
+        if (address.find('_') != address.npos) {
+            throw commit_error(std::format("address cannot contain _: {}", address));
+        }
 
         if (m.contains("service")) {
             service = commit_get_string(m, "service");
         }
+
         if (m.contains("clone")) {
             clone = commit_get_bool(m, "clone");
         }
-        if ((!clone) && (!service.empty())) {
-            throw commit_error("cannot rewrite service");
-        }
+
 
         AgentID from_id = resolve(from);
         if (from_id == NOT_AN_AGENT) {
             throw commit_error(std::format("cannot resolve from {}", from));
         }
-        if (seen.find(as) != seen.end()) {
-            throw commit_error(std::format("{} appears twice", as));
+        else {
+            Agent const &p = agents.get(from_id);
+            if (p.clone && clone) {
+                throw commit_error(std::format("cannot double clone"));
+            }
         }
-        seen.insert(as);
 
-        ops.push_back(json{{"op", "group_add"},
-                           {"group", group_name},
+        AgentID new_id = resolve(address);
+        if (new_id != NOT_AN_AGENT) {
+            throw commit_error(std::format("{} already used", address));
+        }
+
+
+        ops.push_back(json{{"op", "spawn"},
+                           {"address", address},
                            {"from", from},
-                           {"as", as},
                            {"service", service},
-                           {"clone", clone}});
+                           {"clone", clone},
+                           {"is_clone", false},
+                           });
     }
 
     Message entry = protocol::runtime::Commit::make(ops);
@@ -102,29 +102,27 @@ void Runtime::commit(json const &ops) {
     for (size_t i = 0; i < ops.size(); ++i) {
         auto const &m = ops[i];
         CHECK(m.is_object());
+        std::string const &op = m["op"].get_ref<std::string const &>();
 
-        std::string const &op = commit_get_string(m, "op");
-        if (op == "group_create") {
-            std::string const &group_name = commit_get_string(m, "group");
-            groups.create(group_name);
-            log::info("create group {}", group_name);
-        } else if (op == "group_add") {
-            std::string const &group_name = commit_get_string(m, "group");
-            Group &group = groups.get(groups.find(group_name));
+        if (op == "spawn") {
+            std::string const &address = commit_get_string(m, "address");
             std::string const &from = commit_get_string(m, "from");
-            std::string const &as = commit_get_string(m, "as");
             std::string const &service = commit_get_string(m, "service");
             bool clone = commit_get_bool(m, "clone");
+            bool is_clone = commit_get_bool(m, "is_clone");
             AgentID from_id = resolve(from);
-            AgentID id = from_id;
-            if (clone) {
-                id = agents.spawn(from_id);
-                Agent &agent = agents.get(id);
-                agent.service = service;
-                agent.address = std::format("{}@{}", as, group_name);
-                log::info("create agent {}: {}", id, agent.address);
+            CHECK(from_id != NOT_AN_AGENT);
+            Agent &parent = agents.get(from_id);
+            if (is_clone) {
+                CHECK(parent.clone);
+                CHECK(!clone);
+                std::string suffix = std::format("_{}", parent.next_clone_id);
+                CHECK(address.ends_with(suffix));
+                ++parent.next_clone_id;
             }
-            group.hosts[as] = id;
+            AgentID id = agents.spawn(address, from_id, NO_ACCESS_ID, service, clone);
+            Agent &agent = agents.get(id);
+            log::info("create agent {}: {}", id, agent.address);
         } else if (op == "shutdown") {
         } else {
             CHECK(0, "UNKNOWN OP");
@@ -133,10 +131,10 @@ void Runtime::commit(json const &ops) {
 }
 
 
-void Runtime::recv(Message &&msg) {
+int Runtime::recv(Message const &msg) {
 
     json respHeader{{"From", msg.to()},
-                    {"To", msg.from()},
+                    {"To", msg.replyTo()},
                     {"Subject", "OK"}};
     std::string respBody;
 
@@ -153,7 +151,7 @@ void Runtime::recv(Message &&msg) {
 
         auto cmd_exit   = app.add_subcommand("exit");
         auto cmd_list_agents   = app.add_subcommand("list_agents");
-        auto cmd_create_group = app.add_subcommand("create_group");
+        auto cmd_spawn = app.add_subcommand("spawn");
         auto cmd_dump = app.add_subcommand("dump");
         std::string dump_path;
         cmd_dump->add_option("path", dump_path)->required();
@@ -177,10 +175,11 @@ void Runtime::recv(Message &&msg) {
             respBody = agents.dump().dump();
             break;
         }
-        if (*cmd_create_group) {
+        if (*cmd_spawn) {
             try {
-                createGroup(std::move(msg));
+                spawn(msg);
             } catch (commit_error &e) {
+                log::info("COMMIT ERROR: {}", e.what());
                 respHeader["Subject"] = e.what();
             }
             break;
@@ -195,6 +194,7 @@ void Runtime::recv(Message &&msg) {
         log::info("Replying...");
         enqueue(Message(std::move(respHeader), std::move(respBody)));
     }
+    return 0;
 }
 
 void Runtime::process(Message &&msg, Agent *from) {
@@ -209,10 +209,12 @@ void Runtime::process(Message &&msg, Agent *from) {
     int constexpr LEVEL_CC = 1;
     int constexpr LEVEL_TO = 2;
     std::vector<std::pair<Agent *, int>> todo;
+    std::unordered_set<std::string> seen;
 
     {
         std::string const &addr = msg.from();
         if (!addr.empty()) {
+            seen.insert(addr);
             AgentID id = resolve(addr);
             if (id != NOT_AN_AGENT) {
                 Agent *agent = &agents.get(id);
@@ -222,9 +224,10 @@ void Runtime::process(Message &&msg, Agent *from) {
     }
     {
         std::string const &addr = msg.to();
-        if (!addr.empty()) {
+        if ((!addr.empty()) && (!seen.contains(addr))) {
             AgentID id = resolve(addr);
             if (id != NOT_AN_AGENT) {
+                seen.insert(addr);
                 Agent *agent = &agents.get(id);
                 todo.emplace_back(agent, LEVEL_TO);
             }
@@ -232,8 +235,14 @@ void Runtime::process(Message &&msg, Agent *from) {
     }
 
     for (auto const &addr : msg.cc()) {
-        Agent *agent = &agents.get(resolve(addr));
-        todo.emplace_back(agent, LEVEL_CC);
+        if ((!addr.empty()) && (!seen.contains(addr))) {
+            AgentID id = resolve(addr);
+            if (id != NOT_AN_AGENT) {
+                seen.insert(addr);
+                Agent *agent = &agents.get(id);
+                todo.emplace_back(agent, LEVEL_CC);
+            }
+        }
     }
 
     for (auto [agent, level] : todo) {
@@ -241,6 +250,25 @@ void Runtime::process(Message &&msg, Agent *from) {
             if (agent == special.runtime) {
                 recv(std::move(msg));
             } else {
+                if (agent->clone) {
+                    // clone agent
+                    std::string address = std::format("{}_{}", agent->address, agent->next_clone_id);
+                    log::info("cloning {} to {}", agent->address, address);
+                    json ops = json::array();
+                    ops.push_back(json{{"op", "spawn"},
+                                       {"address", address},
+                                       {"from", agent->address},
+                                       {"service", agent->service},
+                                       {"clone", false},
+                                       {"is_clone", true}
+                                       });
+                    Message entry = protocol::runtime::Commit::make(ops);
+                    journal.append(entry);
+                    commit(ops);
+                    AgentID clone_id = resolve(address);
+                    CHECK(clone_id != NOT_AN_AGENT);
+                    agent = &agents.get(clone_id);
+                }
                 if (!agent->driver) {
                     if (agent->service.empty()) {
                         log::error("agent {} {} has empty service", agent->id, agent->address);
@@ -321,6 +349,13 @@ void Runtime::run() {
             int err = agent->driver->recv(tmp);
             CHECK(err == 0);
             for (auto &msg : tmp) {
+                std::string const &from = msg.from();
+                if (from != agent->address) {
+                    msg.updateHeader([agent](json &header){
+                        header["Original-From"] = header["From"];
+                        header["From"] = agent->address;
+                    });
+                }
                 if (!agent->expecting.empty()) {
                     msg.updateHeader([agent](json &header){
                     header["In-Reply-To"] = std::format("{}", agent->expecting.top());
@@ -382,72 +417,9 @@ void Runtime::run() {
     log::info("runtime shutdown.");
 }
 
-AgentID Runtime::resolve(Address const &addr) const {
-    if (addr.host == "runtime") {
-        return special.runtime->id;
-    }
-
-    if (addr.host.empty()) return NOT_AN_AGENT;
-
-    GroupID group_id = resolve_domain(addr.domain);
-    CHECK(group_id != NOT_A_GROUP, "group {} not found", addr.domain);
-
-    Group const &group = groups.get(group_id);
-    auto it = group.hosts.find(addr.host);
-    if (it == group.hosts.end()) {
-        log::error("Cannot resolve {}@{}", addr.host, addr.domain);
-        return NOT_AN_AGENT;
-    }
-    CHECK(it != group.hosts.end());
-
-    AgentID agent_id = it->second;
-    CHECK(agents.exists(agent_id));
-    return agent_id;
-}
-
-GroupID Runtime::resolve_domain(std::string const &domain) const {
-    if (domain.starts_with("g.")) {
-        return parse_group_id(domain);
-    }
-    return groups.find(domain);
-}
-
-GroupID Runtime::parse_group_id(std::string const &domain) {
-    CHECK(domain.starts_with("g."));
-
-    std::string_view s(domain);
-    s.remove_prefix(2);
-    CHECK(!s.empty());
-
-    GroupID id = 0;
-    for (char c : s) {
-        CHECK(c >= '0' && c <= '9');
-        id = id * 10 + static_cast<GroupID>(c - '0');
-    }
-
-    return id;
-}
-
 AgentID Runtime::resolve(std::string const &address) const {
     if (address.empty()) return NOT_AN_AGENT;
-    return resolve(parse_address(address));
-}
-
-Address parse_address(std::string const& address) {
-    auto pos = address.find('@');
-    if (pos == std::string::npos) {
-        return Address{
-            .host = address.substr(0, pos)
-        };
-    }
-    else {
-        CHECK(pos > 0);
-        CHECK(pos + 1 < address.size());
-        return Address{
-            .host = address.substr(0, pos),
-            .domain = address.substr(pos + 1),
-        };
-    }
+    return agents.find(address);
 }
 
 }  // namespace postline

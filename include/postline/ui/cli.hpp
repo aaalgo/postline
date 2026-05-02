@@ -98,7 +98,9 @@ class CLI {
     void addAddress (std::string address) {
         trimAddress(address);
         if (!address.empty()) {
-            to_list_.insert(std::move(address));
+            if (address[0] != '[') {
+                to_list_.insert(std::move(address));
+            }
         }
     }
 
