@@ -1,3 +1,5 @@
+#include <execinfo.h>
+#include <csignal>
 #include <cerrno>
 #include <limits>
 #include <iostream>
@@ -5,6 +7,14 @@
 #include <postline/common.h>
 
 namespace postline {
+
+inline void print_stacktrace(int fd = STDERR_FILENO)
+{
+    constexpr int max_frames = 64;
+    void* frames[max_frames];
+    int n = ::backtrace(frames, max_frames);
+    ::backtrace_symbols_fd(frames, n, fd);
+}
 
 [[noreturn]] void check_fail(
     const char* expr,
@@ -16,6 +26,14 @@ namespace postline {
             "CHECK failed: {}\nat {}:{}\n{}\n",
             expr, file, line, msg);
     std::fflush(stderr);
+    print_stacktrace();
+    std::cerr << "The program is to be put into a stop state." << std::endl;
+    std::cerr << "In shell to continue a stopped job run 'fg'" << std::endl;
+    std::cerr << "You have two choices:" << std::endl;
+    std::cerr << "    1. Kill the program: kill " << ::getpid() << std::endl;
+    std::cerr << "    1. Debug the program: sudo gdb -p " << ::getpid() << std::endl;
+    std::cerr << "        Inside gdb, run 'kill' to kill the program." << std::endl;
+    std::raise(SIGSTOP);
     std::abort();
 }
 

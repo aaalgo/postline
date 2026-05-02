@@ -34,7 +34,7 @@ void Runtime::dump (std::string const &path) const {
     ofs << dump().dump(4);
 }
 
-void Runtime::createGroup(Message &&msg, std::vector<std::string> *addrs) {
+void Runtime::createGroup(Message &&msg) {
     json ops = json::array();
     json j(json::parse(msg.body()));
 
@@ -90,7 +90,6 @@ void Runtime::createGroup(Message &&msg, std::vector<std::string> *addrs) {
                            {"as", as},
                            {"service", service},
                            {"clone", clone}});
-        addrs->emplace_back(std::format("{}@{}", as, group_name));
     }
 
     journal.append(protocol::runtime::Commit::make(ops));
@@ -141,7 +140,8 @@ void Runtime::recv(Message &&msg) {
     std::string respBody;
 
     bool reply = true;
-    if (msg.to().empty()) reply = false;
+    if (msg.to().empty()) reply = false;    // INVESTIGATE WHY IT DOESN'T WORK
+    if (resolve(msg.to()) == NOT_AN_AGENT) reply = false;
 
     do {
 
@@ -178,13 +178,7 @@ void Runtime::recv(Message &&msg) {
         }
         if (*cmd_create_group) {
             try {
-                std::vector<std::string> members;
-                createGroup(std::move(msg), &members);
-                json cc = json::array();
-                for (auto const &addr : members) {
-                    cc.push_back(addr);
-                }
-                respHeader["Cc"] = cc;
+                createGroup(std::move(msg));
             } catch (commit_error &e) {
                 respHeader["Subject"] = e.what();
             }
@@ -217,16 +211,23 @@ void Runtime::process(Message &&msg, Agent *from) {
 
     {
         std::string const &addr = msg.from();
-        AgentID id = resolve(addr);
-        if (id != NOT_AN_AGENT) {
-            Agent *agent = &agents.get(resolve(addr));
-            todo.emplace_back(agent, LEVEL_FROM);
+        if (!addr.empty()) {
+            AgentID id = resolve(addr);
+            if (id != NOT_AN_AGENT) {
+                Agent *agent = &agents.get(id);
+                todo.emplace_back(agent, LEVEL_FROM);
+            }
         }
     }
     {
         std::string const &addr = msg.to();
-        Agent *agent = &agents.get(resolve(addr));
-        todo.emplace_back(agent, LEVEL_TO);
+        if (!addr.empty()) {
+            AgentID id = resolve(addr);
+            if (id != NOT_AN_AGENT) {
+                Agent *agent = &agents.get(id);
+                todo.emplace_back(agent, LEVEL_TO);
+            }
+        }
     }
 
     for (auto const &addr : msg.cc()) {
@@ -235,7 +236,6 @@ void Runtime::process(Message &&msg, Agent *from) {
     }
 
     for (auto [agent, level] : todo) {
-        agent->memory.push_back(msg.access_id());
         if ((level >= LEVEL_TO) && !is_replay) {
             if (agent == special.runtime) {
                 recv(std::move(msg));
@@ -262,6 +262,7 @@ void Runtime::process(Message &&msg, Agent *from) {
                 }
             }
         }
+        agent->memory.push_back(msg.access_id());
     }
 }
 
@@ -271,11 +272,11 @@ void Runtime::updateMemory (Agent *agent) {
     links.emplace_back(agent->id, agent->anchor());
     Agent *cur = agent;
     while (cur) {
-        links.emplace_back(cur->link);
         if (cur->link.parent == NOT_AN_AGENT) {
             cur = nullptr;
         }
         else {
+            links.emplace_back(cur->link);
             cur = &agents.get(cur->link.parent);
         }
     }
@@ -374,6 +375,8 @@ AgentID Runtime::resolve(Address const &addr) const {
         return special.runtime->id;
     }
 
+    if (addr.host.empty()) return NOT_AN_AGENT;
+
     GroupID group_id = resolve_domain(addr.domain);
     CHECK(group_id != NOT_A_GROUP, "group {} not found", addr.domain);
 
@@ -414,6 +417,7 @@ GroupID Runtime::parse_group_id(std::string const &domain) {
 }
 
 AgentID Runtime::resolve(std::string const &address) const {
+    if (address.empty()) return NOT_AN_AGENT;
     return resolve(parse_address(address));
 }
 

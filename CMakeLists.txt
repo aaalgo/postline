@@ -12,6 +12,17 @@ set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-fPIC>)
+add_compile_options($<$<AND:$<COMPILE_LANGUAGE:CXX>,$<CONFIG:Debug>>:-g>)
+add_compile_options($<$<AND:$<COMPILE_LANGUAGE:CXX>,$<CONFIG:Debug>>:-O0>)
+
+if(NOT CMAKE_CONFIGURATION_TYPES)
+    set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS
+        Debug
+        Release
+        RelWithDebInfo
+        MinSizeRel
+    )
+endif()
 
 if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
     set(CMAKE_INSTALL_PREFIX "${CMAKE_BINARY_DIR}/install" CACHE PATH "Install path prefix" FORCE)
@@ -303,6 +314,9 @@ if(POSTLINE_BUILD_TESTS)
 
     add_executable(test_shell tests/test_shell.cpp)
     target_link_libraries(test_shell PRIVATE postline::postline)
+
+    add_executable(test_stacktrace tests/test_stacktrace.cpp)
+    target_link_libraries(test_stacktrace PRIVATE postline::postline)
 
     add_executable(test_ui tests/test_ui.cpp)
     target_link_libraries(test_ui PRIVATE postline::postline postline::tui_deps termcolor::termcolor)

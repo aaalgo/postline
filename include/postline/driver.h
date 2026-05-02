@@ -17,8 +17,8 @@ enum class DriverSpawnType : std::uint16_t
 
 enum class DriverHistoryMode : std::uint16_t
 {
-    NONE = 0,
-    ALL  = 1
+    NONE = 0,           // stateless
+    ALL  = 1            // statefull
 };
 
 class Driver: noncopyable {

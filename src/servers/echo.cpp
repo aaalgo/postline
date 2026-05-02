@@ -9,6 +9,10 @@ class EchoServer : public ServerBase {
 
 protected:
 
+    virtual DriverHistoryMode history_mode() const noexcept {
+        return remember ? DriverHistoryMode::ALL : DriverHistoryMode::NONE;
+    }
+
     void updateMemory(Message&& message) override
     {
         if (remember) {
@@ -18,8 +22,8 @@ protected:
 
     void recv(Message&& message) override
     {
-        memory.emplace_back(message.header());
         if (remember) {
+            memory.emplace_back(message.header());
             json header{{"From", message.to()},
                         {"To", message.from()},
                         {"Subject", "memory"}};

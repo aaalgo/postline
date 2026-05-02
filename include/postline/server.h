@@ -13,6 +13,7 @@
 #include <CLI/CLI.hpp>
 #include <postline/common.h>
 #include <postline/protocol.h>
+#include <postline/driver.h>
 
 
 namespace postline {
@@ -170,6 +171,13 @@ private:
 };
 
 class ServerBase {
+protected:
+    virtual DriverSpawnType spawn_type() const noexcept {
+        return DriverSpawnType::ADDRESS;
+    }
+    virtual DriverHistoryMode history_mode() const noexcept {
+        return DriverHistoryMode::NONE;
+    }
 public:
     virtual ~ServerBase() = default;
 
@@ -185,7 +193,7 @@ public:
         read_fd_ = transport.read_fd();
         write_fd_ = transport.write_fd();
 
-        send(hello());
+        send(protocol::handshake::Hello::make(int(spawn_type()), int(history_mode())));
 
         for (;;) {
             Message msg = Message::read(read_fd_);
@@ -223,11 +231,6 @@ protected:
     };
 
     virtual void recv(Message&& msg) = 0;
-
-    virtual Message hello()
-    {
-        return protocol::handshake::Hello::make(0, 0);
-    }
 
     virtual void bye() {}
 

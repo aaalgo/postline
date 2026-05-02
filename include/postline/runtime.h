@@ -78,7 +78,7 @@ class Runtime: immobile {
 
     void commit (json const &ops);
 
-    void createGroup (Message &&msg, std::vector<std::string> *addrs);
+    void createGroup (Message &&msg);
     void listAgents();
     void recv (Message &&msg);
     void process (Message &&msg, Agent *from);
