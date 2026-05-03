@@ -327,9 +327,6 @@ if(POSTLINE_BUILD_TESTS)
     add_executable(test_stacktrace tests/test_stacktrace.cpp)
     target_link_libraries(test_stacktrace PRIVATE postline::postline)
 
-    add_executable(test_simh tests/test_simh.cpp)
-    target_link_libraries(test_simh PRIVATE postline::postline util)
-
     add_executable(test_ui tests/test_ui.cpp)
     target_link_libraries(test_ui PRIVATE postline::postline postline::tui_deps termcolor::termcolor)
 
