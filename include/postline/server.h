@@ -209,6 +209,8 @@ public:
 
         send(protocol::handshake::Hello::make(int(spawn_type()), int(history_mode())));
 
+        on_connect();
+
         for (;;) {
             Message msg = Message::read(read_fd_);
 
@@ -269,6 +271,8 @@ protected:
     };
 
     virtual void recv(Message&& msg) = 0;
+
+    virtual void on_connect () {}
 
     virtual void bye() {}
 

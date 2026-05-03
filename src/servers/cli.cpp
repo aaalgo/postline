@@ -84,6 +84,16 @@ protected:
 
         send(Message(std::move(h), std::move(body)));
     }
+
+    void on_connect () override {
+        json h{
+            {"type", "agent:message"},
+            {"From", "user"},
+            {"To", "runtime"},
+            {"Subject", "list_agents"}
+        };
+        send(Message(std::move(h)));
+    }
 };
 
 int main(int argc, char** argv)

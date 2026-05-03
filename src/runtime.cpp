@@ -390,6 +390,9 @@ void Runtime::run() {
 
     int trailing = 0;
 
+    // send a message to user
+
+
     for (;;) {
         auto events = poller.wait();
         CHECK(!events.empty());

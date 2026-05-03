@@ -109,12 +109,14 @@ int main(int argc, char** argv) {
         Message local(std::move(h), std::string(LOCAL));
         runtime.enqueue_boot(std::move(local));
     }
+#if 0
     log::info("Sending message.");
     json h{{"From", "boot"},
            {"To", "runtime"},
            {"Reply-To", "user"},
            {"Subject", "list_agents"}};
     runtime.enqueue_boot(Message(std::move(h)));
+#endif
     log::info("Starting runtime.");
     runtime.run();
     log::info("Runtime has been gracefully shutdown.");
