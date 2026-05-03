@@ -24,6 +24,16 @@ protected:
 
     void recv(Message&& message) override
     {
+        std::cout << "======== " << message.type() << std::endl;
+        if (message.header().contains("To")) {
+            message.formatEmail(std::cout);
+        }
+        else {
+            std::cout << message.header().dump(4) << std::endl;
+            std::cout << message.body() << std::endl;
+        }
+        std::cout << "========" << std::endl;
+
         auto const& header = message.header();
 
         std::string to;

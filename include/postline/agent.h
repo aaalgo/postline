@@ -68,6 +68,7 @@ struct Agent: immobile {
             {"service", service},
             {"permissions", permissions},
             {"clone", clone},
+            {"oblication_count", obligation_count},
             {"memory", memory}
         };
     }

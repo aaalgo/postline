@@ -135,7 +135,10 @@ int Runtime::recv(Message const &msg) {
 
     json respHeader{{"From", msg.to()},
                     {"To", msg.replyTo()},
-                    {"Subject", "OK"}};
+                    {"Subject", "OK"},
+                    {"Session-ID", msg.header()["Session-ID"]},
+                    {"In-Reply-To", msg.header()["Message-ID"]}
+                    };
     std::string respBody;
 
     bool reply = true;
@@ -168,6 +171,7 @@ int Runtime::recv(Message const &msg) {
             log::info("Stop request received.");
             log::info("Runtime will shutdown.");
             reply = false;
+            --special.runtime->obligation_count;
             break;
         }
         if (*cmd_list_agents) {

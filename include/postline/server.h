@@ -182,7 +182,7 @@ class ServerBase {
             session_id = last_session;
         }
         last_from = msg.from();
-        last_access_id = msg.access_id();
+        last_access_id = msg.message_id();  // access_id() is only available on runtime
         CHECK(last_access_id != NO_ACCESS_ID);
     }
 protected:
@@ -214,7 +214,19 @@ public:
 
             std::string type = msg.type();
 
+#if 0
             std::cerr << "RECEIVED " << type << std::endl;
+        std::cerr << "======== " << msg.type() << std::endl;
+        if (msg.header().contains("To")) {
+            msg.formatEmail(std::cerr);
+        }
+        else {
+            std::cerr << msg.header().dump(4) << std::endl;
+            std::cerr << msg.body() << std::endl;
+        }
+        std::cerr << "========" << std::endl;
+#endif
+
 
             if (type == protocol::handshake::BeginMemory::type) {
                 for (;;) {

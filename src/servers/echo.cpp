@@ -35,7 +35,7 @@ protected:
         else {
             message.updateHeader([](json& header) {
                 std::swap(header["From"], header["To"]);
-                header["In-Response-To"] = header["Message-ID"];
+                header["In-Reply-To"] = header["Message-ID"];
                 header.erase("Message-ID");
             });
             send(std::move(message));

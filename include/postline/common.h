@@ -162,6 +162,10 @@ namespace postline {
             return get_id("Session-ID");
         }
 
+        int64_t message_id () const {
+            return get_id("Message-ID");
+        }
+
         int64_t in_reply_to () const {
             return get_id("In-Reply-To");
         }

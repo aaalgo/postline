@@ -44,6 +44,7 @@ class Runtime: immobile {
               root(&agents.get(agents.spawn("root", NOT_AN_AGENT))) {
             CHECK(runtime->id == 0);
             CHECK(journal->id == 1);
+            boot->permissions |= PERMISSION_SESSION;
             user->permissions |= PERMISSION_SESSION;
         };
     }  special;
