@@ -1,0 +1,54 @@
+# Codex-local ignore list.
+#
+# Keep generated artifacts and local-only state out of agent searches.
+
+.git/
+.agents/
+.codex/
+
+# Build trees and CMake output.
+build/
+Build/
+build-*/
+../build/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+compile_commands.json
+install_manifest.txt
+Testing/
+
+# Compiled artifacts.
+*.o
+*.obj
+*.lo
+*.slo
+*.a
+*.la
+*.lai
+*.so
+*.so.*
+*.dylib
+*.dll
+*.exe
+*.out
+*.app
+*.dwo
+
+# Python/runtime caches and virtual environments.
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Local scratch and editor state.
+.cache/
+*.log
+*.tmp
+*.bak
+*.swp
+*.swo
