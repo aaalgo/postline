@@ -203,6 +203,15 @@ set_target_properties(ftxcli_actor PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/install/bin/servers"
 )
 
+add_executable(login_actor
+    src/servers/login.cpp
+)
+target_link_libraries(login_actor PRIVATE postline::postline CLI11::CLI11)
+set_target_properties(login_actor PROPERTIES
+    OUTPUT_NAME login
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/install/bin/servers"
+)
+
 add_executable(run_driver
     src/run_driver.cpp
 )

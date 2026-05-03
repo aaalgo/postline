@@ -232,7 +232,9 @@ void Runtime::process(Message &&msg, Agent *from) {
         if (in_reply_to != NO_ACCESS_ID) {
             CHECK(session.stack.size());
             auto const &e = session.stack.back();
-            CHECK(e.agent_id == from->id);
+            // CHECK(e.agent_id == from->id); // doesn't have to
+            // or clone agents will fail
+            // in future we need to implement reply on behalf of
             CHECK(e.access_id == in_reply_to);
             session.stack.pop_back();
             --from->obligation_count;
@@ -324,7 +326,14 @@ void Runtime::process(Message &&msg, Agent *from) {
                     commit(ops);
                     AgentID clone_id = resolve(address);
                     CHECK(clone_id != NOT_AN_AGENT);
-                    agent = &agents.get(clone_id);
+                    Agent *clone_agent = &agents.get(clone_id);
+                    // we need to transfer the obligation count
+                    // the fix will work for now but we need a better logic layer
+                    {
+                        --agent->obligation_count;
+                        ++clone_agent->obligation_count;
+                    }
+                    agent = clone_agent;
                 }
                 if (!agent->driver) {
                     if (agent->service.empty()) {

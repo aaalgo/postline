@@ -29,7 +29,7 @@ char const *LOCAL = R"(
 {"from": "root", "address": "shell", "service": "shell:shell", "clone": false},
 {"from": "root", "address": "mcp", "service": "shell:mcp_bridge", "clone": false},
 {"from": "root", "address": "memory", "service": "shell:echo -m", "clone": false},
-{"from": "root", "address": "clone", "service": "shell:echo", "clone": true}
+{"from": "root", "address": "login", "service": "shell:login", "clone": true}
 ]
 )";
 
