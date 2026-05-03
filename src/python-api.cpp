@@ -44,12 +44,14 @@ public:
     }
 
     void updateResponseFields (PyMessage const &last) {
-        if (last.from() == to()) {
-            header["In-Reply-To"] = last.header["Message-ID"];
-        }
-        else {
-            header["In-Response-To"] = last.header["Message-ID"];
-        }
+        updateHeader([&last, this](json &header) {
+            if (last.from() == to()) {
+                header["In-Reply-To"] = last.header()["Message-ID"];
+            }
+            else {
+                header["In-Response-To"] = last.header()["Message-ID"];
+            }
+        });
     }
 
     static PyMessage read (int fd) {
@@ -79,6 +81,6 @@ PYBIND11_MODULE(_postline, module) {
         .def("get", &postline::PyMessage::get)
         .def("set", &postline::PyMessage::set)
         .def("write", &postline::Message::write, py::arg("fd"))
-        .def("format", &postline::PyMessage::format, py::arg("compact") = false);
+        .def("format", &postline::PyMessage::format, py::arg("compact") = false)
         .def("updateResponseFields", &postline::PyMessage::updateResponseFields);
 }
