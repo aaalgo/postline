@@ -15,6 +15,7 @@
 #include "agent.h"
 #include "journal.h"
 #include "poller.h"
+#include "session.h"
 
 namespace postline {
 
@@ -43,6 +44,7 @@ class Runtime: immobile {
               root(&agents.get(agents.spawn("root", NOT_AN_AGENT))) {
             CHECK(runtime->id == 0);
             CHECK(journal->id == 1);
+            user->permissions |= PERMISSION_SESSION;
         };
     }  special;
 
@@ -50,6 +52,7 @@ class Runtime: immobile {
     Poller poller;
     bool stop_requested;
     AccessID last_processed_id = NO_ACCESS_ID;
+    std::vector<std::unique_ptr<Session>> sessions;
 
 
     json dump () const {

@@ -93,6 +93,8 @@ protected:
 
         json respHeader;
 
+        respHeader["In-Reply-To"] = message.header()["Message-ID"];
+
         auto it = header.find("From");
         if (it != header.end() && it->is_string()) {
             respHeader["To"] = *it;

@@ -43,6 +43,15 @@ public:
         }
     }
 
+    void updateResponseFields (PyMessage const &last) {
+        if (last.from() == to()) {
+            header["In-Reply-To"] = last.header["Message-ID"];
+        }
+        else {
+            header["In-Response-To"] = last.header["Message-ID"];
+        }
+    }
+
     static PyMessage read (int fd) {
         return PyMessage(Message::read(fd));
     }
@@ -71,4 +80,5 @@ PYBIND11_MODULE(_postline, module) {
         .def("set", &postline::PyMessage::set)
         .def("write", &postline::Message::write, py::arg("fd"))
         .def("format", &postline::PyMessage::format, py::arg("compact") = false);
+        .def("updateResponseFields", &postline::PyMessage::updateResponseFields);
 }

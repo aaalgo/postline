@@ -26,13 +26,17 @@ protected:
             memory.emplace_back(message.header());
             json header{{"From", message.to()},
                         {"To", message.from()},
-                        {"Subject", "memory"}};
+                        {"Subject", "memory"},
+                        {"In-Reply-To", message.header()["Message-ID"]},
+            };
             std::string body = memory.dump(4);
             send(Message(std::move(header), std::move(body)));
         }
         else {
             message.updateHeader([](json& header) {
                 std::swap(header["From"], header["To"]);
+                header["In-Response-To"] = header["Message-ID"];
+                header.erase("Message-ID");
             });
             send(std::move(message));
         }

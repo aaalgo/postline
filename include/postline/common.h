@@ -39,6 +39,8 @@ namespace postline {
     AccessID make_access_id(uint32_t segment, uint64_t offset);
     void split_access_id(AccessID access_id, uint32_t *segment, uint64_t *offset);
 
+    int64_t parse_i64(std::string const&);   
+
     struct noncopyable {
     protected:
         noncopyable() = default;
@@ -124,6 +126,17 @@ namespace postline {
             return it->get_ref<std::string const&>();
         }
 
+        int64_t get_id(char const* key) const
+        {
+            auto it = header_.find(key);
+            if (it == header_.end() || it->is_null()) {
+                return -1;
+            }
+            CHECK(it->is_string());
+            return parse_i64(it->get_ref<std::string const &>());
+        }
+
+
         std::string const &type () const {
             return get("type");
         }
@@ -143,6 +156,18 @@ namespace postline {
 
         std::string const &to () const {
             return get("To");
+        }
+
+        int64_t session_id () const {
+            return get_id("Session-ID");
+        }
+
+        int64_t in_reply_to () const {
+            return get_id("In-Reply-To");
+        }
+
+        int64_t in_response_to () const {
+            return get_id("In-Response-To");
         }
 
         std::vector<std::string> cc () const {

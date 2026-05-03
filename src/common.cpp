@@ -37,6 +37,21 @@ inline void print_stacktrace(int fd = STDERR_FILENO)
     std::abort();
 }
 
+int64_t parse_i64(std::string const& s) {
+    int64_t value = 0;
+    auto [ptr, ec] = std::from_chars(s.data(), s.data() + s.size(), value);
+
+    // Fail if:
+    // 1. conversion error
+    // 2. not all characters consumed (e.g. "123abc")
+    if (ec != std::errc() || ptr != s.data() + s.size()) {
+        return -1;
+    }
+
+    return value;
+}
+
+
 constexpr uint32_t RECORD_MAGIC = 0x54534f50; // "POST"
 
 constexpr uint32_t ACCESS_SEGMENT_BITS = 15;

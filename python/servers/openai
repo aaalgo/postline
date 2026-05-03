@@ -72,10 +72,11 @@ def main():
 
         history.append(msg)
 
-        msg = history.respond(client)
-        history.append(msg)
+        reply = history.respond(client)
+        history.append(reply)
+        reply.updateResponseFields(msg);
 
-        msg.write(fd_out)
+        reply.write(fd_out)
 
         msg = None
 

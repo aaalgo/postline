@@ -22,19 +22,23 @@ struct AgentLink {
 
 class Driver;
 
+using PermissionMask = std::uint64_t;
+
+PermissionMask constexpr PERMISSION_SESSION = 0x00000001;
+
 struct Agent: immobile {
     AgentID id;
     AgentLink link;
     std::string address;
     std::string service;
+    PermissionMask permissions;
     bool clone;
     int next_clone_id;
     std::vector<AccessID> memory;
     std::unique_ptr<Driver> driver;
+    int obligation_count;
     // important:
     // expecting is the protocol with driver
-    std::stack<AccessID> expecting; // the next incoming messages
-                                    // is in reply to expecting.back()
 
 
     explicit Agent(AgentID id_, AgentLink link_, std::string const &address_, std::string const &service_, bool clone_)
@@ -42,8 +46,10 @@ struct Agent: immobile {
         link(std::move(link_)),
         address(address_),
         service(service_),
+        permissions(0),         // TODO: add permission handling to journal
         clone(clone_),
-        next_clone_id(0)
+        next_clone_id(0),
+        obligation_count(0)
     {}
 
     AccessID anchor () const {
@@ -60,6 +66,8 @@ struct Agent: immobile {
             }},
             {"address", address},
             {"service", service},
+            {"permissions", permissions},
+            {"clone", clone},
             {"memory", memory}
         };
     }

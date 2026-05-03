@@ -205,6 +205,59 @@ void Runtime::process(Message &&msg, Agent *from) {
     msg.formatEmail(std::cout);
     std::cout << std::endl;
 
+    // handle session
+    SessionID session_id = msg.session_id();
+    if (session_id == NOT_A_SESSION) {
+        // allocate session if not set
+        if ((from->permissions & PERMISSION_SESSION) == 0) {
+            CHECK(0, "agent not permitted to create session");
+        }
+        session_id = sessions.size();
+        msg.updateHeader([session_id](json &header) {header["Session-ID"] = std::format("{}", session_id);});
+        sessions.push_back(std::make_unique<Session>());
+    }
+    CHECK(session_id != NOT_A_SESSION);
+    CHECK(session_id >= 0 && session_id < sessions.size());
+    Session &session = *sessions[session_id].get();
+
+    if (!is_replay) {   // handle session top
+        session.trace.push_back(msg.access_id());
+
+        AccessID in_reply_to = msg.in_reply_to();
+        AccessID in_response_to = msg.in_response_to();
+        if (in_reply_to != NO_ACCESS_ID) {
+            CHECK(session.stack.size());
+            auto const &e = session.stack.back();
+            CHECK(e.agent_id == from->id);
+            CHECK(e.access_id == in_reply_to);
+            session.stack.pop_back();
+            --from->obligation_count;
+        }
+        else {
+            std::string const &addr = msg.to();
+            AgentID to_id = resolve(addr);
+            CHECK(to_id != NOT_AN_AGENT);
+            if (in_response_to != NO_ACCESS_ID) {
+                CHECK(session.stack.size());
+                auto const &e = session.stack.back();
+                CHECK(e.agent_id == from->id);
+                CHECK(e.access_id == in_response_to);
+                --from->obligation_count;
+            }
+            else {
+                Agent *to_agent = &agents.get(to_id);
+                CHECK(session.stack.empty());
+                ++to_agent->obligation_count;
+            }
+            session.stack.emplace_back();
+            session.stack.back().access_id = msg.access_id();
+            session.stack.back().agent_id = to_id;
+            // we need correct error handling
+        }
+        std::cout << "<<< stack" << std::endl;
+        std::cout << session.dump() << std::endl;
+    }
+
     int constexpr LEVEL_FROM = 0;
     int constexpr LEVEL_CC = 1;
     int constexpr LEVEL_TO = 2;
@@ -285,9 +338,6 @@ void Runtime::process(Message &&msg, Agent *from) {
 
                     poller.add(agent->driver->read_fd(), agent->id);
                 }
-                if (level == LEVEL_TO) {
-                    agent->expecting.push(msg.access_id());
-                }
                 agent->driver->send(msg);
             }
         }
@@ -356,12 +406,6 @@ void Runtime::run() {
                         header["From"] = agent->address;
                     });
                 }
-                if (!agent->expecting.empty()) {
-                    msg.updateHeader([agent](json &header){
-                    header["In-Reply-To"] = std::format("{}", agent->expecting.top());
-                    });
-                    agent->expecting.pop();
-                }
                 journal.append(msg);
                 todo.emplace_back(std::move(msg), agent);
             }
@@ -384,18 +428,14 @@ void Runtime::run() {
 
     for (std::size_t i = 0; i < agents.size(); ++i) {
         Agent *agent = &agents.get(i);
-        if (agent->expecting.size()) {
+        while (agent->obligation_count > 0) {
             CHECK(agent->driver);
-            log::info("Waiting for agent {} to respond...", i);
+            log::info("Waiting for agent {} (oc: {}) to respond...", i, agent->obligation_count);
 
             std::vector<Message> tmp;
             agent->driver->recv(tmp);
             for (auto &msg: tmp) {
-                if (agent->expecting.empty()) break;
-                msg.updateHeader([agent](json &header){
-                    header["In-Reply-To"] = std::format("{}", agent->expecting.top());
-                    });
-                agent->expecting.pop();
+                --agent->obligation_count;
             }
             trailing += tmp.size();
             for (auto &msg : tmp) {
