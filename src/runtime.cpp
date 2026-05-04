@@ -210,58 +210,60 @@ void Runtime::process(Message &&msg, Agent *from) {
     std::cout << std::endl;
 
     // handle session
-    SessionID session_id = msg.session_id();
-    if (session_id == NOT_A_SESSION) {
-        // allocate session if not set
-        if ((from->permissions & PERMISSION_SESSION) == 0) {
-            CHECK(0, "agent not permitted to create session");
+    SessionID session_id = NOT_A_SESSION;
+    Session *session = nullptr;
+    if (!is_replay) {
+        session_id = msg.session_id();
+        if (session_id == NOT_A_SESSION) {
+            // allocate session if not set
+            if ((from->permissions & PERMISSION_SESSION) == 0) {
+                CHECK(0, "agent not permitted to create session");
+            }
+            session_id = sessions.size();
+            msg.updateHeader([session_id](json &header) {header["Session-ID"] = std::format("{}", session_id);});
+            sessions.push_back(std::make_unique<Session>());
         }
-        session_id = sessions.size();
-        msg.updateHeader([session_id](json &header) {header["Session-ID"] = std::format("{}", session_id);});
-        sessions.push_back(std::make_unique<Session>());
-    }
-    CHECK(session_id != NOT_A_SESSION);
-    CHECK(session_id >= 0 && session_id < sessions.size());
-    Session &session = *sessions[session_id].get();
+        CHECK(session_id != NOT_A_SESSION);
+        CHECK(session_id >= 0 && session_id < sessions.size());
+        session = sessions[session_id].get();
 
-    if (!is_replay) {   // handle session top
-        session.trace.push_back(msg.access_id());
+        session->trace.push_back(msg.access_id());
 
         AccessID in_reply_to = msg.in_reply_to();
         AccessID in_response_to = msg.in_response_to();
         if (in_reply_to != NO_ACCESS_ID) {
-            CHECK(session.stack.size());
-            auto const &e = session.stack.back();
+            CHECK(session->stack.size());
+            auto const &e = session->stack.back();
             // CHECK(e.agent_id == from->id); // doesn't have to
             // or clone agents will fail
             // in future we need to implement reply on behalf of
             CHECK(e.access_id == in_reply_to);
-            session.stack.pop_back();
+            session->stack.pop_back();
             --from->obligation_count;
         }
         else {
             std::string const &addr = msg.to();
             AgentID to_id = resolve(addr);
-            CHECK(to_id != NOT_AN_AGENT);
+            CHECK(to_id != NOT_AN_AGENT, "cannot resolve {}", addr);
             if (in_response_to != NO_ACCESS_ID) {
-                CHECK(session.stack.size());
-                auto const &e = session.stack.back();
+                CHECK(session->stack.size());
+                auto const &e = session->stack.back();
                 CHECK(e.agent_id == from->id);
                 CHECK(e.access_id == in_response_to);
                 --from->obligation_count;
             }
             else {
                 Agent *to_agent = &agents.get(to_id);
-                CHECK(session.stack.empty());
+                CHECK(session->stack.empty());
                 ++to_agent->obligation_count;
             }
-            session.stack.emplace_back();
-            session.stack.back().access_id = msg.access_id();
-            session.stack.back().agent_id = to_id;
+            session->stack.emplace_back();
+            session->stack.back().access_id = msg.access_id();
+            session->stack.back().agent_id = to_id;
             // we need correct error handling
         }
         std::cout << "<<< stack" << std::endl;
-        std::cout << session.dump() << std::endl;
+        std::cout << session->dump() << std::endl;
     }
 
     int constexpr LEVEL_FROM = 0;

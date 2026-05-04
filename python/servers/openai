@@ -3,7 +3,14 @@ import sys
 from openai import OpenAI
 from postline import Message
 
-MODEL='gpt-5.4-mini'
+MODEL='gpt-5.5'
+
+
+def update_response_fields(reply, request):
+    reply.updateResponseFields(request)
+    reply.set("type", "agent:message")
+    reply.set("Session-ID", request.get("Session-ID"))
+
 
 class History:
 
@@ -33,32 +40,44 @@ class History:
         msg = Message.parse(response.output_text)
         return msg
 
+
+def handle_message(msg, history, client, fd_out):
+    history.append(msg)
+
+    if client is None:
+        client = OpenAI()
+
+    reply = history.respond(client)
+    history.append(reply)
+    update_response_fields(reply, msg)
+
+    reply.write(fd_out)
+    return client
+
+
 def main():
 
     fd_in = sys.stdin.fileno()
     fd_out = sys.stdout.fileno()
 
-    msg = Message()
-    msg.set('type', 'handshake:hello')
-    msg.set('spawn_type', 0)
-    msg.set('history_mode', 1)
-    msg.write(fd_out)
+    Message({
+        "type": "handshake:hello",
+        "spawn_type": 0,
+        "history_mode": 1,
+    }).write(fd_out)
 
-    msg = Message.read(fd_in);
+    msg = Message.read(fd_in)
 
-
-    client = OpenAI()
-
+    client = None
     history = History()
     if msg.get('type') == 'handshake:begin_memory':
         while True:
-            msg = Message.read(fd_in);
+            msg = Message.read(fd_in)
             if msg.get('type') == 'handshake:end_memory':
                 msg = None
-                break;
+                break
             # handle history
             history.append(msg)
-
 
     while True:
         try:
@@ -70,13 +89,11 @@ def main():
         if msg.get('type') == 'handshake:bye':
             break
 
-        history.append(msg)
-
-        reply = history.respond(client)
-        history.append(reply)
-        reply.updateResponseFields(msg);
-
-        reply.write(fd_out)
+        if msg.get('type') == 'handshake:multi':
+            for _ in range(msg.get("count")):
+                client = handle_message(Message.read(fd_in), history, client, fd_out)
+        else:
+            client = handle_message(msg, history, client, fd_out)
 
         msg = None
 

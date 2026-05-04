@@ -88,6 +88,10 @@ public:
     }
 
     json dump () const {
+	std::cerr << "lookup" << std::endl;
+	for (auto const &p: lookup_) {
+		std::cerr << p.first  << ": " << p.second << std::endl;
+	}
         json j = json::array();
         for (auto const &p: agents_) {
             j.push_back(p->dump());

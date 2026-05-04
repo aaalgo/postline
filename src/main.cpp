@@ -26,6 +26,9 @@ char const *LOCAL = R"(
 [
 {"from": "root", "address": "echo", "service": "shell:echo", "clone": false},
 {"from": "root", "address": "ai", "service": "shell:openai", "clone": false},
+{"from": "root", "address": "ai2", "service": "shell:openai", "clone": false},
+{"from": "root", "address": "ai3", "service": "shell:claude", "clone": false},
+{"from": "root", "address": "ai4", "service": "shell:claude", "clone": false},
 {"from": "root", "address": "shell", "service": "shell:shell", "clone": false},
 {"from": "root", "address": "mcp", "service": "shell:mcp_bridge", "clone": false},
 {"from": "root", "address": "memory", "service": "shell:echo -m", "clone": false},

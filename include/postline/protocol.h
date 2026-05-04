@@ -75,7 +75,7 @@ namespace handshake {
     // and they shouldn't go into agent memory either
 
 struct Hello : public View {
-    static constexpr std::string_view type = "haneshake:hello";
+    static constexpr std::string_view type = "handshake:hello";
     int spawn_type;
     int history_mode;
 

@@ -6,6 +6,16 @@
 
 using namespace postline;
 
+std::string trim(const std::string& s) {
+    auto start = std::find_if_not(s.begin(), s.end(),
+        [](unsigned char c){ return std::isspace(c); });
+
+    auto end = std::find_if_not(s.rbegin(), s.rend(),
+        [](unsigned char c){ return std::isspace(c); }).base();
+
+    return (start < end) ? std::string(start, end) : std::string();
+}
+
 class CliServer : public ServerBase {
 public:
     CliServer()
@@ -63,11 +73,11 @@ protected:
             if (body.starts_with('/') && body.size() > 3) {
                 if (body[1] == 's') {
                     // change subject
-                    subject = body.substr(3);
+                    subject = trim(body.substr(3));
                 }
                 else if (body[1] == 't') {
                     // change to
-                    to = body.substr(3);
+                    to = trim(body.substr(3));
                 }
             }
             else {

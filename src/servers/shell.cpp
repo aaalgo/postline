@@ -32,16 +32,42 @@ static std::string read_all_from_fd(int fd)
     return out;
 }
 
+static void write_all_to_fd(int fd, std::string const& body)
+{
+    char const* data = body.data();
+    size_t remaining = body.size();
+
+    while (remaining > 0) {
+        ssize_t n = ::write(fd, data, remaining);
+
+        if (n > 0) {
+            data += n;
+            remaining -= n;
+        } else if (n < 0 && errno == EINTR) {
+            continue;
+        } else if (n < 0 && errno == EPIPE) {
+            break;
+        } else {
+            CHECK(false);
+        }
+    }
+}
+
 struct CommandResult {
     int exit_status = -1;
     std::string stdout_;
     std::string stderr_;
 };
 
-static CommandResult run_command(char const* cmd)
+static CommandResult run_command(char const* cmd, std::string const &body)
 {
+    int in_pipe[2] = {-1, -1};
     int out_pipe[2];
     int err_pipe[2];
+
+    if (!body.empty()) {
+        CHECK(::pipe(in_pipe) == 0);
+    }
 
     CHECK(::pipe(out_pipe) == 0);
     CHECK(::pipe(err_pipe) == 0);
@@ -52,6 +78,12 @@ static CommandResult run_command(char const* cmd)
     if (pid == 0) {
         ::close(out_pipe[0]);
         ::close(err_pipe[0]);
+
+        if (!body.empty()) {
+            ::close(in_pipe[1]);
+            CHECK(::dup2(in_pipe[0], STDIN_FILENO) >= 0);
+            ::close(in_pipe[0]);
+        }
 
         CHECK(::dup2(out_pipe[1], STDOUT_FILENO) >= 0);
         CHECK(::dup2(err_pipe[1], STDERR_FILENO) >= 0);
@@ -66,6 +98,26 @@ static CommandResult run_command(char const* cmd)
     ::close(out_pipe[1]);
     ::close(err_pipe[1]);
 
+    pid_t writer_pid = -1;
+
+    if (!body.empty()) {
+        ::close(in_pipe[0]);
+
+        writer_pid = ::fork();
+        CHECK(writer_pid >= 0);
+
+        if (writer_pid == 0) {
+            ::close(out_pipe[0]);
+            ::close(err_pipe[0]);
+
+            write_all_to_fd(in_pipe[1], body);
+            ::close(in_pipe[1]);
+            _exit(0);
+        }
+
+        ::close(in_pipe[1]);
+    }
+
     CommandResult result;
     result.stdout_ = read_all_from_fd(out_pipe[0]);
     result.stderr_ = read_all_from_fd(err_pipe[0]);
@@ -75,6 +127,9 @@ static CommandResult run_command(char const* cmd)
 
     int status = 0;
     CHECK(::waitpid(pid, &status, 0) >= 0);
+    if (writer_pid >= 0) {
+        CHECK(::waitpid(writer_pid, nullptr, 0) >= 0);
+    }
 
     if (WIFEXITED(status)) {
         result.exit_status = WEXITSTATUS(status);
@@ -114,7 +169,8 @@ protected:
         }
 
         std::string const& cmd = it->get_ref<std::string const&>();
-        auto result = run_command(cmd.c_str());
+        std::string const &body = message.body();
+        auto result = run_command(cmd.c_str(), body);
 
         std::vector<Message> parts;
 
@@ -149,4 +205,3 @@ int main(int argc, char** argv)
 
     return server.run();
 }
-
