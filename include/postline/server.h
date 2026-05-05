@@ -14,7 +14,6 @@
 #include <postline/common.h>
 #include <postline/protocol.h>
 #include <postline/driver.h>
-#include <postline/session.h>
 
 
 namespace postline {
@@ -172,19 +171,6 @@ private:
 };
 
 class ServerBase {
-    SessionID session_id = NOT_A_SESSION;
-    std::string last_from;
-    AccessID last_access_id = NO_ACCESS_ID;
-
-    void updateLastMessageInfo (Message const &msg) {
-        SessionID last_session = msg.session_id();
-        if (last_session != NOT_A_SESSION) {
-            session_id = last_session;
-        }
-        last_from = msg.from();
-        last_access_id = msg.message_id();  // access_id() is only available on runtime
-        CHECK(last_access_id != NO_ACCESS_ID);
-    }
 protected:
     virtual DriverSpawnType spawn_type() const noexcept {
         return DriverSpawnType::ADDRESS;
@@ -248,7 +234,6 @@ public:
                 protocol::handshake::Multi multi(msg);
                 for (size_t i = 0; i < multi.count; ++i) {
                     Message msg = Message::read(read_fd_);
-                    updateLastMessageInfo(msg);
                     recv(std::move(msg));
                 }
                 continue;
@@ -258,7 +243,6 @@ public:
                 break;
             }
 
-            updateLastMessageInfo(msg);
             recv(std::move(msg));
         }
 
@@ -278,31 +262,7 @@ protected:
 
     void send(Message&& msg)
     {
-#if 0
-        if (msg.in_reply_to() == NO_ACCESS_ID 
-                && msg.in_response_to() == NO_ACCESS_ID
-                && !last_from.empty()) {
-            CHECK(last_access_id != NO_ACCESS_ID);
-            std::cerr << "You should set In-Reply-To or In-Response-To" << std::endl;
-            std::cerr << "I'm doing it for you; please come back and fix it" << std::endl;
-            char const *key = nullptr;
-            if (msg.to() == last_from) {
-                key = "In-Reply-To";
-            }
-            else {
-                key = "In-Response-To";
-            }
-            msg.updateHeader([this, key](json &header) {
-                    header[key] = std::format("{}", last_access_id);
-                });
-        }
-#endif
-        msg.updateHeader([this](json &header) {
-                header["Session-ID"] = std::format("{}", session_id);
-                });
         msg.write(write_fd_);
-        last_from.clear();
-        last_access_id = NO_ACCESS_ID;
     }
 
 protected:

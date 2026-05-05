@@ -28,7 +28,6 @@ bool commit_get_bool(json const &j, std::string const &key) {
     return j[key].get<bool>();
 }
 
-
 void Runtime::dump (std::string const &path) const {
     std::ofstream ofs(path);
     ofs << dump().dump(4);
@@ -82,7 +81,6 @@ void Runtime::spawn(Message const &msg) {
             throw commit_error(std::format("{} already used", address));
         }
 
-
         ops.push_back(json{{"op", "spawn"},
                            {"address", address},
                            {"from", from},
@@ -130,14 +128,13 @@ void Runtime::commit(json const &ops) {
     }
 }
 
-
 int Runtime::recv(Message const &msg) {
 
     json respHeader{{"From", msg.to()},
                     {"To", msg.replyTo()},
                     {"Subject", "OK"},
-                    {"Session-ID", msg.header()["Session-ID"]},
-                    {"In-Reply-To", msg.header()["Message-ID"]}
+                    {"In-Reply-To", msg.header()["Message-ID"]},
+                    {"Thread-ID", msg.header()["Thread-ID"]}
                     };
     std::string respBody;
 
@@ -201,113 +198,87 @@ int Runtime::recv(Message const &msg) {
     return 0;
 }
 
-void Runtime::process(Message &&msg, Agent *from) {
-    CHECK(msg.has_access_id());
-    bool is_replay = (from == special.journal);
+void Runtime::replay (Message &&msg) {
+      if (msg.type() == "runtime:commit") {
+          protocol::runtime::Commit c(msg);
+          commit(c.ops);
+      } else {
+          CHECK(0);
+          MessageContext ctx;
+          resolve(msg, &ctx);
+          for (auto [agent, level]: ctx.targets) {
+              agent->memory.push_back(msg.access_id());
+          }
+      }
+}
 
-    std::cout << "--------" << std::endl;
-    msg.formatEmail(std::cout);
-    std::cout << std::endl;
-
-    // handle session
-    SessionID session_id = NOT_A_SESSION;
-    Session *session = nullptr;
-    if (!is_replay) {
-        session_id = msg.session_id();
-        if (session_id == NOT_A_SESSION) {
-            // allocate session if not set
-            if ((from->permissions & PERMISSION_SESSION) == 0) {
-                CHECK(0, "agent not permitted to create session");
-            }
-            session_id = sessions.size();
-            msg.updateHeader([session_id](json &header) {header["Session-ID"] = std::format("{}", session_id);});
-            sessions.push_back(std::make_unique<Session>());
-        }
-        CHECK(session_id != NOT_A_SESSION);
-        CHECK(session_id >= 0 && session_id < sessions.size());
-        session = sessions[session_id].get();
-
-        session->trace.push_back(msg.access_id());
-
-        AccessID in_reply_to = msg.in_reply_to();
-        AccessID in_response_to = msg.in_response_to();
-        if (in_reply_to != NO_ACCESS_ID) {
-            CHECK(session->stack.size());
-            auto const &e = session->stack.back();
-            // CHECK(e.agent_id == from->id); // doesn't have to
-            // or clone agents will fail
-            // in future we need to implement reply on behalf of
-            CHECK(e.access_id == in_reply_to);
-            session->stack.pop_back();
-            --from->obligation_count;
-        }
-        else {
-            std::string const &addr = msg.to();
-            AgentID to_id = resolve(addr);
-            CHECK(to_id != NOT_AN_AGENT, "cannot resolve {}", addr);
-            if (in_response_to != NO_ACCESS_ID) {
-                CHECK(session->stack.size());
-                auto const &e = session->stack.back();
-                CHECK(e.agent_id == from->id);
-                CHECK(e.access_id == in_response_to);
-                --from->obligation_count;
-            }
-            else {
-                Agent *to_agent = &agents.get(to_id);
-                CHECK(session->stack.empty());
-                ++to_agent->obligation_count;
-            }
-            session->stack.emplace_back();
-            session->stack.back().access_id = msg.access_id();
-            session->stack.back().agent_id = to_id;
-            // we need correct error handling
-        }
-        std::cout << "<<< stack" << std::endl;
-        std::cout << session->dump() << std::endl;
-    }
-
-    int constexpr LEVEL_FROM = 0;
-    int constexpr LEVEL_CC = 1;
-    int constexpr LEVEL_TO = 2;
-    std::vector<std::pair<Agent *, int>> todo;
+void Runtime::resolve (Message const &msg, MessageContext *ctx) {
     std::unordered_set<std::string> seen;
-
     {
         std::string const &addr = msg.from();
-        if (!addr.empty()) {
-            seen.insert(addr);
-            AgentID id = resolve(addr);
-            if (id != NOT_AN_AGENT) {
-                Agent *agent = &agents.get(id);
-                todo.emplace_back(agent, LEVEL_FROM);
-            }
-        }
+        if (addr.empty()) throw resolve_error("from is empty", addr);
+        seen.insert(addr);
+        AgentID id = resolve(addr);
+        if (id == NOT_AN_AGENT) throw resolve_error("from {} not found", addr);
+        Agent *agent = &agents.get(id);
+        ctx->from = agent;
+        ctx->targets.emplace_back(agent, LEVEL_FROM);
     }
     {
         std::string const &addr = msg.to();
-        if ((!addr.empty()) && (!seen.contains(addr))) {
-            AgentID id = resolve(addr);
-            if (id != NOT_AN_AGENT) {
-                seen.insert(addr);
-                Agent *agent = &agents.get(id);
-                todo.emplace_back(agent, LEVEL_TO);
-            }
-        }
+        if (addr.empty()) throw resolve_error("to is empty");
+        seen.insert(addr);
+        AgentID id = resolve(addr);
+        if (id == NOT_AN_AGENT) throw resolve_error("to {} not found", addr);
+        Agent *agent = &agents.get(id);
+        ctx->to = &agents.get(id);
+        ctx->targets.emplace_back(agent, LEVEL_TO);
     }
-
     for (auto const &addr : msg.cc()) {
-        if ((!addr.empty()) && (!seen.contains(addr))) {
-            AgentID id = resolve(addr);
-            if (id != NOT_AN_AGENT) {
-                seen.insert(addr);
-                Agent *agent = &agents.get(id);
-                todo.emplace_back(agent, LEVEL_CC);
+        if (addr.empty()) throw resolve_error("cc is empty");
+        seen.insert(addr);
+        AgentID id = resolve(addr);
+        if (id == NOT_AN_AGENT) throw resolve_error("cc {} not found", addr);
+        Agent *agent = &agents.get(id);
+        ctx->targets.emplace_back(agent, LEVEL_CC);
+    }
+}
+
+void Runtime::process(Message &&msg, Agent *from) {
+        std::cerr << "====" << std::endl;
+        msg.formatEmail(std::cerr);
+        std::cerr << std::endl;
+    MessageContext ctx;
+    bool error = false;
+    try {
+        ctx.received_from = from;
+        resolve(msg, &ctx);
+        logic.check(msg, &ctx);
+    }
+    catch (resolve_error const &e) {
+        log::error("resolve error:", e.what());
+        error = true;
+    }
+    catch (logic_error const &e) {
+        log::error("logic error:", e.what());
+        error = true;
+    }
+    if (error) {
+        if (ctx.thread) {
+            std::cerr << "Stack" << std::endl;
+            for (auto const &e: ctx.thread->stack) {
+                std::cerr << std::format("{} -> {}: {}",
+                        e.access_id, e.agent_id, e.agent_address) << std::endl;
             }
         }
+        CHECK(0);
     }
 
-    for (auto [agent, level] : todo) {
-        if ((level >= LEVEL_TO) && !is_replay) {
+    journal.append(msg);
+    logic.process(msg, &ctx);
+
+    for (auto [agent, level] : ctx.targets) {
+        if (level >= LEVEL_TO) {
             if (agent == special.runtime) {
                 recv(std::move(msg));
             } else {
@@ -348,15 +319,12 @@ void Runtime::process(Message &&msg, Agent *from) {
                               agent->service);
                     agent->driver = create_driver(agent->service);
                     CHECK(agent->driver);
-
                     updateMemory(agent);
-
                     poller.add(agent->driver->read_fd(), agent->id);
                 }
                 agent->driver->send(msg);
             }
         }
-        agent->memory.push_back(msg.access_id());
     }
 }
 
@@ -387,7 +355,6 @@ void Runtime::updateMemory (Agent *agent) {
         }
     }
     agent->driver->send(protocol::handshake::EndMemory::make());
-
 }
 
 void Runtime::run() {
@@ -402,7 +369,6 @@ void Runtime::run() {
     int trailing = 0;
 
     // send a message to user
-
 
     for (;;) {
         auto events = poller.wait();
@@ -424,7 +390,6 @@ void Runtime::run() {
                         header["From"] = agent->address;
                     });
                 }
-                journal.append(msg);
                 todo.emplace_back(std::move(msg), agent);
             }
         }
@@ -456,9 +421,11 @@ void Runtime::run() {
                 --agent->obligation_count;
             }
             trailing += tmp.size();
+            /*
             for (auto &msg : tmp) {
                 journal.append(msg);
             }
+            */
         }
         if (agent->driver) {
             log::info("Stopping agent {} driver...", i);

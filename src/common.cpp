@@ -30,7 +30,7 @@ inline void print_stacktrace(int fd = STDERR_FILENO)
     std::cerr << "The program is to be put into a stop state." << std::endl;
     std::cerr << "In shell to continue a stopped job run 'fg'" << std::endl;
     std::cerr << "You have two choices:" << std::endl;
-    std::cerr << "    1. Kill the program: kill " << ::getpid() << std::endl;
+    std::cerr << "    1. Kill the program: kill -cont " << ::getpid() << "; kill -9 " << ::getpid() << std::endl;
     std::cerr << "    1. Debug the program: sudo gdb -p " << ::getpid() << std::endl;
     std::cerr << "        Inside gdb, run 'kill' to kill the program." << std::endl;
     std::raise(SIGSTOP);

@@ -7,21 +7,28 @@
 #include <unordered_map>
 #include <utility>
 #include <vector>
-
 #include <stdexcept>
-
 #include "common.h"
 #include "driver.h"
 #include "agent.h"
 #include "journal.h"
 #include "poller.h"
-#include "session.h"
+#include "logic.h"
 
 namespace postline {
 
 class commit_error : public std::runtime_error {
 public:
     using std::runtime_error::runtime_error;
+};
+
+class resolve_error : public std::runtime_error {
+public:
+    using std::runtime_error::runtime_error;
+
+    template <typename... Args>
+    resolve_error(std::format_string<Args...> fmt, Args&&... args)
+        : std::runtime_error(std::format(fmt, std::forward<Args>(args)...)) {}
 };
 
 class Runtime: immobile {
@@ -53,8 +60,7 @@ class Runtime: immobile {
     Poller poller;
     bool stop_requested;
     AccessID last_processed_id = NO_ACCESS_ID;
-    std::vector<std::unique_ptr<Session>> sessions;
-
+    Logic logic;
 
     json dump () const {
         json j{
@@ -63,19 +69,27 @@ class Runtime: immobile {
         return j;
     }
 
-    void dump (std::string const &path) const;
 
     void commit (json const &ops);
 
+    void dump (std::string const &path) const;
     void spawn (Message const &msg);
-    void listAgents();
     int recv (Message const &msg);
+
+    void replay (Message &&msg);
     void process (Message &&msg, Agent *from);
 
     void updateMemory (Agent *);
 
-
     AgentID resolve(std::string const& address) const;
+
+    void enqueue (Message &&msg) {
+        auto *driver = dynamic_cast<LoopDriver *>(special.runtime->driver.get());
+        CHECK(driver);
+        driver->enqueue(std::move(msg));
+    }
+
+    void resolve (Message const &msg, MessageContext *);
 
 public:
     struct Config {
@@ -87,14 +101,9 @@ public:
 
     Runtime(Config const &config)
         : special(agents),
-          journal(config.journal_path, config.resume_path, [this](Message &&msg) {
-              if (msg.type() == "runtime:commit") {
-                  protocol::runtime::Commit c(msg);
-                  commit(c.ops);
-              } else {
-                  process(std::move(msg), special.journal);
-              }
-          }),
+          journal(config.journal_path, config.resume_path,
+                  [this](Message &&msg) { replay(std::move(msg));
+                }),
           stop_requested(false) {
         log::info("Initializing runtime");
         special.runtime->driver = std::make_unique<LoopDriver>(
@@ -114,11 +123,6 @@ public:
 
     ~Runtime() = default;
 
-    void enqueue (Message &&msg) {
-        auto *driver = dynamic_cast<LoopDriver *>(special.runtime->driver.get());
-        CHECK(driver);
-        driver->enqueue(std::move(msg));
-    }
 
     void enqueue_boot (Message &&msg) {
         auto *driver = dynamic_cast<LoopDriver *>(special.boot->driver.get());

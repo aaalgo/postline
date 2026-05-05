@@ -85,7 +85,7 @@ public:
             else {
                 header["In-Response-To"] = last.header()["Message-ID"];
             }
-	    header["Session-ID"] = last.header()["Session-ID"];
+	    header["Thread-ID"] = last.header()["Thread-ID"];
         });
     }
 
@@ -120,7 +120,7 @@ class ServerLogic {
     std::vector<Entry> stack;
 public:
     // handles:
-    //      Session-ID
+    //      Thread-ID
     //      In-Reply-To
     //      In-Response-To
     //
@@ -141,7 +141,13 @@ public:
         if (msg.header().contains("In-Reply-To")) {
             CHECK(!stack.empty());
             auto const &e = stack.back();
-            CHECK(e.other_side == from);
+            std::string const &on_behalf_of = msg.get("On-Behalf-Of");
+            if (on_behalf_of.empty()) {
+                CHECK(e.other_side == from);
+            }
+            else {
+                CHECK(e.other_side == on_behalf_of);    // clone behavior
+            }
             CHECK(!e.is_incoming);
             stack.pop_back();
             CHECK(!stack.empty());
@@ -153,7 +159,7 @@ public:
             stack.emplace_back();
             stack.back().other_side = from;
             stack.back().is_incoming = true;
-            stack.back().session_id = msg.get("Session-ID");
+            stack.back().session_id = msg.get("Thread-ID");
             stack.back().message_id = msg.get("Message-ID");
         }
     }
@@ -170,14 +176,14 @@ public:
             });
         if (e.other_side == to) {   // this is a reply
             msg.updateHeader([&](json &header) {
-                header["Session-ID"] = e.session_id;
+                header["Thread-ID"] = e.session_id;
                 header["In-Reply-To"] = e.message_id;
                     });
             stack.pop_back();
         }
         else {
             msg.updateHeader([&e](json &header) {
-                header["Session-ID"] = e.session_id;
+                header["Thread-ID"] = e.session_id;
                 header["In-Response-To"] = e.message_id;
                     });
             stack.emplace_back();

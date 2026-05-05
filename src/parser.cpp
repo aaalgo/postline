@@ -190,6 +190,28 @@ Message Message::parseEmail (std::string_view buffer)
 {
     json header;
     header["type"] == "email";
+    
+    if (!buffer.starts_with("From:")) {
+        auto off = buffer.find("\nFrom:");
+        if (off != buffer.npos && off != 0) {
+            ++off;
+            header["Thinking"] = buffer.substr(0, off);
+            buffer = buffer.substr(off);
+        }
+    }
+
+    {
+        auto off = buffer.find("From:", 1);  // buffer starts with From:
+                                        // in case there's another email we need to trim that
+        if (off != buffer.npos && off != 0) {
+            if (buffer[off-1] == '\n') --off;
+            header["Trash"] = buffer.substr(off);
+            buffer =  buffer.substr(0, off);
+        }
+    }
+
+
+
     for (auto &&f: parse_headers(buffer)) {
         bool missing = true;
         for (auto const [key, is_list, is_essential] : CANONICAL) {
@@ -203,6 +225,7 @@ Message Message::parseEmail (std::string_view buffer)
             header[f.name] = f.value;
         }
     }
+
 
     return Message(std::move(header), std::string(buffer));
 }
@@ -267,6 +290,15 @@ void write_header_value (std::ostream &os, json const &value, bool force_list) {
 void write_headers (std::ostream &os, json const &header, bool compact) {
     std::unordered_set<std::string> used;
     used.insert("type");
+    used.insert("Thinking");
+    used.insert("Trash");
+    {
+        auto it = header.find("Thinking");
+        if (it != header.end() && it->is_string()) {
+            std::string const &thinking = it->get_ref<std::string const &>();
+            os.write(thinking.data(), thinking.size());
+        }
+    }
     for (auto const [key, is_list, is_essential] : CANONICAL) {
         auto it = header.find(key);
         if (it == header.end()) continue;

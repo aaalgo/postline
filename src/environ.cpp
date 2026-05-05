@@ -80,8 +80,9 @@ void init_logging()
 
     auto logger = std::make_shared<spdlog::logger>("postline", sinks.begin(), sinks.end());
     logger->set_level(spdlog::level::debug);  // overall level
-    // Flush on warnings and above; rely on atexit() shutdown for final flush.
-    logger->flush_on(spdlog::level::warn);
+    // Keep the file sink useful while the runtime is still running, and across
+    // CHECK/abort paths that do not run atexit handlers.
+    logger->flush_on(spdlog::level::debug);
 
     spdlog::set_default_logger(logger);
 

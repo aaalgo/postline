@@ -157,7 +157,7 @@ target_link_libraries(postline_tui_deps INTERFACE
 )
 
 add_executable(postline_bin
-    src/main.cpp
+    src/main.cpp src/banners.cpp
 )
 target_link_libraries(postline_bin PRIVATE postline_install_bin_deps)
 target_link_libraries(postline_bin PRIVATE postline::tui_deps)

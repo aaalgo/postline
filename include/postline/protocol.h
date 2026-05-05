@@ -66,6 +66,33 @@ struct Commit : public View {
     }
 };
 
+struct BeginShutdown: public View {
+    static constexpr std::string_view type = "runtime:begin_shutdown";
+
+    static Message make(json const &ops) {
+        json header{{"type", type}};
+        return Message(std::move(header));
+    }
+};
+
+struct EndShutdown: public View {
+    static constexpr std::string_view type = "runtime:end_shutdown";
+
+    static Message make(json const &ops) {
+        json header{{"type", type}};
+        return Message(std::move(header));
+    }
+};
+
+struct Flush: public View {
+    static constexpr std::string_view type = "runtime:flush";
+
+    static Message make(json const &ops) {
+        json header{{"type", type}};
+        return Message(std::move(header));
+    }
+};
+
 }
 
 namespace handshake {

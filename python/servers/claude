@@ -89,14 +89,13 @@ def main():
 
         if subject == "/memory":
             reply = Message({
-                                'From': history.my_address,
-                                'To': msg.get('From'),
-                                'Subject': 'memory'
-                                }, 
+                    'From': history.my_address,
+                    'To': msg.get('From'),
+                    'Subject': 'memory'
+                    }, 
 
-                            json.dumps(history.history)
-                    )
-
+                json.dumps(history.history)
+            )
         else:
             reply = history.respond(client)
         logic.beforeSend(reply);

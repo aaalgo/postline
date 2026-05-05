@@ -158,8 +158,8 @@ namespace postline {
             return get("To");
         }
 
-        int64_t session_id () const {
-            return get_id("Session-ID");
+        int64_t thread_id () const {
+            return get_id("Thread-ID");
         }
 
         int64_t message_id () const {

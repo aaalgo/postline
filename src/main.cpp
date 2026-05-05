@@ -36,19 +36,13 @@ char const *LOCAL = R"(
 ]
 )";
 
+extern char const *banner;
+
 inline void welcome ()
 {
     using namespace termcolor;
     termcolor::colorize(std::cout);
-    std::cout << green
-              << R"(
-██████╗  ██████╗ ███████╗████████╗██╗     ██╗███╗   ██╗███████╗
-██╔══██╗██╔═══██╗██╔════╝╚══██╔══╝██║     ██║████╗  ██║██╔════╝
-██████╔╝██║   ██║███████╗   ██║   ██║     ██║██╔██╗ ██║█████╗
-██╔═══╝ ██║   ██║╚════██║   ██║   ██║     ██║██║╚██╗██║██╔══╝
-██║     ╚██████╔╝███████║   ██║   ███████╗██║██║ ╚████║███████╗
-╚═╝      ╚═════╝ ╚══════╝   ╚═╝   ╚══════╝╚═╝╚═╝  ╚═══╝╚══════╝
-)"
+    std::cout << green << banner
               << reset
               << cyan << "Postline Agent Runtime\nBy Ann Arbor Algorithms\n" << reset
               << "Version: " << postline::build::VERSION << "\n"
@@ -106,7 +100,7 @@ int main(int argc, char** argv) {
 
     if (config.resume_path.empty()) {
         log::info("Sending kick off message.");
-        json h{{"From", "boot"},
+        json h{{"From", "[boot]"},
                {"To", "runtime"},
                {"Subject", "spawn"}};
         Message local(std::move(h), std::string(LOCAL));
@@ -126,3 +120,4 @@ int main(int argc, char** argv) {
     std::cerr << "[exit]" << std::endl;
     return 0;
 }
+
