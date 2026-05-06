@@ -2,7 +2,6 @@
 #include <string>
 #include <filesystem>
 #include <iostream>
-#include <termcolor/termcolor.hpp>
 #include <algorithm>
 #include <atomic>
 #include <chrono>
@@ -18,18 +17,19 @@
 #include <string>
 #include <CLI/CLI.hpp>
 #include <postline/runtime.h>
+#include <postline/ansi.h>
 #include "build_info.hpp"
 
 using namespace postline;
 
 char const *LOCAL = R"(
 [
-{"from": "root", "address": "echo", "service": "shell:echo", "flags": []},
-{"from": "root", "address": "ai", "service": "shell:claude", "flags": []},
-{"from": "root", "address": "shell", "service": "shell:shell", "flags": []},
-{"from": "root", "address": "mcp", "service": "shell:mcp_bridge", "flags": []},
-{"from": "root", "address": "memory", "service": "shell:echo -m", "flags": []},
-{"from": "root", "address": "login", "service": "shell:login", "flags": ["clone"]}
+{"from": "root", "address": "echo", "service": "pipe:echo", "flags": []},
+{"from": "root", "address": "ai", "service": "pipe:claude", "flags": []},
+{"from": "root", "address": "shell", "service": "pipe:shell", "flags": []},
+{"from": "root", "address": "mcp", "service": "pipe:mcp_bridge", "flags": []},
+{"from": "root", "address": "memory", "service": "pipe:echo -m", "flags": []},
+{"from": "root", "address": "login", "service": "pipe:login", "flags": ["clone"]}
 ]
 )";
 
@@ -37,11 +37,10 @@ extern char const *banner;
 
 inline void welcome ()
 {
-    using namespace termcolor;
-    termcolor::colorize(std::cout);
-    std::cout << green << banner
-              << reset
-              << cyan << "Postline Agent Runtime\nBy Ann Arbor Algorithms\n" << reset
+    
+    std::cout << ansi::green << banner
+              << ansi::reset
+              << ansi::cyan << "Postline Agent Runtime\nBy Ann Arbor Algorithms\n" << ansi::reset
               << "Version: " << postline::build::VERSION << "\n"
               << "Commit:  " << postline::build::GIT_COMMIT << "\n"
               << "Build Type:   " << postline::build::BUILD_TYPE << "\n"
@@ -91,7 +90,6 @@ int main(int argc, char** argv) {
     setup_environ();
     welcome();
     init_logging();
-    //ui.start_helper(POSTLINE_HOME/"bin"/"servers"/ui_server, detach);
     log::info("constructing runtime");
     Runtime runtime(config);
 

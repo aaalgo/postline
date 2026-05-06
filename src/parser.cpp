@@ -4,7 +4,7 @@
 #include <filesystem>
 #include <generator>
 #include <unordered_set>
-#include <termcolor/termcolor.hpp>
+//#include <termcolor/termcolor.hpp>
 #include <postline/common.h>
 
 static void lstrip (std::string_view &s) {

@@ -2,7 +2,6 @@
 #include <string>
 #include <filesystem>
 #include <iostream>
-#include <termcolor/termcolor.hpp>
 #include <algorithm>
 #include <atomic>
 #include <chrono>

@@ -1,0 +1,196 @@
+#!/usr/bin/env python3
+
+import os
+import json
+from pathlib import Path
+import shlex
+import subprocess
+import sys
+
+from postline.message import Message
+
+
+SPECIAL_LIST_TOOLS_SUBJECT = "mcp.tools.list"
+DEFAULT_MCP_SERVER = [
+    "npx",
+    "@modelcontextprotocol/server-filesystem",
+    os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+]
+
+
+class McpClient:
+    def __init__(self, argv):
+        self.proc = subprocess.Popen(
+            argv,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=sys.stderr,
+            text=True,
+            bufsize=1,
+        )
+        self.next_id = 1
+
+    def close(self):
+        try:
+            if self.proc.stdin:
+                self.proc.stdin.close()
+        except Exception:
+            pass
+        try:
+            self.proc.terminate()
+        except Exception:
+            pass
+
+    def request(self, method, params=None):
+        rid = self.next_id
+        self.next_id += 1
+
+        req = {
+            "jsonrpc": "2.0",
+            "id": rid,
+            "method": method,
+        }
+
+        if params is not None:
+            req["params"] = params
+
+        line = json.dumps(req, separators=(",", ":"))
+        self.proc.stdin.write(line + "\n")
+        self.proc.stdin.flush()
+
+        while True:
+            raw = self.proc.stdout.readline()
+            if raw == "":
+                raise EOFError("MCP server closed stdout")
+
+            try:
+                resp = json.loads(raw)
+            except json.JSONDecodeError as e:
+                raise ValueError(f"invalid JSON-RPC line from MCP server: {raw!r}") from e
+
+            # Ignore notifications / unrelated responses for now.
+            if resp.get("id") == rid:
+                return resp
+
+    def list_tools(self):
+        return self.request("tools/list", {})
+
+    def call_tool(self, name, arguments):
+        return self.request("tools/call", {
+            "name": name,
+            "arguments": arguments,
+        })
+
+
+def json_body(msg):
+    body = msg.body_raw()
+    if not body:
+        return {}
+
+    value = json.loads(body)
+    if not isinstance(value, dict):
+        raise ValueError("message body must be a JSON object")
+
+    return value
+
+
+def make_reply(req, status, body):
+    header = {
+        "From": req.get("To"),
+        "To": req.get("From"),
+        "Status": status,
+    }
+
+    cc = req.get("Cc")
+    if cc is not None:
+        header["Cc"] = cc
+
+    subject = req.get("Subject")
+    if subject is not None:
+        header["Subject"] = subject + ".result"
+
+    # Optional, depending on your Message conventions.
+    if req.get("id") is not None:
+        header["In-Reply-To"] = req.get("id")
+
+    return Message(
+        header,
+        json.dumps(body, separators=(",", ":")),
+    )
+
+
+def handle_message(mcp, msg):
+    subject = msg.get("Subject")
+    if not subject:
+        raise ValueError("missing Subject")
+
+    if subject == SPECIAL_LIST_TOOLS_SUBJECT:
+        resp = mcp.list_tools()
+
+        if "error" in resp:
+            return make_reply(msg, "error", resp["error"])
+
+        # MCP result shape is usually {"tools": [...]}
+        return make_reply(msg, "ok", resp.get("result", {}))
+
+    args = json_body(msg)
+    resp = mcp.call_tool(subject, args)
+
+    if "error" in resp:
+        return make_reply(msg, "error", resp["error"])
+
+    result = resp.get("result", {})
+    is_error = bool(result.get("isError", False))
+
+    if is_error:
+        return make_reply(msg, "error", result.get("content", []))
+
+    return make_reply(msg, "ok", result.get("content", []))
+
+
+def main():
+    fd_in = sys.stdin.buffer
+    fd_out = sys.stdout.buffer
+
+    Message({
+        "type": "handshake:hello",
+        "spawn_type": 0,
+        "history_mode": 0,
+    }).write(fd_out)
+    fd_out.flush()
+
+    argv = sys.argv[1:]
+    if not argv:
+        argv = DEFAULT_MCP_SERVER
+    elif len(argv) == 1:
+        argv = shlex.split(argv[0])
+
+    mcp = McpClient(argv)
+
+    try:
+        while True:
+            try:
+                msg = Message.read(fd_in)
+            except EOFError:
+                break
+
+            if msg.get("type") == "handshake:bye":
+                break
+
+            try:
+                reply = handle_message(mcp, msg)
+            except Exception as e:
+                reply = make_reply(msg, "error", {
+                    "message": str(e),
+                    "type": e.__class__.__name__,
+                })
+
+            reply.write(fd_out)
+            fd_out.flush()
+
+    finally:
+        mcp.close()
+
+
+if __name__ == "__main__":
+    main()

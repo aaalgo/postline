@@ -5,7 +5,6 @@
 #include <iostream>
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/sinks/rotating_file_sink.h>
-#include <termcolor/termcolor.hpp>
 #include <CLI/CLI.hpp>
 #include "build_info.hpp"
 #include "postline/common.h"

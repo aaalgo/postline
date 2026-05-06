@@ -1,7 +1,7 @@
 #include <sstream>
 #include <pybind11/pybind11.h>
 #include <postline/common.h>
-#include <postline/server.h>
+#include <postline/driver.h>
 
 namespace py = pybind11;
 

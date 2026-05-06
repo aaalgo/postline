@@ -84,12 +84,6 @@ FetchContent_Declare(
 )
 
 FetchContent_Declare(
-    termcolor
-    GIT_REPOSITORY https://github.com/ikalnytskyi/termcolor.git
-    GIT_TAG v2.1.0
-)
-
-FetchContent_Declare(
     ftxui
     GIT_REPOSITORY https://github.com/ArthurSonzogni/FTXUI.git
     GIT_TAG v6.1.9
@@ -104,7 +98,7 @@ set(FTXUI_BUILD_TESTS OFF CACHE BOOL "Disable FTXUI tests" FORCE)
 set(FTXUI_BUILD_TESTS_FUZZER OFF CACHE BOOL "Disable FTXUI fuzz tests" FORCE)
 set(FTXUI_ENABLE_INSTALL OFF CACHE BOOL "Disable FTXUI install rules" FORCE)
 
-FetchContent_MakeAvailable(nlohmann_json spdlog CRCpp CLI11 pybind11 termcolor ftxui)
+FetchContent_MakeAvailable(nlohmann_json spdlog CRCpp CLI11 pybind11 ftxui)
 
 configure_file(
     ${CMAKE_CURRENT_SOURCE_DIR}/include/postline/build_info.hpp.in
@@ -133,8 +127,6 @@ target_link_libraries(postline
         CLI11::CLI11
         nlohmann_json::nlohmann_json
         spdlog::spdlog_header_only
-    PRIVATE
-        termcolor::termcolor
 )
 
 add_library(postline_install_bin_deps INTERFACE)
@@ -145,7 +137,6 @@ target_link_libraries(postline_install_bin_deps INTERFACE
     postline::postline
     CLI11::CLI11
     spdlog::spdlog
-    termcolor::termcolor
 )
 
 add_library(postline_tui_deps INTERFACE)
@@ -167,58 +158,51 @@ set_target_properties(postline_bin PROPERTIES
 )
 
 add_executable(echo_actor
-    src/drivers/echo.cpp
+    src/adapters/echo.cpp
 )
 target_link_libraries(echo_actor PRIVATE postline::postline CLI11::CLI11)
 set_target_properties(echo_actor PROPERTIES
     OUTPUT_NAME echo
-    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/install/bin/drivers"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/install/bin/adapters/g"
 )
 
 add_executable(shell_actor
-    src/drivers/shell.cpp
+    src/adapters/shell.cpp
 )
 target_link_libraries(shell_actor PRIVATE postline::postline CLI11::CLI11)
 set_target_properties(shell_actor PROPERTIES
     OUTPUT_NAME shell
-    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/install/bin/drivers"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/install/bin/adapters/g"
 )
 
 add_executable(cli_actor
-    src/drivers/cli.cpp
+    src/adapters/cli.cpp
 )
 target_link_libraries(cli_actor PRIVATE postline::postline CLI11::CLI11)
 set_target_properties(cli_actor PROPERTIES
     OUTPUT_NAME cli
-    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/install/bin/drivers"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/install/bin/adapters/g"
 )
 
 add_executable(ftxcli_actor
-    src/drivers/ftxcli.cpp
+    src/adapters/ftxcli.cpp
 )
 target_link_libraries(ftxcli_actor PRIVATE postline::postline CLI11::CLI11)
 target_link_libraries(ftxcli_actor PRIVATE postline::tui_deps)
 set_target_properties(ftxcli_actor PROPERTIES
     OUTPUT_NAME ftxcli
-    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/install/bin/drivers"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/install/bin/adapters/g"
 )
 
 add_executable(login_actor
-    src/drivers/login.cpp
+    src/adapters/login.cpp
 )
 target_link_libraries(login_actor PRIVATE postline::postline CLI11::CLI11)
 set_target_properties(login_actor PROPERTIES
     OUTPUT_NAME login
-    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/install/bin/drivers"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/install/bin/adapters/g"
 )
 
-add_executable(run_driver
-    src/run_driver.cpp
-)
-target_link_libraries(run_driver PRIVATE postline_install_bin_deps)
-set_target_properties(run_driver PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY "${POSTLINE_INSTALL_BIN_DIR}"
-)
 
 add_executable(dump_journal
     src/dump_journal.cpp
@@ -268,11 +252,11 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/python/postline")
             "${CMAKE_CURRENT_SOURCE_DIR}/python/postline"
             "${CMAKE_BINARY_DIR}/install/python/postline"
     )
-    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/python/drivers")
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/python/adapters/g")
         add_custom_command(TARGET copy_python_tree POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_directory
-                "${CMAKE_CURRENT_SOURCE_DIR}/python/drivers"
-                "${CMAKE_BINARY_DIR}/install/bin/drivers"
+                "${CMAKE_CURRENT_SOURCE_DIR}/python/adapters/g"
+                "${CMAKE_BINARY_DIR}/install/bin/adapters/g"
         )
     endif()
 endif()
@@ -328,16 +312,12 @@ if(POSTLINE_BUILD_TESTS)
     target_link_libraries(test_stacktrace PRIVATE postline::postline)
 
     add_executable(test_ui tests/test_ui.cpp)
-    target_link_libraries(test_ui PRIVATE postline::postline postline::tui_deps termcolor::termcolor)
+    target_link_libraries(test_ui PRIVATE postline::postline postline::tui_deps)
 
     #add_test(NAME test_journal COMMAND test_journal)
 endif()
 
 install(TARGETS postline_bin
-    RUNTIME DESTINATION bin
-)
-
-install(TARGETS run_driver
     RUNTIME DESTINATION bin
 )
 

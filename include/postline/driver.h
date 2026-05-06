@@ -232,8 +232,8 @@ static inline std::unique_ptr<Driver> create_driver (std::string const &service)
         driver = service.substr(0, off);
         params = service.substr(off + 1);
     }
-    if (driver == "shell") {
-        std::string command = (POSTLINE_HOME / "bin" / "servers").string() + "/" + params;
+    if (driver == "pipe") {
+        std::string command = (POSTLINE_HOME / "bin" / "adapters").string() + "/" + params;
         return std::make_unique<ShellDriver>(std::string(command));
     }
     else CHECK(0, "dynamically createing driver {} not supported", driver);
