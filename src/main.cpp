@@ -24,15 +24,12 @@ using namespace postline;
 
 char const *LOCAL = R"(
 [
-{"from": "root", "address": "echo", "service": "shell:echo", "clone": false},
-{"from": "root", "address": "ai", "service": "shell:openai", "clone": false},
-{"from": "root", "address": "ai2", "service": "shell:openai", "clone": false},
-{"from": "root", "address": "ai3", "service": "shell:claude", "clone": false},
-{"from": "root", "address": "ai4", "service": "shell:claude", "clone": false},
-{"from": "root", "address": "shell", "service": "shell:shell", "clone": false},
-{"from": "root", "address": "mcp", "service": "shell:mcp_bridge", "clone": false},
-{"from": "root", "address": "memory", "service": "shell:echo -m", "clone": false},
-{"from": "root", "address": "login", "service": "shell:login", "clone": true}
+{"from": "root", "address": "echo", "service": "shell:echo", "flags": []},
+{"from": "root", "address": "ai", "service": "shell:claude", "flags": []},
+{"from": "root", "address": "shell", "service": "shell:shell", "flags": []},
+{"from": "root", "address": "mcp", "service": "shell:mcp_bridge", "flags": []},
+{"from": "root", "address": "memory", "service": "shell:echo -m", "flags": []},
+{"from": "root", "address": "login", "service": "shell:login", "flags": ["clone"]}
 ]
 )";
 
@@ -106,14 +103,14 @@ int main(int argc, char** argv) {
         Message local(std::move(h), std::string(LOCAL));
         runtime.enqueue_boot(std::move(local));
     }
-#if 0
-    log::info("Sending message.");
-    json h{{"From", "boot"},
-           {"To", "runtime"},
-           {"Reply-To", "user"},
-           {"Subject", "list_agents"}};
-    runtime.enqueue_boot(Message(std::move(h)));
-#endif
+    {
+        log::info("Sending message.");
+        json h{{"From", "[boot]"},
+               {"To", "runtime"},
+               {"Reply-To", "user"},
+               {"Subject", "list_agents"}};
+        runtime.enqueue_boot(Message(std::move(h)));
+    }
     log::info("Starting runtime.");
     runtime.run();
     log::info("Runtime has been gracefully shutdown.");

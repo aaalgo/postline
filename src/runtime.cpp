@@ -28,6 +28,16 @@ bool commit_get_bool(json const &j, std::string const &key) {
     return j[key].get<bool>();
 }
 
+int64_t commit_get_int(json const &j, std::string const &key) {
+    if (!j.contains(key)) {
+        throw commit_error(std::format("missing {}", key));
+    }
+    if (!j[key].is_number_integer()) {
+        throw commit_error(std::format("{} is not bool", key));
+    }
+    return j[key].get<int64_t>();
+}
+
 void Runtime::dump (std::string const &path) const {
     std::ofstream ofs(path);
     ofs << dump().dump(4);
@@ -50,7 +60,29 @@ void Runtime::spawn(Message const &msg) {
         std::string const &from = commit_get_string(m, "from");
         std::string const &address = commit_get_string(m, "address");
         std::string service;
-        bool clone = false;
+        AgentFlags flags = 0;
+
+        if (m.contains("flags")) {
+            json fs = m["flags"];
+            if (!fs.is_array()) throw commit_error("flags is not array");
+            for (auto const &f: fs) {
+                if (!f.is_string()) throw commit_error("unknown flag, is not string");
+                std::string const &s = f.get_ref<std::string const&>();
+                if (s == "clone") {
+                    flags |= AGENT_FLAG_CLONE;
+                }
+                else if (s == "thread") {
+                    flags |= AGENT_FLAG_THREAD;
+                }
+                else if (s == "catch") {
+                    flags |= AGENT_FLAG_CATCH;
+                }
+                else {
+                    throw commit_error("unknown flag");
+                }
+            }
+        }
+
 
         if (address.find('_') != address.npos) {
             throw commit_error(std::format("address cannot contain _: {}", address));
@@ -60,18 +92,13 @@ void Runtime::spawn(Message const &msg) {
             service = commit_get_string(m, "service");
         }
 
-        if (m.contains("clone")) {
-            clone = commit_get_bool(m, "clone");
-        }
-
-
         AgentID from_id = resolve(from);
         if (from_id == NOT_AN_AGENT) {
             throw commit_error(std::format("cannot resolve from {}", from));
         }
         else {
             Agent const &p = agents.get(from_id);
-            if (p.clone && clone) {
+            if ((p.flags & AGENT_FLAG_CLONE) && (flags & AGENT_FLAG_CLONE)) {
                 throw commit_error(std::format("cannot double clone"));
             }
         }
@@ -85,7 +112,7 @@ void Runtime::spawn(Message const &msg) {
                            {"address", address},
                            {"from", from},
                            {"service", service},
-                           {"clone", clone},
+                           {"flags", flags},
                            {"is_clone", false},
                            });
     }
@@ -106,19 +133,19 @@ void Runtime::commit(json const &ops) {
             std::string const &address = commit_get_string(m, "address");
             std::string const &from = commit_get_string(m, "from");
             std::string const &service = commit_get_string(m, "service");
-            bool clone = commit_get_bool(m, "clone");
+            AgentFlags flags = commit_get_int(m, "flags");
             bool is_clone = commit_get_bool(m, "is_clone");
             AgentID from_id = resolve(from);
             CHECK(from_id != NOT_AN_AGENT);
             Agent &parent = agents.get(from_id);
             if (is_clone) {
-                CHECK(parent.clone);
-                CHECK(!clone);
+                CHECK(parent.flags & AGENT_FLAG_CLONE);
+                CHECK(!(flags & AGENT_FLAG_CLONE));
                 std::string suffix = std::format("_{}", parent.next_clone_id);
                 CHECK(address.ends_with(suffix));
                 ++parent.next_clone_id;
             }
-            AgentID id = agents.spawn(address, from_id, NO_ACCESS_ID, service, clone);
+            AgentID id = agents.spawn(address, from_id, NO_ACCESS_ID, service, flags);
             Agent &agent = agents.get(id);
             log::info("create agent {}: {}", id, agent.address);
         } else if (op == "shutdown") {
@@ -223,6 +250,16 @@ void Runtime::resolve (Message const &msg, MessageContext *ctx) {
         Agent *agent = &agents.get(id);
         ctx->from = agent;
         ctx->targets.emplace_back(agent, LEVEL_FROM);
+        ctx->reply_to = agent;
+    }
+    {
+        std::string const &addr = msg.replyTo();
+        if (!addr.empty()) {
+            AgentID id = resolve(addr);
+            if (id == NOT_AN_AGENT) throw resolve_error("reply-to {} not found", addr);
+            Agent *agent = &agents.get(id);
+            ctx->reply_to = agent;
+        }
     }
     {
         std::string const &addr = msg.to();
@@ -271,6 +308,27 @@ void Runtime::process(Message &&msg, Agent *from) {
                         e.access_id, e.agent_id, e.agent_address) << std::endl;
             }
         }
+        CHECK(ctx.thread);
+        while (!ctx.thread->stack.empty()) {
+            auto &e = ctx.thread->stack.back();
+            Agent *notify = &agents.get(e.reply_to_id);
+            if (notify->flags & AGENT_FLAG_CATCH == 0) {
+                ctx.thread->stack.pop_back();
+                continue;
+            }
+            // we'll notify this one
+            json respHeader{{"From", "runtime"},
+                            {"To", notify->address},
+                            {"Subject", "error"},
+                            {"In-Reply-To", e.access_id},
+                            {"Thread-ID", ctx.thread->id}
+                            };
+            std::string respBody;
+            enqueue(Message(std::move(respHeader), std::move(respBody)));
+            // TODO
+            // construct the body with stack dump
+            return;
+        }
         CHECK(0);
     }
 
@@ -282,7 +340,7 @@ void Runtime::process(Message &&msg, Agent *from) {
             if (agent == special.runtime) {
                 recv(std::move(msg));
             } else {
-                if (agent->clone) {
+                if (agent->flags & AGENT_FLAG_CLONE) {
                     // clone agent
                     std::string address = std::format("{}_{}", agent->address, agent->next_clone_id);
                     log::info("cloning {} to {}", agent->address, address);
@@ -291,7 +349,7 @@ void Runtime::process(Message &&msg, Agent *from) {
                                        {"address", address},
                                        {"from", agent->address},
                                        {"service", agent->service},
-                                       {"clone", false},
+                                       {"flags", agent->flags & (~AGENT_FLAG_CLONE)},
                                        {"is_clone", true}
                                        });
                     Message entry = protocol::runtime::Commit::make(ops);

@@ -44,15 +44,15 @@ class Runtime: immobile {
         static constexpr char const *ROOT_GROUP_NAME = "home";
 
         SpecialAgents (AgentStore &agents)
-            : runtime(&agents.get(agents.spawn("runtime", NOT_AN_AGENT))),
-              journal(&agents.get(agents.spawn("[journal]", NOT_AN_AGENT))),
-              boot(&agents.get(agents.spawn("[boot]", NOT_AN_AGENT))),
-              user(&agents.get(agents.spawn("user", NOT_AN_AGENT))),
-              root(&agents.get(agents.spawn("root", NOT_AN_AGENT))) {
+            : runtime(&agents.get(agents.spawn("runtime"))),
+              journal(&agents.get(agents.spawn("[journal]"))),
+              boot(&agents.get(agents.spawn("[boot]"))),
+              user(&agents.get(agents.spawn("user"))),
+              root(&agents.get(agents.spawn("root"))) {
             CHECK(runtime->id == 0);
             CHECK(journal->id == 1);
-            boot->permissions |= PERMISSION_SESSION;
-            user->permissions |= PERMISSION_SESSION;
+            boot->flags |= AGENT_FLAG_THREAD | AGENT_FLAG_CATCH;
+            user->flags |= AGENT_FLAG_CATCH;
         };
     }  special;
 

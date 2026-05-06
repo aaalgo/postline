@@ -21,6 +21,7 @@ struct Thread;
 struct MessageContext {
     Thread *thread;
     Agent *received_from;
+    Agent *reply_to;
     Agent *from;
     Agent *to;
     int logic_op;
@@ -32,13 +33,17 @@ struct CallStackEntry {
     AccessID access_id; // present message
     AgentID  agent_id;  // sent to agent_id, waiting for its reply
     std::string const &agent_address;
+    AgentID  reply_to_id;
 
     CallStackEntry (AccessID access_id_,
                     AgentID agent_id_,
-                    std::string const &agent_address_)
+                    std::string const &agent_address_,
+                    AgentID reply_to_id_)
         : access_id(access_id_),
         agent_id(agent_id_),
-        agent_address(agent_address_) {
+        agent_address(agent_address_),
+        reply_to_id(reply_to_id_)
+    {
     }
                         //
     json dump() const {
@@ -56,6 +61,7 @@ public:
 };
 
 struct Thread {
+    int id = -1;
     std::vector<CallStackEntry> stack;
     std::vector<AccessID> trace;
 
@@ -139,7 +145,7 @@ struct Thread {
             else {
                 ++ctx->to->obligation_count;
             }
-            stack.emplace_back(msg.access_id(), ctx->to->id, ctx->to->address);
+            stack.emplace_back(msg.access_id(), ctx->to->id, ctx->to->address, ctx->reply_to->id);
         }
     }
 };
@@ -154,6 +160,7 @@ struct Logic: noncopyable {
             // create_thread
             thread_id = threads.size();
             threads.push_back(std::make_unique<Thread>());
+            threads.back()->id = thread_id;
             msg.updateHeader([thread_id](json &header) {
                     header["Thread-ID"] = std::format("{}", thread_id);
                     });

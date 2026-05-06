@@ -22,17 +22,18 @@ struct AgentLink {
 
 class Driver;
 
-using PermissionMask = std::uint64_t;
+using AgentFlags = std::uint64_t;
 
-PermissionMask constexpr PERMISSION_SESSION = 0x00000001;
+AgentFlags constexpr AGENT_FLAG_CLONE = 0x00000001;
+AgentFlags constexpr AGENT_FLAG_THREAD = 0x00000002;
+AgentFlags constexpr AGENT_FLAG_CATCH = 0x00000004;
 
 struct Agent: immobile {
     AgentID id;
     AgentLink link;
     std::string address;
     std::string service;
-    PermissionMask permissions;
-    bool clone;
+    AgentFlags flags;
     int next_clone_id;
     std::vector<AccessID> memory;
     std::unique_ptr<Driver> driver;
@@ -41,13 +42,12 @@ struct Agent: immobile {
     // expecting is the protocol with driver
 
 
-    explicit Agent(AgentID id_, AgentLink link_, std::string const &address_, std::string const &service_, bool clone_)
+    explicit Agent(AgentID id_, AgentLink link_, std::string const &address_, std::string const &service_, AgentFlags flags_)
         : id(id_),
         link(std::move(link_)),
         address(address_),
         service(service_),
-        permissions(0),         // TODO: add permission handling to journal
-        clone(clone_),
+        flags(flags_),
         next_clone_id(0),
         obligation_count(0)
     {}
@@ -58,6 +58,16 @@ struct Agent: immobile {
     }
 
     json dump () const {
+        json flag_strings = json::array();
+        if (flags & AGENT_FLAG_CLONE) {
+            flag_strings.push_back("clone");
+        }
+        if (flags & AGENT_FLAG_THREAD) {
+            flag_strings.push_back("thread");
+        }
+        if (flags & AGENT_FLAG_CATCH) {
+            flag_strings.push_back("catch");
+        }
         return json{
             {"id", id},
             {"link", {
@@ -66,8 +76,7 @@ struct Agent: immobile {
             }},
             {"address", address},
             {"service", service},
-            {"permissions", permissions},
-            {"clone", clone},
+            {"flags", flag_strings},
             {"oblication_count", obligation_count},
             {"memory", memory}
         };
@@ -99,7 +108,7 @@ public:
         return j;
     }
 
-    AgentID spawn(std::string const &address, AgentID parent, AccessID anchor = NO_ACCESS_ID, std::string service = std::string(), bool clone = false) {
+    AgentID spawn(std::string const &address, AgentID parent = NOT_AN_AGENT, AccessID anchor = NO_ACCESS_ID, std::string service = std::string(), AgentFlags flags = 0) {
         AgentID id = static_cast<AgentID>(agents_.size());
         auto [it, inserted] = lookup_.insert(std::make_pair(address, id));
         if (!inserted) return NOT_AN_AGENT;   // already exists
@@ -113,15 +122,15 @@ public:
             if (anchor == NO_ACCESS_ID) {
                 anchor = p.anchor();
             }
-            if (clone) {
-                CHECK(!p.clone, "a clone of a cloning parent cannot be cloning");
+            if (flags & AGENT_FLAG_CLONE) {
+                CHECK(!p.flags & AGENT_FLAG_CLONE, "a clone of a cloning parent cannot be cloning");
             }
         }
 
         agents_.push_back(std::make_unique<Agent>(id, AgentLink{
             .parent = parent,
             .anchor = anchor,
-        }, address, service, clone));
+        }, address, service, flags));
 
         return id;
     }

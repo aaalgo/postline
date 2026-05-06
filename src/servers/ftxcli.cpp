@@ -40,16 +40,6 @@ protected:
         can_receive_.acquire();
     }
 
-    void on_connect () override {
-        json h{
-            {"type", "agent:message"},
-            {"From", "user"},
-            {"To", "runtime"},
-            {"Subject", "list_agents"}
-        };
-        send(Message(std::move(h)));
-    }
-
 private:
     ftxui::CLI cli_;
     std::binary_semaphore can_receive_{0};
