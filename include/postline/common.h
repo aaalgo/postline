@@ -80,7 +80,6 @@ namespace postline {
             access_id_(access_id),
             header_(json::parse(header_raw))
         {
-            //CHECK(header_raw_.size() <= MAX_HEADER_SIZE);
             CHECK(body_raw_.size() <= MAX_BODY_SIZE);
         }
 
@@ -197,7 +196,6 @@ namespace postline {
 
         void updateHeader (std::function<void(json &)> callback) {
             callback(header_);
-            //header_raw_ = header_.dump();
         }
 
         size_t write(int fd) const;     // returns number of bytes written
