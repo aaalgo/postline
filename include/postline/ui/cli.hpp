@@ -201,6 +201,7 @@ class CLI {
         }
 
         if (type == "ui:update_agents") {
+            std::cerr << "UPDATE_AGENTS" << std::endl;
             postline::json j = postline::json::parse(msg.body());
             for (size_t i = 0; i < j.size(); ++i) {
                 auto const &m = j[i];
