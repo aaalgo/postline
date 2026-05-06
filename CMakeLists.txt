@@ -163,7 +163,7 @@ add_executable(echo_actor
 target_link_libraries(echo_actor PRIVATE postline::postline CLI11::CLI11)
 set_target_properties(echo_actor PROPERTIES
     OUTPUT_NAME echo
-    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/install/bin/adapters/g"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/install/bin/adapters"
 )
 
 add_executable(shell_actor
@@ -172,7 +172,7 @@ add_executable(shell_actor
 target_link_libraries(shell_actor PRIVATE postline::postline CLI11::CLI11)
 set_target_properties(shell_actor PROPERTIES
     OUTPUT_NAME shell
-    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/install/bin/adapters/g"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/install/bin/adapters"
 )
 
 add_executable(cli_actor
@@ -181,7 +181,7 @@ add_executable(cli_actor
 target_link_libraries(cli_actor PRIVATE postline::postline CLI11::CLI11)
 set_target_properties(cli_actor PROPERTIES
     OUTPUT_NAME cli
-    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/install/bin/adapters/g"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/install/bin/adapters"
 )
 
 add_executable(ftxcli_actor
@@ -191,7 +191,7 @@ target_link_libraries(ftxcli_actor PRIVATE postline::postline CLI11::CLI11)
 target_link_libraries(ftxcli_actor PRIVATE postline::tui_deps)
 set_target_properties(ftxcli_actor PROPERTIES
     OUTPUT_NAME ftxcli
-    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/install/bin/adapters/g"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/install/bin/adapters"
 )
 
 add_executable(login_actor
@@ -200,7 +200,7 @@ add_executable(login_actor
 target_link_libraries(login_actor PRIVATE postline::postline CLI11::CLI11)
 set_target_properties(login_actor PROPERTIES
     OUTPUT_NAME login
-    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/install/bin/adapters/g"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/install/bin/adapters"
 )
 
 
@@ -252,11 +252,11 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/python/postline")
             "${CMAKE_CURRENT_SOURCE_DIR}/python/postline"
             "${CMAKE_BINARY_DIR}/install/python/postline"
     )
-    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/python/adapters/g")
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/python/adapters")
         add_custom_command(TARGET copy_python_tree POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_directory
-                "${CMAKE_CURRENT_SOURCE_DIR}/python/adapters/g"
-                "${CMAKE_BINARY_DIR}/install/bin/adapters/g"
+                "${CMAKE_CURRENT_SOURCE_DIR}/python/adapters"
+                "${CMAKE_BINARY_DIR}/install/bin/adapters"
         )
     endif()
 endif()
