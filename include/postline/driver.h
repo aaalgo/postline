@@ -5,6 +5,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include "common.h"
+#include "service.h"
 
 namespace postline {
 
@@ -149,14 +150,18 @@ class LoopDriver: public Driver {
     int wake_fd;
     std::mutex mutex;
     std::vector<Message> pending;
-    std::function<int(Message const &, LoopDriver *)> callback;
+    Service *service;
 
 public:
-    LoopDriver (std::function<int(Message const &, LoopDriver *)> callback_)
+    LoopDriver (Service *service_)
         : wake_fd(eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC)),
-        callback(callback_)
+        service(service_)
     {
         CHECK(wake_fd >= 0);
+        std::vector<Message> resp = service->on_connect();
+        for (auto &msg: resp) {
+            enqueue(std::move(msg));
+        }
     }
 
     ~LoopDriver () {
@@ -164,17 +169,12 @@ public:
     }
 
     int send(Message const &msg) override {
-        return callback(msg, this);
-    }
-
-    int enqueue (Message && msg) {
-        {
-            std::lock_guard<std::mutex> lock(mutex);
-            pending.emplace_back(std::move(msg));
+        json header = msg.header();
+        std::string body = msg.body();
+        std::vector<Message> resp = service->on_message(Message(std::move(header), std::move(body)));
+        for (auto &msg: resp) {
+            enqueue(std::move(msg));
         }
-        uint64_t one = 1;
-        ssize_t rc = ::write(wake_fd, &one, sizeof(one));
-        CHECK(rc == static_cast<ssize_t>(sizeof(one)));
         return 0;
     }
 
@@ -194,6 +194,18 @@ public:
     int read_fd () const override {
         return wake_fd;
     }
+
+    int enqueue (Message && msg) {
+        {
+            std::lock_guard<std::mutex> lock(mutex);
+            pending.emplace_back(std::move(msg));
+        }
+        uint64_t one = 1;
+        ssize_t rc = ::write(wake_fd, &one, sizeof(one));
+        CHECK(rc == static_cast<ssize_t>(sizeof(one)));
+        return 0;
+    }
+
 };
 
 static inline std::unique_ptr<Driver> create_driver (std::string const &service) {

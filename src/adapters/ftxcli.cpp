@@ -4,6 +4,8 @@
 #include <postline/server.h>
 #include <postline/ui/cli.hpp>
 
+#if 0
+
 using namespace postline;
 
 class FXTCliServer : public ServerBase {
@@ -56,5 +58,10 @@ int main(int argc, char **argv)
 
     server.run();
     std::cerr << "ftxcli exit" << std::endl;
+    return 0;
+}
+#endif
+
+int main (int argc, char **argv) {
     return 0;
 }

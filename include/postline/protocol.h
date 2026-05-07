@@ -44,7 +44,6 @@ struct Root : public View {
 }
 
 namespace runtime {
-    
     // These are the runtime data structure modifying messages
     // They are processed by Runtime::commit and should never fail.
     // these messages do not have From/To/... like typical messages

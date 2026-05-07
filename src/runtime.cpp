@@ -158,19 +158,10 @@ void Runtime::commit(json const &ops) {
     }
 }
 
-int Runtime::recv(Message const &msg) {
+void Runtime::call (Message &&msg, Response &resp) {
 
-    json respHeader{{"From", msg.to()},
-                    {"To", msg.replyTo()},
-                    {"Subject", "OK"},
-                    {"In-Reply-To", msg.header()["Message-ID"]},
-                    {"Thread-ID", msg.header()["Thread-ID"]}
-                    };
+    json respHeader{{"Subject", "OK"}};
     std::string respBody;
-
-    bool reply = true;
-    if (msg.to().empty()) reply = false;    // INVESTIGATE WHY IT DOESN'T WORK
-    if (resolve(msg.to()) == NOT_AN_AGENT) reply = false;
 
     do {
 
@@ -197,8 +188,6 @@ int Runtime::recv(Message const &msg) {
             stop_requested = true;
             log::info("Stop request received.");
             log::info("Runtime will shutdown.");
-            reply = false;
-            --special.runtime->obligation_count;
             break;
         }
         if (*cmd_list_agents) {
@@ -209,6 +198,8 @@ int Runtime::recv(Message const &msg) {
         if (*cmd_spawn) {
             try {
                 spawn(msg);
+                respHeader["type"] = "ui:update_agents";
+                respBody = agents.dump().dump();
             } catch (commit_error &e) {
                 log::info("COMMIT ERROR: {}", e.what());
                 respHeader["Subject"] = e.what();
@@ -221,11 +212,7 @@ int Runtime::recv(Message const &msg) {
         }
     } while (0);
 
-    if (reply) {
-        log::info("Replying...");
-        enqueue(Message(std::move(respHeader), std::move(respBody)));
-    }
-    return 0;
+    resp.append(Message(std::move(respHeader), std::move(respBody)));
 }
 
 void Runtime::replay (Message &&msg) {
@@ -340,51 +327,47 @@ void Runtime::process(Message &&msg, Agent *from) {
 
     for (auto [agent, level] : ctx.targets) {
         if (level >= LEVEL_TO) {
-            if (agent == special.runtime) {
-                recv(std::move(msg));
-            } else {
-                if (agent->flags & AGENT_FLAG_CLONE) {
-                    // clone agent
-                    std::string address = std::format("{}_{}", agent->address, agent->next_clone_id);
-                    log::info("cloning {} to {}", agent->address, address);
-                    json ops = json::array();
-                    ops.push_back(json{{"op", "spawn"},
-                                       {"address", address},
-                                       {"from", agent->address},
-                                       {"service", agent->service},
-                                       {"flags", agent->flags & (~AGENT_FLAG_CLONE)},
-                                       {"is_clone", true}
-                                       });
-                    Message entry = protocol::runtime::Commit::make(ops);
-                    journal.append(entry);
-                    commit(ops);
-                    AgentID clone_id = resolve(address);
-                    CHECK(clone_id != NOT_AN_AGENT);
-                    Agent *clone_agent = &agents.get(clone_id);
-                    // we need to transfer the obligation count
-                    // the fix will work for now but we need a better logic layer
-                    {
-                        --agent->obligation_count;
-                        ++clone_agent->obligation_count;
-                    }
-                    agent = clone_agent;
+            if (agent->flags & AGENT_FLAG_CLONE) {
+                // clone agent
+                std::string address = std::format("{}_{}", agent->address, agent->next_clone_id);
+                log::info("cloning {} to {}", agent->address, address);
+                json ops = json::array();
+                ops.push_back(json{{"op", "spawn"},
+                                   {"address", address},
+                                   {"from", agent->address},
+                                   {"service", agent->service},
+                                   {"flags", agent->flags & (~AGENT_FLAG_CLONE)},
+                                   {"is_clone", true}
+                                   });
+                Message entry = protocol::runtime::Commit::make(ops);
+                journal.append(entry);
+                commit(ops);
+                AgentID clone_id = resolve(address);
+                CHECK(clone_id != NOT_AN_AGENT);
+                Agent *clone_agent = &agents.get(clone_id);
+                // we need to transfer the obligation count
+                // the fix will work for now but we need a better logic layer
+                {
+                    --agent->obligation_count;
+                    ++clone_agent->obligation_count;
                 }
-                if (!agent->driver) {
-                    if (agent->service.empty()) {
-                        log::error("agent {} {} has empty service", agent->id, agent->address);
-                        return;
-                    }
-                    log::info("Creating driver for agent {} {}: {}",
-                              agent->id,
-                              agent->address,
-                              agent->service);
-                    agent->driver = create_driver(agent->service);
-                    CHECK(agent->driver);
-                    updateMemory(agent);
-                    poller.add(agent->driver->read_fd(), agent->id);
-                }
-                agent->driver->send(msg);
+                agent = clone_agent;
             }
+            if (!agent->driver) {
+                if (agent->service.empty()) {
+                    log::error("agent {} {} has empty service", agent->id, agent->address);
+                    return;
+                }
+                log::info("Creating driver for agent {} {}: {}",
+                          agent->id,
+                          agent->address,
+                          agent->service);
+                agent->driver = create_driver(agent->service);
+                CHECK(agent->driver);
+                updateMemory(agent);
+                poller.add(agent->driver->read_fd(), agent->id);
+            }
+            agent->driver->send(msg);
         }
     }
 }

@@ -22,16 +22,6 @@
 
 using namespace postline;
 
-char const *LOCAL = R"(
-[
-{"from": "root", "address": "echo", "service": "pipe:echo", "flags": []},
-{"from": "root", "address": "ai", "service": "pipe:claude", "flags": ["history"]},
-{"from": "root", "address": "shell", "service": "pipe:shell", "flags": []},
-{"from": "root", "address": "mcp", "service": "pipe:mcp_bridge", "flags": []},
-{"from": "root", "address": "memory", "service": "pipe:echo -m", "flags": ["history"]},
-{"from": "root", "address": "login", "service": "pipe:login", "flags": ["clone"]}
-]
-)";
 
 extern char const *banner;
 
@@ -118,6 +108,7 @@ int main(int argc, char** argv) {
             user_driver = std::make_unique<ShellDriver>(user_stdin, user_stdout);
         }
         else {
+#if 0
             if (user_stdin.size()
                     || user_stdout.size()) {
                 std::cerr << "When you set -i,--input you cannot set --user-stdin or --user-stdout." << std::endl;
@@ -149,6 +140,7 @@ int main(int argc, char** argv) {
                     ++count;
                     return 0;
                     });
+#endif
         }
     }
 
@@ -159,22 +151,6 @@ int main(int argc, char** argv) {
 
     Runtime runtime(config, std::move(user_driver));
 
-    if (config.resume_path.empty()) {
-        log::info("Sending kick off message.");
-        json h{{"From", "[boot]"},
-               {"To", "runtime"},
-               {"Subject", "spawn"}};
-        Message local(std::move(h), std::string(LOCAL));
-        runtime.enqueue_boot(std::move(local));
-    }
-    {
-        log::info("Sending message.");
-        json h{{"From", "[boot]"},
-               {"To", "runtime"},
-               {"Reply-To", "user"},
-               {"Subject", "list_agents"}};
-        runtime.enqueue_boot(Message(std::move(h)));
-    }
     log::info("Starting runtime.");
     runtime.run();
     log::info("Runtime has been gracefully shutdown.");

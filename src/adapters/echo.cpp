@@ -1,62 +1,59 @@
 #include <postline/common.h>
+#include <postline/service.h>
 #include <postline/server.h>
 
-using namespace postline;
 
-class EchoServer : public ServerBase {
-    bool remember;
+namespace postline {
+
+class Echo : public Service {
     json memory;
-
-protected:
-
-    void updateMemory(Message&& message) override
-    {
-        if (remember) {
-            memory.emplace_back(message.header());
+public:
+    Echo (bool memory_) {
+        if (memory_) {
+            memory = json::array();
         }
     }
 
-    void recv(Message&& message) override
+    void on_memory (Message&& message) override
     {
-        if (remember) {
+        if (memory.is_array()) {
             memory.emplace_back(message.header());
-            json header{{"From", message.to()},
-                        {"To", message.from()},
-                        {"Subject", "memory"},
-                        {"In-Reply-To", message.header()["Message-ID"]},
-            };
+        }
+    }
+protected:
+    void call (Message&& message, Response &resp) override
+    {
+        if (memory.is_array()) {
+            memory.emplace_back(message.header());
             std::string body = memory.dump(4);
-            send(Message(std::move(header), std::move(body)));
+            resp.append(Message(json(), std::move(body)));
         }
         else {
             message.updateHeader([](json& header) {
-                std::swap(header["From"], header["To"]);
-                header["In-Reply-To"] = header["Message-ID"];
+                header.erase("From");
+                header.erase("To");
                 header.erase("Message-ID");
             });
-            send(std::move(message));
+            resp.append(std::move(message));
         }
-        return;
     }
-public:
-    EchoServer (): remember(false), memory(json::array()) {
-    }
-
-    void configure(CLI::App& app) override {
-        ServerBase::configure(app);
-        app.add_flag("-m,--memory", remember, "with memory");
-    }
-
-
 };
+
+}
+
+using namespace postline;
 
 int main(int argc, char** argv)
 {
-    EchoServer server;
-
-    CLI::App app{"Postline echo server"};
-    server.configure(app);
-    CLI11_PARSE(app, argc, argv);
-
-    return server.run();
+    bool memory = false;
+    Server::Config config;
+    {
+        CLI::App app{"Postline echo server"};
+        config.configure(app);
+        app.add_flag("-m,--memory", memory, "with memory");
+        CLI11_PARSE(app, argc, argv);
+    }
+    Echo echo(memory);
+    Server server(config);
+    return server.run(&echo);
 }

@@ -13,9 +13,15 @@
 #include "agent.h"
 #include "journal.h"
 #include "poller.h"
+#include "service.h"
 #include "logic.h"
 
 namespace postline {
+
+
+int constexpr LEVEL_FROM = 0;
+int constexpr LEVEL_CC = 1;
+int constexpr LEVEL_TO = 2;
 
 class commit_error : public std::runtime_error {
 public:
@@ -29,13 +35,12 @@ public:
         : std::runtime_error(std::format(fmt, std::forward<Args>(args)...)) {}
 };
 
-class Runtime: immobile {
+class Runtime: immobile, public Service {
     AgentStore agents;
 
     struct SpecialAgents {
         Agent *runtime;
         Agent *journal;
-        Agent *boot;
         Agent *user;
         Agent *root;
 
@@ -44,13 +49,11 @@ class Runtime: immobile {
         SpecialAgents (AgentStore &agents)
             : runtime(&agents.get(agents.spawn("runtime"))),
               journal(&agents.get(agents.spawn("[journal]"))),
-              boot(&agents.get(agents.spawn("[boot]"))),
               user(&agents.get(agents.spawn("user"))),
               root(&agents.get(agents.spawn("root"))) {
             CHECK(runtime->id == 0);
             CHECK(journal->id == 1);
-            boot->flags |= AGENT_FLAG_THREAD | AGENT_FLAG_CATCH;
-            user->flags |= AGENT_FLAG_CATCH;
+            user->flags |= AGENT_FLAG_THREAD | AGENT_FLAG_CATCH;
         };
     }  special;
 
@@ -72,7 +75,8 @@ class Runtime: immobile {
 
     void dump (std::string const &path) const;
     void spawn (Message const &msg);
-    int recv (Message const &msg);
+
+    void call (Message &&msg, Response &) override;
 
     void replay (Message &&msg);
     void process (Message &&msg, Agent *from);
@@ -104,28 +108,14 @@ public:
                 }),
           stop_requested(false) {
         log::info("Initializing runtime");
-        special.runtime->driver = std::make_unique<LoopDriver>(
-                [this](Message const &msg, LoopDriver *) {
-                    return recv(msg);
-                });
-        special.boot->driver = std::make_unique<LoopDriver>(
-                [this](Message const &msg, LoopDriver *) {
-                    return 0;
-                });
+        special.runtime->driver = std::make_unique<LoopDriver>(this);
         special.user->driver = std::move(user_driver);
         poller.add(special.runtime->driver->read_fd(), special.runtime->id);
-        poller.add(special.boot->driver->read_fd(), special.boot->id);
         poller.add(special.user->driver->read_fd(), special.user->id);
     }
 
     ~Runtime() = default;
 
-
-    void enqueue_boot (Message &&msg) {
-        auto *driver = dynamic_cast<LoopDriver *>(special.boot->driver.get());
-        CHECK(driver);
-        driver->enqueue(std::move(msg));
-    }
 
     void run ();
 };

@@ -110,14 +110,6 @@ public:
 };
 
 class ServerLogic {
-    std::string my_address;
-    struct Entry {
-        std::string session_id;
-        std::string other_side;
-        std::string message_id;
-        bool is_incoming;
-    };
-    std::vector<Entry> stack;
 public:
     // handles:
     //      Thread-ID
@@ -128,70 +120,9 @@ public:
     // in Python servers.  It should not be used by CLI/FTXCLI
     //
     void afterReceive (PyMessage const &msg) {
-        // 1st message To is our address
-        if (my_address.empty()) {
-            my_address = msg.to();
-        }
-        else {
-            CHECK(my_address == msg.to());
-        }
-
-        std::string const &from = msg.from();
-
-        if (msg.header().contains("In-Reply-To")) {
-            CHECK(!stack.empty());
-            auto const &e = stack.back();
-            std::string const &on_behalf_of = msg.get("On-Behalf-Of");
-            if (on_behalf_of.empty()) {
-                CHECK(e.other_side == from);
-            }
-            else {
-                CHECK(e.other_side == on_behalf_of);    // clone behavior
-            }
-            CHECK(!e.is_incoming);
-            stack.pop_back();
-            CHECK(!stack.empty());
-            // we have received a )
-            // it must be caused by an earlier ( message we sent
-            CHECK(stack.back().is_incoming = true);
-        }
-        else {
-            stack.emplace_back();
-            stack.back().other_side = from;
-            stack.back().is_incoming = true;
-            stack.back().session_id = msg.get("Thread-ID");
-            stack.back().message_id = msg.get("Message-ID");
-        }
     }
 
     void beforeSend (PyMessage &msg) {
-        std::string const &to = msg.to();
-        CHECK(!stack.empty());
-        auto const &e = stack.back();
-        CHECK(e.is_incoming);
-        msg.updateHeader([this](json &header) {
-                if (!header.contains("From")) {
-                    header["From"] = my_address;
-                }
-            });
-        if (e.other_side == to) {   // this is a reply
-            msg.updateHeader([&](json &header) {
-                header["Thread-ID"] = e.session_id;
-                header["In-Reply-To"] = e.message_id;
-                    });
-            stack.pop_back();
-        }
-        else {
-            msg.updateHeader([&e](json &header) {
-                header["Thread-ID"] = e.session_id;
-                header["In-Response-To"] = e.message_id;
-                    });
-            stack.emplace_back();
-            stack.back().other_side = to;
-            stack.back().message_id.clear();
-            stack.back().session_id.clear();
-            stack.back().is_incoming = false;
-        }
     }
 };
 

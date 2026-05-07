@@ -13,12 +13,11 @@
 #include <CLI/CLI.hpp>
 #include <postline/common.h>
 #include <postline/protocol.h>
-#include <postline/driver.h>
-
+#include <postline/service.h>
 
 namespace postline {
 
-class Transport {
+class Server: immobile {
 public:
     struct Config {
         std::string stdin_path;
@@ -43,37 +42,13 @@ public:
         }
     };
 
-    explicit Transport(Config const& config)
-    {
-        if (config.port != 0 || !config.host.empty()) {
-            open_socket(config);
-        } else {
-            open_stdio_or_files(config);
-        }
-    }
-
-    ~Transport()
-    {
-        close();
-    }
-
-    Transport(Transport const&) = delete;
-    Transport& operator=(Transport const&) = delete;
-
-    Transport(Transport&&) = delete;
-    Transport& operator=(Transport&&) = delete;
-
-    int read_fd() const
-    {
-        return read_fd_;
-    }
-
-    int write_fd() const
-    {
-        return write_fd_;
-    }
-
 private:
+    int read_fd_ = STDIN_FILENO;
+    int write_fd_ = STDOUT_FILENO;
+
+    bool owns_read_fd_ = false;
+    bool owns_write_fd_ = false;
+
     void open_stdio_or_files(Config const& config)
     {
         if (!config.stdin_path.empty()) {
@@ -139,8 +114,17 @@ private:
         owns_read_fd_ = true;
         owns_write_fd_ = false;
     }
+public:
+    explicit Server(Config const& config)
+    {
+        if (config.port != 0 || !config.host.empty()) {
+            open_socket(config);
+        } else {
+            open_stdio_or_files(config);
+        }
+    }
 
-    void close()
+    ~Server()
     {
         if (read_fd_ == write_fd_) {
             if ((owns_read_fd_ || owns_write_fd_) && read_fd_ >= 0) {
@@ -162,109 +146,59 @@ private:
         owns_write_fd_ = false;
     }
 
-private:
-    int read_fd_ = STDIN_FILENO;
-    int write_fd_ = STDOUT_FILENO;
-
-    bool owns_read_fd_ = false;
-    bool owns_write_fd_ = false;
-};
-
-class ServerBase {
-public:
-    virtual ~ServerBase() = default;
-
-    virtual void configure(CLI::App& app)
+    int run(Service *service)
     {
-        transport_config_.configure(app);
-    }
+        protocol::handshake::Hello::make().write(write_fd_);
 
-    int run()
-    {
-        Transport transport(transport_config_);
-
-        read_fd_ = transport.read_fd();
-        write_fd_ = transport.write_fd();
-
-        send(protocol::handshake::Hello::make());
-
-        on_connect();
+        {
+            std::vector<Message> resp = service->on_connect();
+            for (auto &msg: resp) {
+                msg.write(write_fd_);
+            }
+        }
 
         for (;;) {
             Message msg = Message::read(read_fd_);
 
             std::string type = msg.type();
 
-#if 0
-            std::cerr << "RECEIVED " << type << std::endl;
-        std::cerr << "======== " << msg.type() << std::endl;
-        if (msg.header().contains("To")) {
-            msg.formatEmail(std::cerr);
-        }
-        else {
-            std::cerr << msg.header().dump(4) << std::endl;
-            std::cerr << msg.body() << std::endl;
-        }
-        std::cerr << "========" << std::endl;
-#endif
-
+            if (type == protocol::handshake::Bye::type) {
+                break;
+            }
 
             if (type == protocol::handshake::BeginMemory::type) {
                 for (;;) {
-
                     msg = Message::read(read_fd_);
                     if (msg.type() == protocol::handshake::EndMemory::type) {
                         break;
                     }
                     else {
-                        updateMemory(std::move(msg));
+                        service->on_memory(std::move(msg));
                     }
                 }
                 continue;
             }
 
             if (type == protocol::handshake::Multi::type) {
+                CHECK(0);
+#if 0
                 protocol::handshake::Multi multi(msg);
                 for (size_t i = 0; i < multi.count; ++i) {
                     Message msg = Message::read(read_fd_);
-                    recv(std::move(msg));
+                    //recv(std::move(msg));
                 }
                 continue;
+#endif
             }
 
-            if (type == protocol::handshake::Bye::type) {
-                break;
+            std::vector<Message> resp = service->on_message(std::move(msg));
+            for (auto &msg: resp) {
+                msg.write(write_fd_);
             }
-
-            recv(std::move(msg));
         }
-
-        bye();
+        service->on_exit();
         return 0;
     }
-
-protected:
-    virtual void updateMemory(Message&& msg) {
-    };
-
-    virtual void recv(Message&& msg) = 0;
-
-    virtual void on_connect () {}
-
-    virtual void bye() {}
-
-    void send(Message&& msg)
-    {
-        msg.write(write_fd_);
-    }
-
-protected:
-    Transport::Config transport_config_;
-
-private:
-    int read_fd_ = STDIN_FILENO;
-    int write_fd_ = STDOUT_FILENO;
 };
-
 
 } // namespace postline

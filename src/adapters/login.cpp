@@ -19,9 +19,10 @@
 #include <unistd.h>
 
 #include <postline/common.h>
+#include <postline/service.h>
 #include <postline/server.h>
 
-using namespace postline;
+namespace postline {
 using namespace std::chrono_literals;
 
 constexpr std::string DEFAULT_HOME = "./home";
@@ -369,12 +370,10 @@ private:
     pid_t child_pid_ = -1;
 };
 
-class LoginServer : public ServerBase {
+class Login : public Service {
 public:
-    void configure(CLI::App& app) override
+    void configure(CLI::App& app)
     {
-        ServerBase::configure(app);
-
         app.add_option("--home", home,
                        "Base HOME directory for login sessions");
 
@@ -383,7 +382,7 @@ public:
     }
 
 protected:
-    void recv(Message&& message) override
+    void call (Message&& message, Response &resp) override
     {
         if (!terminal_) {
             std::string const& user = message.from();
@@ -402,8 +401,7 @@ protected:
             TerminalContext ctx = terminal_->read_until_quiet();
             transcript_.append(strip_ansi(ctx.delta));
 
-            send_transcript(message, "login");
-            return;
+            resp.append(send_transcript("login"));
         }
 
         std::string input = message.body();
@@ -419,34 +417,19 @@ protected:
         TerminalContext ctx = terminal_->read_until_quiet();
         transcript_.append(strip_ansi(ctx.delta));
 
-        send_transcript(message, "terminal");
+        resp.append(send_transcript("terminal"));
     }
 
-    void bye() override
+    void on_exit() override
     {
         terminal_.reset();
     }
 
 private:
-    void send_transcript(Message const& request,
-                         std::string const& subject)
+    Message send_transcript(std::string const& subject)
     {
-        json header;
-
-        header["From"] = request.to();
-        header["To"] = request.from();
-
-        auto const& req_header = request.header();
-        auto it = req_header.find("Message-ID");
-        if (it != req_header.end()) {
-            header["In-Reply-To"] = *it;
-        }
-
-        header["Subject"] = subject;
-
         std::string body = last_n_lines(transcript_, 50);
-
-        send(Message(std::move(header), std::move(body)));
+        return Message(json{{"Subject", subject}}, std::move(body));
     }
 
 private:
@@ -457,13 +440,22 @@ private:
     std::string transcript_;
 };
 
+}
+
+using namespace postline;
+
 int main(int argc, char** argv)
 {
-    LoginServer server;
+    Login login;
+    Server::Config config;
 
     CLI::App app{"Postline login server"};
-    server.configure(app);
+    config.configure(app);
+    login.configure(app);
     CLI11_PARSE(app, argc, argv);
 
-    return server.run();
+    Server server(config);
+
+
+    return server.run(&login);
 }

@@ -7,6 +7,7 @@
 #include <unistd.h>
 
 #include <postline/common.h>
+#include <postline/service.h>
 #include <postline/server.h>
 
 using namespace postline;
@@ -140,32 +141,17 @@ static CommandResult run_command(char const* cmd, std::string const &body)
     return result;
 }
 
-class ShellServer : public ServerBase {
+class Shell : public Service {
 protected:
-    void recv(Message&& message) override
+    void call (Message&& message, Response &resp) override
     {
         auto const& header = message.header();
-
-        json respHeader;
-
-        respHeader["In-Reply-To"] = message.header()["Message-ID"];
-
-        auto it = header.find("From");
-        if (it != header.end() && it->is_string()) {
-            respHeader["To"] = *it;
-        }
-
-        it = header.find("To");
-        if (it != header.end() && it->is_string()) {
-            respHeader["From"] = *it;
-        }
-
-        it = header.find("Subject");
+        auto it = header.find("Subject");
         if (it == header.end()) {
-            respHeader["Subject"] = "command not run";
-            send(Message(std::move(respHeader),
+            json header{{"Subject", "not run"}};
+            
+            resp.append(Message(std::move(header),
                  std::string{"Please send command in Subject.\n"}));
-            return;
         }
 
         std::string const& cmd = it->get_ref<std::string const&>();
@@ -188,20 +174,21 @@ protected:
                 std::move(result.stderr_));
         }
 
-        respHeader["Subject"] =
-            std::format("exit status {}", result.exit_status);
+        std::string subject = std::format("exit status {}", result.exit_status);
 
-        send(Message(std::move(respHeader), std::move(parts)));
+        resp.append(Message(json{{"Subject", subject}}, std::move(parts)));
     }
 };
 
 int main(int argc, char** argv)
 {
-    ShellServer server;
-
-    CLI::App app{"Postline shell server"};
-    server.configure(app);
-    CLI11_PARSE(app, argc, argv);
-
-    return server.run();
+    Server::Config config;
+    {
+        CLI::App app{"Postline shell server"};
+        config.configure(app);
+        CLI11_PARSE(app, argc, argv);
+    }
+    Shell shell;
+    Server server(config);
+    return server.run(&shell);
 }

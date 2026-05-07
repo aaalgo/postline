@@ -12,9 +12,14 @@
 
 namespace postline {
 
-int constexpr LEVEL_FROM = 0;
-int constexpr LEVEL_CC = 1;
-int constexpr LEVEL_TO = 2;
+class logic_error : public std::runtime_error {
+public:
+    using std::runtime_error::runtime_error;
+
+    template <typename... Args>
+    logic_error(std::format_string<Args...> fmt, Args&&... args)
+        : std::runtime_error(std::format(fmt, std::forward<Args>(args)...)) {}
+};
 
 struct Thread;
 
@@ -49,15 +54,6 @@ struct CallStackEntry {
     json dump() const {
         return json{access_id, agent_id};
     }
-};
-
-class logic_error : public std::runtime_error {
-public:
-    using std::runtime_error::runtime_error;
-
-    template <typename... Args>
-    logic_error(std::format_string<Args...> fmt, Args&&... args)
-        : std::runtime_error(std::format(fmt, std::forward<Args>(args)...)) {}
 };
 
 struct Thread {
