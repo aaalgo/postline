@@ -103,22 +103,16 @@ namespace handshake {
 
 struct Hello : public View {
     static constexpr std::string_view type = "handshake:hello";
-    int spawn_type;
-    int history_mode;
 
     explicit Hello(Message const& msg)
         : View(msg, type)
     {
         auto const &header = msg.header();
-        spawn_type = header["spawn_type"].get<int>();
-        history_mode = header["history_mode"].get<int>();
     }
 
-    static Message make(int spawn_type, int history_mode) {
+    static Message make() {
         return Message(json{
             {"type", type},
-            {"spawn_type", spawn_type},
-            {"history_mode", history_mode}
         });
     }
 };

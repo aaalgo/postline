@@ -16,4 +16,4 @@ static char const *banner2 = R"(
 )";
 
 
-char const *banner = banner1;
+char const *banner = banner2;

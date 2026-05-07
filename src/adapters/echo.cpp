@@ -9,10 +9,6 @@ class EchoServer : public ServerBase {
 
 protected:
 
-    virtual DriverHistoryMode history_mode() const noexcept {
-        return remember ? DriverHistoryMode::ALL : DriverHistoryMode::NONE;
-    }
-
     void updateMemory(Message&& message) override
     {
         if (remember) {

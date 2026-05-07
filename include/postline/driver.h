@@ -9,18 +9,6 @@
 namespace postline {
 
 
-enum class DriverSpawnType : std::uint16_t
-{
-    ADDRESS = 0,
-    SCOPE  = 1
-};
-
-enum class DriverHistoryMode : std::uint16_t
-{
-    NONE = 0,           // stateless
-    ALL  = 1            // statefull
-};
-
 class Driver: noncopyable {
 public:
     struct Config {
@@ -40,13 +28,9 @@ public:
     virtual int read_fd () const {
         return -1;
     }
-    virtual DriverSpawnType spawn_type() const noexcept = 0;
-    virtual DriverHistoryMode history_mode() const noexcept = 0;
 };
 
 class ShellDriver: public Driver {
-    DriverSpawnType spawn_;
-    DriverHistoryMode history_;
 
     int input_fd_ = -1;
     int output_fd_ = -1;
@@ -55,9 +39,6 @@ class ShellDriver: public Driver {
     void handshake () {
         // read hello
         protocol::handshake::Hello hello(recv_one());
-
-        spawn_ = static_cast<DriverSpawnType>(hello.spawn_type);
-        history_ = static_cast<DriverHistoryMode>(hello.history_mode);
     }
 public:
     explicit ShellDriver(std::string const &command)
@@ -135,9 +116,6 @@ public:
         }
     }
 
-    DriverSpawnType spawn_type() const noexcept override { return spawn_; }
-    DriverHistoryMode history_mode() const noexcept override { return history_; }
-
     int send(Message const &msg) override
     {
         msg.write(input_fd_);
@@ -171,10 +149,10 @@ class LoopDriver: public Driver {
     int wake_fd;
     std::mutex mutex;
     std::vector<Message> pending;
-    std::function<int(Message const &)> callback;
+    std::function<int(Message const &, LoopDriver *)> callback;
 
 public:
-    LoopDriver (std::function<int(Message const &)> callback_)
+    LoopDriver (std::function<int(Message const &, LoopDriver *)> callback_)
         : wake_fd(eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC)),
         callback(callback_)
     {
@@ -186,7 +164,7 @@ public:
     }
 
     int send(Message const &msg) override {
-        return callback(msg);
+        return callback(msg, this);
     }
 
     int enqueue (Message && msg) {
@@ -216,9 +194,6 @@ public:
     int read_fd () const override {
         return wake_fd;
     }
-
-    DriverSpawnType spawn_type() const noexcept override { return DriverSpawnType::ADDRESS;}
-    DriverHistoryMode history_mode() const noexcept override { return DriverHistoryMode::NONE; }
 };
 
 static inline std::unique_ptr<Driver> create_driver (std::string const &service) {

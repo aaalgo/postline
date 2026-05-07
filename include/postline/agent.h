@@ -27,6 +27,7 @@ using AgentFlags = std::uint64_t;
 AgentFlags constexpr AGENT_FLAG_CLONE = 0x00000001;
 AgentFlags constexpr AGENT_FLAG_THREAD = 0x00000002;
 AgentFlags constexpr AGENT_FLAG_CATCH = 0x00000004;
+AgentFlags constexpr AGENT_FLAG_HISTORY = 0x00000008;
 
 struct Agent: immobile {
     AgentID id;
@@ -67,6 +68,9 @@ struct Agent: immobile {
         }
         if (flags & AGENT_FLAG_CATCH) {
             flag_strings.push_back("catch");
+        }
+        if (flags & AGENT_FLAG_HISTORY) {
+            flag_strings.push_back("history");
         }
         return json{
             {"id", id},

@@ -24,8 +24,6 @@ public:
 
 class resolve_error : public std::runtime_error {
 public:
-    using std::runtime_error::runtime_error;
-
     template <typename... Args>
     resolve_error(std::format_string<Args...> fmt, Args&&... args)
         : std::runtime_error(std::format(fmt, std::forward<Args>(args)...)) {}
@@ -99,7 +97,7 @@ public:
         std::string cli_input_path;    // the user driver will write this
     };
 
-    Runtime(Config const &config)
+    Runtime(Config const &config, std::unique_ptr<Driver> &&user_driver)
         : special(agents),
           journal(config.journal_path, config.resume_path,
                   [this](Message &&msg) { replay(std::move(msg));
@@ -107,15 +105,14 @@ public:
           stop_requested(false) {
         log::info("Initializing runtime");
         special.runtime->driver = std::make_unique<LoopDriver>(
-                [this](Message const &msg) {
+                [this](Message const &msg, LoopDriver *) {
                     return recv(msg);
                 });
         special.boot->driver = std::make_unique<LoopDriver>(
-                [this](Message const &msg) {
+                [this](Message const &msg, LoopDriver *) {
                     return 0;
                 });
-        special.user->driver = std::make_unique<ShellDriver>(config.cli_input_path,
-                                                             config.cli_output_path);
+        special.user->driver = std::move(user_driver);
         poller.add(special.runtime->driver->read_fd(), special.runtime->id);
         poller.add(special.boot->driver->read_fd(), special.boot->id);
         poller.add(special.user->driver->read_fd(), special.user->id);

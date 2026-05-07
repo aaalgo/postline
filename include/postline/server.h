@@ -171,13 +171,6 @@ private:
 };
 
 class ServerBase {
-protected:
-    virtual DriverSpawnType spawn_type() const noexcept {
-        return DriverSpawnType::ADDRESS;
-    }
-    virtual DriverHistoryMode history_mode() const noexcept {
-        return DriverHistoryMode::NONE;
-    }
 public:
     virtual ~ServerBase() = default;
 
@@ -193,7 +186,7 @@ public:
         read_fd_ = transport.read_fd();
         write_fd_ = transport.write_fd();
 
-        send(protocol::handshake::Hello::make(int(spawn_type()), int(history_mode())));
+        send(protocol::handshake::Hello::make());
 
         on_connect();
 

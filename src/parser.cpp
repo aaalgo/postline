@@ -304,6 +304,7 @@ void write_headers (std::ostream &os, json const &header, bool compact) {
         if (it == header.end()) continue;
         used.insert(key);
         if (compact && ! is_essential) continue;
+        if (it->is_null()) continue;
         os << key << ": ";
         write_header_value(os, *it, is_list);
         os << '\n';
@@ -311,6 +312,7 @@ void write_headers (std::ostream &os, json const &header, bool compact) {
     if (!compact) {
         for (auto const &[key, value] : header.items()) {
             if (used.contains(key)) continue;
+            if (value.is_null()) continue;
             os << key << ": ";
             write_header_value(os, value, false);
             os << '\n';

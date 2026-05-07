@@ -53,8 +53,6 @@ def main():
 
     msg = Message()
     msg.set("type", "handshake:hello")
-    msg.set("spawn_type", 0)
-    msg.set("history_mode", 1)
     msg.write(fd_out)
 
     msg = Message.read(fd_in)

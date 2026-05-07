@@ -77,6 +77,9 @@ void Runtime::spawn(Message const &msg) {
                 else if (s == "catch") {
                     flags |= AGENT_FLAG_CATCH;
                 }
+                else if (s == "history") {
+                    flags |= AGENT_FLAG_HISTORY;
+                }
                 else {
                     throw commit_error("unknown flag");
                 }
@@ -387,7 +390,7 @@ void Runtime::process(Message &&msg, Agent *from) {
 }
 
 void Runtime::updateMemory (Agent *agent) {
-    if (agent->driver->history_mode() == DriverHistoryMode::NONE) return;
+    if (agent->flags & AGENT_FLAG_HISTORY == 0) return;
     std::vector<AgentLink> links;
     links.emplace_back(agent->id, agent->anchor());
     Agent *cur = agent;
