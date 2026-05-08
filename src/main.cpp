@@ -72,6 +72,26 @@ std::string read_file(std::filesystem::path const& input_path) {
     return ss.str();
 }
 
+class Autopilot: public Service {
+    Message payload;
+    Message exit;
+public:
+    Autopilot (std::string const &payload_path)
+        : exit(json{{"To", "runtime"}, {"Subject", "exit"}})
+
+    {
+        std::string buf = read_file(payload_path);
+        payload = Message::parseEmail(buf);
+    }
+    void init (Response &resp) override {
+        resp.append(std::move(payload));
+    };
+
+    void call (Message &&msg, Response &resp) override {
+        resp.append(std::move(exit));
+    }
+};
+
 int main(int argc, char** argv) {
     // Parse CLI options
 
@@ -82,6 +102,7 @@ int main(int argc, char** argv) {
     std::string input_path;
     std::string user_stdin;
     std::string user_stdout;
+    std::unique_ptr<Service> autopilot;
     std::unique_ptr<Driver> user_driver;
     bool detach = false;
 
@@ -108,39 +129,13 @@ int main(int argc, char** argv) {
             user_driver = std::make_unique<ShellDriver>(user_stdin, user_stdout);
         }
         else {
-#if 0
             if (user_stdin.size()
                     || user_stdout.size()) {
                 std::cerr << "When you set -i,--input you cannot set --user-stdin or --user-stdout." << std::endl;
                 return 1;
             }
-            std::string buf = read_file(input_path);
-            std::cerr << "=== INPUT" << std::endl;
-            std::cerr << buf << std::endl;
-            message_input = Message::parseEmail(buf);
-            json header{{"From", "user"},
-                        {"To", "runtime"},
-                        {"Subject", "exit"}};
-            message_exit = Message(std::move(header));
-            user_driver = std::make_unique<LoopDriver>([&message_input, &message_exit](Message const &msg, LoopDriver *driver)
-                    {
-                    static int count = 0;
-                    std::cerr << "====" << std::endl;
-                    msg.formatEmail(std::cerr);
-                    std::cerr << std::endl;
-                    if (count == 0) {
-                        std::string thread_id = msg.header()["Thread-ID"].get<std::string>();
-                        message_input.updateHeader([&thread_id](json &h) {h["Thread-ID"] = thread_id;});
-                        message_exit.updateHeader([&thread_id](json &h) {h["Thread-ID"] = thread_id;});
-                        driver->enqueue(std::move(message_input));
-                    }
-                    else {
-                        driver->enqueue(std::move(message_exit));
-                    }
-                    ++count;
-                    return 0;
-                    });
-#endif
+            autopilot = std::make_unique<Autopilot>(input_path);
+            user_driver = std::make_unique<LoopDriver>(autopilot.get());
         }
     }
 
