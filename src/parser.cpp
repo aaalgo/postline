@@ -33,9 +33,24 @@ static void rstrip (std::string_view &s) {
     }
 }
 
+std::string lowercase(std::string_view s)
+{
+    std::string ret(s);
+
+    std::transform(
+        ret.begin(),
+        ret.end(),
+        ret.begin(),
+        [](unsigned char c) {
+            return std::tolower(c);
+        });
+
+    return ret;
+}
+
 namespace postline {
 
-json parse_list (std::string_view range) {
+json parse_list (std::string_view range, bool to_lower = false) {
     std::vector<std::string> ret;
     lstrip(range);
     rstrip(range);
@@ -45,11 +60,25 @@ json parse_list (std::string_view range) {
         if (off == std::string::npos) break;
         std::string_view one(range.substr(0, off));
         rstrip(one);
-        if (!one.empty()) list.push_back(one);
+        if (!one.empty()) {
+            if (to_lower) {
+                list.push_back(lowercase(one));
+            }
+            else {
+                list.push_back(one);
+            }
+        }
         range = range.substr(off+1);
         lstrip(range);
     }
-    if (!range.empty()) list.push_back(range);
+    if (!range.empty()) {
+        if (to_lower) {
+            list.push_back(lowercase(range));
+        }
+        else {
+         list.push_back(range);
+        }
+    }
     return list;
 }
 
@@ -176,14 +205,14 @@ static std::generator<FieldView> parse_headers (std::string_view &range) {
     }
 #endif
 
-static const std::vector<std::tuple<char const *, bool, bool>> CANONICAL = {
-    // field,   is_list,    is_essential
-    {"From",    false,       true},
-    {"To",      false,       true},
-    {"Cc",      true,       true},
-    {"Subject", false,      true},
-    {"Content-Type", false, false}, // default is plain text
-    {"Content-Disposition", false, false}
+static const std::vector<std::tuple<char const *, bool, bool, bool>> CANONICAL = {
+    // field,   is_list,    is_essential, to_lower
+    {"From",    false,       true,  true},
+    {"To",      false,       true,  true},
+    {"Cc",      true,       true,   true},
+    {"Subject", false,      true,   false},
+    {"Content-Type", false, false,  false}, // default is plain text
+    {"Content-Disposition", false, false,   false}
 };
 
 Message Message::parseEmail (std::string_view buffer)
@@ -214,9 +243,19 @@ Message Message::parseEmail (std::string_view buffer)
 
     for (auto &&f: parse_headers(buffer)) {
         bool missing = true;
-        for (auto const [key, is_list, is_essential] : CANONICAL) {
-            if (f.name == key && is_list) {
-                header[f.name] = parse_list(f.value);
+        for (auto const [key, is_list, is_essential, to_lower] : CANONICAL) {
+            if (f.name == key) {
+                if (is_list) {
+                    header[f.name] = parse_list(f.value, to_lower);
+                }
+                else {
+                    if (to_lower) {
+                        header[f.name] = lowercase(f.value);
+                    }
+                    else {
+                        header[f.name] = f.value;
+                    }
+                }
                 missing = false;
                 break;
             }
@@ -299,7 +338,7 @@ void write_headers (std::ostream &os, json const &header, bool compact) {
             os.write(thinking.data(), thinking.size());
         }
     }
-    for (auto const [key, is_list, is_essential] : CANONICAL) {
+    for (auto const [key, is_list, is_essential, to_lower] : CANONICAL) {
         auto it = header.find(key);
         if (it == header.end()) continue;
         used.insert(key);

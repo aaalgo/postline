@@ -1,20 +1,21 @@
 #!/usr/bin/env python3
 import sys
 from anthropic import Anthropic
-from postline import Message, ServerLogic
+from postline import Message, Service
 
 MODEL = "claude-sonnet-4-5"
 
+class Agent (Service):
 
-class History:
-
-    def __init__(self):
+    def __init__ (self):
+        super().__init__()
+        self.client = Anthropic()
         self.history = []
-        self.my_address = None
+        pass
 
     def append(self, msg, replay = False):
         From = msg.get("From")
-        if From != self.my_address:
+        if From != self.address():
             role = "user"
         else:
             role = "assistant"
@@ -25,11 +26,11 @@ class History:
             "content": content,
         })
 
-    def respond(self, client):
+    def generate (self):
         print(self.history, file=sys.stderr)
         sys.stderr.flush()
 
-        response = client.messages.create(
+        response = self.client.messages.create(
             model=MODEL,
             max_tokens=4096,
             messages=self.history,
@@ -45,64 +46,18 @@ class History:
         msg = Message.parse(text)
         return msg
 
+    def on_init (self, resp):
+        pass
 
-def main():
+    def on_memory (self, msg):
+        self.append(msg, True)
 
-    fd_in = sys.stdin.fileno()
-    fd_out = sys.stdout.fileno()
-
-    msg = Message()
-    msg.set("type", "handshake:hello")
-    msg.write(fd_out)
-
-    msg = Message.read(fd_in)
-
-    client = Anthropic()
-
-    history = History()
-    history.my_address = msg.get("To")
-    if msg.get("type") == "handshake:begin_memory":
-        while True:
-            msg = Message.read(fd_in)
-            if msg.get("type") == "handshake:end_memory":
-                msg = None
-                break
-            history.append(msg, True)
-
-    logic = ServerLogic()
-    while True:
-        try:
-            if msg is None:
-                msg = Message.read(fd_in)
-        except EOFError:
-            break
-
-        if msg.get("type") == "handshake:bye":
-            break
-
-        history.append(msg)
-        logic.afterReceive(msg);
-
-        subject = msg.get("Subject")
-
-        if subject == "/memory":
-            reply = Message({
-                    'From': history.my_address,
-                    'To': msg.get('From'),
-                    'Subject': 'memory'
-                    }, 
-
-                json.dumps(history.history)
-            )
-        else:
-            reply = history.respond(client)
-        logic.beforeSend(reply);
-        history.append(reply, False)
-
-        reply.write(fd_out)
-
-        msg = None
-
+    def on_call (self, msg, resp):
+        self.append(msg, False)
+        reply = self.generate()
+        self.append(reply, False)
+        resp.append(reply)
 
 if __name__ == "__main__":
-    main()
+    agent = Agent()
+    agent.run()

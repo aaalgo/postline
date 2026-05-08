@@ -8,7 +8,7 @@
 
 namespace postline {
 
-class Response {
+class Response: noncopyable {
     std::vector<Message> messages;
 public:
     void append(Message &&msg) {

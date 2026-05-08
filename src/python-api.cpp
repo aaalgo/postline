@@ -1,7 +1,8 @@
 #include <sstream>
 #include <pybind11/pybind11.h>
 #include <postline/common.h>
-#include <postline/driver.h>
+#include <postline/service.h>
+#include <postline/server.h>
 
 namespace py = pybind11;
 
@@ -30,119 +31,106 @@ json py2json (py::object obj)
     return ret;
 }
 
-class PyMessage: public Message {
+class PyService: public Service {
+    Server::Config config;
+    Server server;
 public:
-    PyMessage () {}
-
-    PyMessage(Message&& msg): Message(std::move(msg)) {}
-
-    PyMessage(py::object header, std::string body_raw = "")
-        : Message(py2json(header), std::move(body_raw))
-    {}
-
-    py::object py_get (std::string const &key) const {
-        auto const &h = header();
-        auto it = h.find(key);
-        if (it == h.end() || it->is_null()) {
-            return py::none();
-        }
-        if (it->is_string()) {
-            return py::str(it->get<std::string>());
-        }
-        if (it->is_number_integer()) {
-            return py::int_(it->get<int64_t>());
-        }
-        CHECK(0);
+    PyService (): server(config) {
     }
 
-    void py_set (std::string const &key, py::object value) {
-        if (value.is_none()) {
-            updateHeader([&key](json &h) {
-                if (h.contains(key)) {
-                    h.erase(key);
-                }
-            });
-        } else if (py::isinstance<py::str>(value)) {
-            std::string v = value.cast<std::string>();
-            updateHeader([&key, &v](json &h) {
-                h[key] = v;
-            });
-        } else if (py::isinstance<py::int_>(value)) {
-            int v = value.cast<int>();
-            updateHeader([&key, &v](json &h) {
-                h[key] = v;
-            });
-        } else {
-            CHECK(0);
-        }
+    std::string get_address () const {
+        return address;
     }
 
-    void updateResponseFields (PyMessage const &last) {
-        updateHeader([&last, this](json &header) {
-            if (last.from() == to()) {
-                header["In-Reply-To"] = last.header()["Message-ID"];
-            }
-            else {
-                header["In-Response-To"] = last.header()["Message-ID"];
-            }
-	    header["Thread-ID"] = last.header()["Thread-ID"];
-        });
+    virtual void on_memory (Message && msg) {
+        py::gil_scoped_acquire gil;
+        py::cast(this, py::return_value_policy::reference)
+        .attr("on_memory")(std::make_unique<Message>(std::move(msg)));
     }
 
-    static PyMessage read (int fd) {
-        return PyMessage(Message::read(fd));
+    virtual void init (Response &resp) override {
+        py::gil_scoped_acquire gil;
+        /*
+        py::object py_resp = py::cast(&resp, py::return_value_policy::reference);
+        //py::cast(this).attr("on_init")(py_resp);
+        py::cast(this, py::return_value_policy::reference).attr("on_init")(py_resp);
+        */
+        py::object self = py::cast(
+            this,
+            py::return_value_policy::reference
+        );
+        py::object py_resp = py::cast(
+            &resp,
+            py::return_value_policy::reference
+        );
+        self.attr("on_init")(py_resp);
     }
 
-    static PyMessage parse (std::string const &v) {
-        return PyMessage(Message::parseEmail(v));
+    virtual void call (Message &&msg, Response &resp) override {
+        py::gil_scoped_acquire gil;
+        py::object self = py::cast(
+            this,
+            py::return_value_policy::reference
+        );
+        py::object py_resp = py::cast(
+            &resp,
+            py::return_value_policy::reference
+        );
+        self.attr("on_call")(std::make_unique<Message>(std::move(msg)), py_resp);
     }
 
-
-    size_t write (int fd) const {
-    	return Message::write(fd);
-    }
-
-    std::string format (bool compact) {
-        std::ostringstream ss;
-        formatEmail(ss, compact);
-        return ss.str();
-    }
-};
-
-class ServerLogic {
-public:
-    // handles:
-    //      Thread-ID
-    //      In-Reply-To
-    //      In-Response-To
-    //
-    // Currently only supports responsive agent and should be used
-    // in Python servers.  It should not be used by CLI/FTXCLI
-    //
-    void afterReceive (PyMessage const &msg) {
-    }
-
-    void beforeSend (PyMessage &msg) {
+    void run () {
+        server.run(this);
     }
 };
 
 } // namespace postline
 
 PYBIND11_MODULE(_postline, module) {
+    using namespace postline;
     module.doc() = "Postline Python extension module";
 
-    py::class_<postline::PyMessage>(module, "Message")
+    py::class_<Message>(module, "Message")
         .def(py::init<>())
-        .def(py::init<py::object, std::string>(), py::arg("header"), py::arg("body") = "")
-        .def_static("read", &postline::PyMessage::read, py::arg("fd"))
-        .def_static("parse", &postline::PyMessage::parse, py::arg("value"))
-        .def("get", &postline::PyMessage::py_get, py::arg("key"))
-        .def("set", &postline::PyMessage::py_set, py::arg("key"), py::arg("value"))
-        .def("write", &postline::PyMessage::write, py::arg("fd"))
-        .def("format", &postline::PyMessage::format, py::arg("compact") = false)
-        .def("updateResponseFields", &postline::PyMessage::updateResponseFields);
-    py::class_<postline::ServerLogic>(module, "ServerLogic")
+        .def(py::init(
+                [](py::object header, std::string body_raw) {
+                    return std::make_unique<Message>(
+                        py2json(header),
+                        std::move(body_raw)
+                    );
+                }),
+                py::arg("header"), py::arg("body") = "")
+        .def_static("read", 
+                [](int fd) {
+                    Message msg = Message::read(fd);
+                    return std::make_unique<Message>(std::move(msg));
+                },
+                py::arg("fd"))
+        .def_static("parse",
+                [](std::string const &text)
+                {
+                    Message msg = Message::parseEmail(text);
+                    return std::make_unique<Message>(std::move(msg));
+                },
+                py::arg("value"))
+        .def("get", &Message::get, py::arg("key"))
+        .def("write", &Message::write, py::arg("fd"))
+        .def("format", 
+                [](Message &msg, bool compact) {
+                    std::ostringstream ss;
+                    msg.formatEmail(ss, compact);
+                    return ss.str();
+                }, py::arg("compact") = false)
+        ;
+    py::class_<PyService>(module, "Service")
         .def(py::init<>())
-        .def("afterReceive", &postline::ServerLogic::afterReceive, py::arg("msg"))
-        .def("beforeSend", &postline::ServerLogic::beforeSend, py::arg("msg"));
+        .def("run", &PyService::run)
+        .def("address", &PyService::get_address)
+        ;
+    py::class_<Response>(module, "Response")
+        .def("append", 
+                [](Response& resp, Message &msg) {
+                    resp.append(std::move(msg));
+                }, py::arg("msg"))
+        ;
 }

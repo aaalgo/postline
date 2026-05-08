@@ -160,7 +160,7 @@ void Runtime::commit(json const &ops) {
 
 void Runtime::call (Message &&msg, Response &resp) {
 
-    json respHeader{{"Subject", "OK"}};
+    json respHeader;
     std::string respBody;
 
     do {
@@ -186,19 +186,20 @@ void Runtime::call (Message &&msg, Response &resp) {
 
         if (*cmd_exit) {
             stop_requested = true;
+            respHeader["Subject"] = "Re: exit";
             log::info("Stop request received.");
             log::info("Runtime will shutdown.");
             break;
         }
         if (*cmd_list_agents) {
-            respHeader["type"] = "ui:update_agents";
+            respHeader["Subject"] = "Re: list_agents";
             respBody = agents.dump().dump();
             break;
         }
         if (*cmd_spawn) {
             try {
                 spawn(msg);
-                respHeader["type"] = "ui:update_agents";
+                respHeader["Subject"] = "Re: spawn";
                 respBody = agents.dump().dump();
             } catch (commit_error &e) {
                 log::info("COMMIT ERROR: {}", e.what());
@@ -207,6 +208,7 @@ void Runtime::call (Message &&msg, Response &resp) {
             break;
         }
         if (*cmd_dump) {
+            respHeader["Subject"] = "Re: exit";
             dump(dump_path);
             break;
         }
