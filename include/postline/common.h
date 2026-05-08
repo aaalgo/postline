@@ -1,4 +1,4 @@
-
+#pragma once
 #include <cstring>
 #include <cerrno>
 #include <string>
@@ -36,6 +36,8 @@ namespace postline {
     static constexpr AccessID NO_ACCESS_ID = -1;
 
     int64_t parse_i64(std::string const&);
+
+    int64_t constexpr MESSAGE_QUIET = 0x00000001;
 
     struct noncopyable {
     protected:
@@ -121,11 +123,15 @@ namespace postline {
             return it->get_ref<std::string const&>();
         }
 
-        int64_t get_id(char const* key) const
+        int64_t get_id(char const* key, int64_t def = -1) const
         {
             auto it = header_.find(key);
-            if (it == header_.end() || it->is_null()) {
-                return -1;
+            if (it == header_.end()) {
+                return def;
+            }
+            if (it->is_null() || !it->is_string()) {
+                log::error("get_id {} found {}", key, it->dump());
+                return def;
             }
             CHECK(it->is_string());
             return parse_i64(it->get_ref<std::string const &>());
@@ -151,6 +157,10 @@ namespace postline {
 
         std::string const &to () const {
             return get("To");
+        }
+
+        int64_t flags () const {
+            return get_id("Postline-Flags", 0);
         }
 
         int64_t thread_id () const {

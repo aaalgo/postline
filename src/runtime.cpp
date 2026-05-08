@@ -274,9 +274,12 @@ void Runtime::resolve (Message const &msg, MessageContext *ctx) {
 }
 
 void Runtime::process(Message &&msg, Agent *from) {
+    int64_t flags = msg.flags();
+    if (flags & MESSAGE_QUIET == 0) {
         std::cerr << "====" << std::endl;
         msg.formatEmail(std::cerr);
         std::cerr << std::endl;
+    }
     MessageContext ctx;
     bool error = false;
     try {

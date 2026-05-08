@@ -62,9 +62,6 @@ public:
     }
 
     virtual std::vector<Message> on_message (Message &&msg) {
-        std::cerr << "<<<<" << std::endl;
-        msg.formatEmail(std::cerr);
-        std::cerr << "----" << std::endl;
         {   // before call, setup logic
             std::string const &to = msg.to();
 

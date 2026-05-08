@@ -184,6 +184,15 @@ set_target_properties(cli_actor PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/install/bin/adapters"
 )
 
+add_executable(benchmark_actor
+    src/adapters/benchmark.cpp
+)
+target_link_libraries(benchmark_actor PRIVATE postline::postline CLI11::CLI11)
+set_target_properties(benchmark_actor PROPERTIES
+    OUTPUT_NAME benchmark
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/install/bin/adapters"
+)
+
 add_executable(ftxcli_actor
     src/adapters/ftxcli.cpp
 )
