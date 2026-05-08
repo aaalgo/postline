@@ -1,67 +1,116 @@
 #include <semaphore>
 
 #include <postline/common.h>
+#include <postline/service.h>
 #include <postline/server.h>
 #include <postline/ui/cli.hpp>
 
-#if 0
 
 using namespace postline;
 
-class FXTCliServer : public ServerBase {
-public:
-    FXTCliServer()
-        : cli_([this](Message &&msg) {
-              this->send(std::move(msg));
-              can_receive_.release();
-          })
-    {}
+char const *LOCAL = R"(
+[
+{"from": "root", "address": "echo", "service": "pipe:echo", "flags": []},
+{"from": "root", "address": "ai", "service": "pipe:claude", "flags": ["history"]},
+{"from": "root", "address": "shell", "service": "pipe:shell", "flags": []},
+{"from": "root", "address": "mcp", "service": "pipe:mcp_bridge", "flags": []},
+{"from": "root", "address": "memory", "service": "pipe:echo -m", "flags": ["history"]},
+{"from": "root", "address": "login", "service": "pipe:login", "flags": ["clone"]},
+{"from": "root", "address": "benchmark", "service": "pipe:benchmark", "flags": []}
+]
+)";
 
-    int run()
+class MessageHolder {
+    std::mutex mutex_;
+    std::condition_variable cv_;
+
+    bool has_message_ = false;
+    Message message_;
+
+public:
+    void put(Message message)
     {
-        server_thread_ = std::thread([this] {
-            ServerBase::run();
-            cli_.request_exit();
+        std::unique_lock lock(mutex_);
+
+        cv_.wait(lock, [&]{
+            return !has_message_;
         });
 
+        message_ = std::move(message);
+        has_message_ = true;
+
+        cv_.notify_all();
+    }
+
+    Message get()
+    {
+        std::unique_lock lock(mutex_);
+
+        cv_.wait(lock, [&]{
+            return has_message_;
+        });
+
+        Message ret = std::move(message_);
+        has_message_ = false;
+
+        cv_.notify_all();
+
+        return ret;
+    }
+};
+
+
+class FTXCli : public Service {
+public:
+    FTXCli (Server::Config const &config)
+        : server_(config),
+        cli_([this](Message &&msg) {
+            outgoing_.put(std::move(msg));
+        })
+    {
+        json h{{"From", "user"},
+               {"To", "runtime"},
+               {"Subject", "spawn"}};
+        outgoing_.put(Message(std::move(h), std::string(LOCAL)));
+    }
+
+    void init (Response &resp) {
+        resp.append(outgoing_.get());
+    }
+
+    void call (Message &&msg, Response &resp) {
+        cli_.recv(std::move(msg));
+        resp.append(outgoing_.get());
+    }
+
+    void run () {
+
+        server_thread_ = std::thread([this] {
+            server_.run(this);
+            cli_.request_exit();
+        });
         cli_.run();
-
-        can_receive_.release();
-
         if (server_thread_.joinable()) {
             server_thread_.join();
         }
-
-        return 0;
     }
-
-protected:
-    void recv(Message &&msg) override
-    {
-        cli_.recv(std::move(msg));
-        can_receive_.acquire();
-    }
-
 private:
-    ftxui::CLI cli_;
-    std::binary_semaphore can_receive_{0};
     std::thread server_thread_;
+    Server server_;
+    ftxui::CLI cli_;
+    MessageHolder outgoing_;
 };
 
 int main(int argc, char **argv)
 {
-    FXTCliServer server;
-
+    Server::Config config;
     CLI::App app{"Postline FTXUI CLI"};
-    server.configure(app);
+    config.configure(app);
     CLI11_PARSE(app, argc, argv);
-
-    server.run();
+    FTXCli cli(config);
+    cli.run();
     std::cerr << "ftxcli exit" << std::endl;
     return 0;
 }
-#endif
 
-int main (int argc, char **argv) {
-    return 0;
-}
+

@@ -48,7 +48,7 @@ static inline Element waiting(int tick)
 
 // CLI displays a compact email composer for the current conversation.
 //
-// Root layout: top row with To/Subject, body editor below.
+// Root layout: status row, To, Subject, then body editor.
 // Hitting Enter outside the body editor, or Alt+Enter/F12 anywhere,
 // sends the current draft when canSend_ is true.
 class CLI {
@@ -58,6 +58,7 @@ class CLI {
     std::string subject_;
     std::string body_;
     int to_selected_ = 0;
+    bool trackTo = true;
     bool can_send_ = false;
     int tick_ = 0;
 
@@ -69,6 +70,7 @@ class CLI {
     Closure exit_loop_;
 
     Component to_dropdown_;
+    Component track_checkbox_;
     Component subject_input_;
     Component body_input_;
     Component exit_button_;
@@ -187,8 +189,9 @@ class CLI {
 
         from_ = msg.to();
 
-        std::string to = msg.from();
-        addAddress(to);
+        std::string sender = msg.from();
+        std::string to = sender;
+        addAddress(sender);
         {
             std::string reply_to = msg.get("Reply-To");
             if (!reply_to.empty()) {
@@ -200,8 +203,8 @@ class CLI {
             addAddress(a);
         }
 
-        if (type == "ui:update_agents") {
-            std::cerr << "UPDATE_AGENTS" << std::endl;
+        std::string const &subject = msg.subject();
+        if (to == "runtime" && (subject == "Re: spawn" || subject == "Re: list_agents")) {
             postline::json j = postline::json::parse(msg.body());
             for (size_t i = 0; i < j.size(); ++i) {
                 auto const &m = j[i];
@@ -212,9 +215,9 @@ class CLI {
         }
 
         rebuildToEntries();
-        if (!to.empty()) {
-            auto it = std::lower_bound(to_entries_.begin(), to_entries_.end(), to);
-            if (it != to_entries_.end() && *it == to) {
+        if (trackTo && !sender.empty()) {
+            auto it = std::lower_bound(to_entries_.begin(), to_entries_.end(), sender);
+            if (it != to_entries_.end() && *it == sender) {
                 to_selected_ = static_cast<int>(it - to_entries_.begin());
             }
         }
@@ -275,6 +278,19 @@ class CLI {
                 return std::move(checkbox);
             };
         to_dropdown_ = Dropdown(std::move(to_option));
+        CheckboxOption track_option;
+        track_option.transform = [](EntryState const& state) {
+            Element prefix = text(state.state ? "[x] " : "[ ] ");
+            Element label = text(state.label);
+            if (state.focused) {
+                label |= inverted;
+            }
+            return hbox({
+                std::move(prefix),
+                std::move(label),
+            });
+        };
+        track_checkbox_ = Checkbox("Track", &trackTo, track_option);
         subject_input_ = Input(&subject_, "Subject", subject_option);
         body_input_ = Input(&body_, "Write here...", body_option);
         ButtonOption exit_option;
@@ -294,27 +310,26 @@ class CLI {
         };
         exit_button_ = Button(std::move(exit_option));
 
-        auto top = Container::Horizontal({
+        auto layout = Container::Vertical({
             exit_button_,
             to_dropdown_,
+            track_checkbox_,
             subject_input_,
-        });
-        auto layout = Container::Vertical({
-            top,
             body_input_,
         });
 
         auto component = Renderer(layout, [&] {
-            if (!can_send_) {
-                return waiting(tick_);
-            }
-
             Element exit_field = hbox({
                 exit_button_->Render(),
             }) | bgcolor(Color::DarkRed);
+            Element status_field = can_send_
+                ? text(" Ready, F12 to send.") | color(Color::Green)
+                : waiting(tick_);
             Element to_field = hbox({
                 text("To: "),
                 to_dropdown_->Render() | flex,
+                text(" "),
+                track_checkbox_->Render(),
             }) | bgcolor(Color::Blue);
             Element subject_field = hbox({
                 text("Subject: "),
@@ -325,11 +340,11 @@ class CLI {
                        hbox({
                            exit_field,
                            text(" "),
-                           to_field | size(WIDTH, EQUAL, 32),
-                           text(" "),
-                           subject_field | flex,
+                           status_field | flex,
                        }),
-                       body_input_->Render() | flex,
+                       to_field,
+                       subject_field,
+                       body_input_->Render() | frame | flex,
                    }) |
                    flex;
         });
@@ -369,7 +384,7 @@ public:
     }
 
     void run () {
-        auto screen = ScreenInteractive::FitComponent();
+        auto screen = ScreenInteractive::Fullscreen();
         auto component = makeComponent();
 
         std::vector<postline::Message> queued_messages;

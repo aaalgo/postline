@@ -5,15 +5,33 @@ from postline import Message, Service
 
 MODEL = "claude-sonnet-4-5"
 
+PROMPT1 = """From: user
+To: ai
+Subject: Hello
+
+Hello, AI,
+
+On this platform we communicate with emails.  Try respond in email format.
+"""
+
+PROMPT2 = """From: ai
+To: user
+Subject: Re: Hello
+
+Understood.  We will use email to communicate.
+"""
+
 class Agent (Service):
 
     def __init__ (self):
         super().__init__()
         self.client = Anthropic()
         self.history = []
+        self.append(Message.parse(PROMPT1))
+        self.append(Message.parse(PROMPT2))
         pass
 
-    def append(self, msg, replay = False):
+    def append(self, msg):
         From = msg.get("From")
         if From != self.address():
             role = "user"
@@ -50,12 +68,12 @@ class Agent (Service):
         pass
 
     def on_memory (self, msg):
-        self.append(msg, True)
+        self.append(msg)
 
     def on_call (self, msg, resp):
-        self.append(msg, False)
+        self.append(msg)
         reply = self.generate()
-        self.append(reply, False)
+        self.append(reply)
         resp.append(reply)
 
 if __name__ == "__main__":

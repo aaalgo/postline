@@ -80,8 +80,8 @@ protected:
             std::cout << "To: " << to << "\t" << "Subject: " << subject << std::endl;
             if ((!std::getline(std::cin, body)) || body == "/x") {
                 json h{
-                    {"type", "exit"},
                     {"To", "runtime"},
+                    {"Subject", "exit"}
                 };
                 resp.append(Message(std::move(h)));
                 return;
