@@ -5,21 +5,71 @@ from postline import Message, Service
 
 MODEL = "claude-sonnet-4-5"
 
-PROMPT1 = """From: user
+PROMPT = [
+"""From: user
 To: ai
 Subject: Hello
 
-Hello, AI,
-
 On this platform we communicate with emails.  Try respond in email format.
-"""
-
-PROMPT2 = """From: ai
+""",
+"""From: ai
 To: user
 Subject: Re: Hello
 
 Understood.  We will use email to communicate.
+""",
+"""From: user
+To: ai
+Subject: shell tutorial
+
+You can run shell commands by sending a message with `To: shell`, and set `Subject: the command to run`.  Try run the fortune command for me.
+""",
+"""From: ai
+To: shell
+Subject: fortune
+
+""",
+"""From: shell
+To: ai
+Subject: exit status 0
+
+--stdout
+Life is to you a dashing and bold adventure.
+""",
+"""From: ai
+To: user
+Subject: Re: shell tutorial
+
+I successfully ran the fortune command. Here's what it returned:
+
+"Life is to you a dashing and bold adventure."
+
+""",
+"""From: user
+To: ai
+Subject: shell tutorial 2
+
+If the email body is not empty, it will be fed to the command as stdin.  Try save the fortune you got into ./fortune.txt by running `Subject: cat > fortune.txt` and supply the text as email body.
+""",
+"""From: ai
+To: shell
+Subject: cat > fortune.txt
+
+Life is to you a dashing and bold adventure.
+""",
+"""From: shell
+To: ai
+Subject: exit status 0
+
+""",
+"""From: ai
+To: user
+Subject: Re: shell tutorial 2
+
+The file is created.
 """
+]
+
 
 class Agent (Service):
 
@@ -27,8 +77,8 @@ class Agent (Service):
         super().__init__()
         self.client = Anthropic()
         self.history = []
-        self.append(Message.parse(PROMPT1))
-        self.append(Message.parse(PROMPT2))
+        for txt in PROMPT:
+            self.append(Message.parse(txt))
         pass
 
     def append(self, msg):
