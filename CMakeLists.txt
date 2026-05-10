@@ -30,7 +30,7 @@ endif()
 
 set(POSTLINE_INSTALL_BIN_DIR "${CMAKE_BINARY_DIR}/install/bin")
 
-option(POSTLINE_BUILD_TESTS "Build postline tests" ON)
+option(BUILD_TESTS "Build postline tests" OFF)
 
 find_package(Python3 REQUIRED COMPONENTS Interpreter Development.Module)
 
@@ -299,7 +299,7 @@ foreach(script IN LISTS POSTLINE_INSTALL_BIN_SCRIPTS)
     )
 endforeach()
 
-if(POSTLINE_BUILD_TESTS)
+if(BUILD_TESTS)
     include(CTest)
 
     add_executable(test_journal tests/test_journal.cpp)

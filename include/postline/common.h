@@ -26,6 +26,9 @@ namespace postline {
 #define CHECK_FD(fd)  CHECK(fd >= 0, "errno: {} ({})", errno, std::strerror(errno));
 #define CHECK_ERRNO(cond)  CHECK(cond, "errno: {} ({})", errno, std::strerror(errno));
 
+    void write_all(int fd, void const* buf, std::size_t n);
+    void read_all(int fd, void* buf, std::size_t n);
+
     namespace fs = std::filesystem;
     extern fs::path POSTLINE_HOME;
 
@@ -156,6 +159,8 @@ namespace postline {
         }
 
         std::string const &to () const {
+            std::string const &cloned_to = get("Postline-Cloned-To");
+            if (!cloned_to.empty()) return cloned_to;
             return get("To");
         }
 

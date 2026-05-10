@@ -275,8 +275,8 @@ void Runtime::resolve (Message const &msg, MessageContext *ctx) {
 
 void Runtime::process(Message &&msg, Agent *from) {
     int64_t flags = msg.flags();
-    std::cerr << "PROCESS " << flags << std::endl;
     if ((flags & MESSAGE_QUIET) == 0) {
+        std::cerr << "PROCESS " << flags << std::endl;
         std::cerr << "====" << std::endl;
         msg.formatEmail(std::cerr);
         std::cerr << std::endl;
@@ -358,6 +358,9 @@ void Runtime::process(Message &&msg, Agent *from) {
                     ++clone_agent->obligation_count;
                 }
                 agent = clone_agent;
+                msg.updateHeader([agent](json &h) {
+                        h["Postline-Cloned-To"] = agent->address;
+                        });
             }
             if (!agent->driver) {
                 if (agent->service.empty()) {
