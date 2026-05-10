@@ -174,6 +174,7 @@ void Runtime::call (Message &&msg, Response &resp) {
         auto cmd_list_agents   = app.add_subcommand("list_agents");
         auto cmd_spawn = app.add_subcommand("spawn");
         auto cmd_dump = app.add_subcommand("dump");
+        auto cmd_account = app.add_subcommand("account");
         std::string dump_path;
         cmd_dump->add_option("path", dump_path)->required();
 
@@ -210,6 +211,11 @@ void Runtime::call (Message &&msg, Response &resp) {
         if (*cmd_dump) {
             respHeader["Subject"] = "Re: exit";
             dump(dump_path);
+            break;
+        }
+        if (*cmd_account) {
+            respHeader["Subject"] = "Re: account";
+            respBody = accounting.dump().dump();
             break;
         }
     } while (0);
@@ -281,6 +287,7 @@ void Runtime::process(Message &&msg, Agent *from) {
         msg.formatEmail(std::cerr);
         std::cerr << std::endl;
     }
+    accounting.update(msg);
     MessageContext ctx;
     bool error = false;
     try {

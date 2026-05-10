@@ -22,6 +22,7 @@ char const *LOCAL = R"(
 [
 {"from": "root", "address": "echo", "service": "pipe:echo", "flags": []},
 {"from": "root", "address": "ai", "service": "pipe:claude", "flags": ["history"]},
+{"from": "root", "address": "v1", "service": "pipe:v1", "flags": ["history"]},
 {"from": "root", "address": "shell", "service": "pipe:shell", "flags": []},
 {"from": "root", "address": "mcp", "service": "pipe:mcp_bridge", "flags": []},
 {"from": "root", "address": "memory", "service": "pipe:echo -m", "flags": ["history"]},

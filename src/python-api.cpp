@@ -8,27 +8,57 @@ namespace py = pybind11;
 
 namespace postline {
 
-json py2json (py::object obj)
+json py2json(py::handle obj)
 {
-    CHECK(py::isinstance<py::dict>(obj));
-
-    json ret = json::object();
-    py::dict dict = obj.cast<py::dict>();
-    for (auto const &item : dict) {
-        CHECK(py::isinstance<py::str>(item.first));
-        std::string key = py::cast<std::string>(item.first);
-
-        if (py::isinstance<py::str>(item.second)) {
-            ret[key] = py::cast<std::string>(item.second);
-        }
-        else if (py::isinstance<py::int_>(item.second)) {
-            ret[key] = py::cast<int64_t>(item.second);
-        }
-        else {
-            CHECK(0);
-        }
+    if (obj.is_none()) {
+        return nullptr;
     }
-    return ret;
+
+    if (py::isinstance<py::bool_>(obj)) {
+        return py::cast<bool>(obj);
+    }
+
+    if (py::isinstance<py::int_>(obj)) {
+        return py::cast<int64_t>(obj);
+    }
+
+    if (py::isinstance<py::float_>(obj)) {
+        return py::cast<double>(obj);
+    }
+
+    if (py::isinstance<py::str>(obj)) {
+        return py::cast<std::string>(obj);
+    }
+
+    if (py::isinstance<py::dict>(obj)) {
+        json ret = json::object();
+        py::dict dict = py::reinterpret_borrow<py::dict>(obj);
+
+        for (auto const& item : dict) {
+            CHECK(py::isinstance<py::str>(item.first));
+
+            std::string key =
+                py::cast<std::string>(item.first);
+
+            ret[key] = py2json(item.second);
+        }
+
+        return ret;
+    }
+
+    if (py::isinstance<py::list>(obj) ||
+        py::isinstance<py::tuple>(obj)) {
+        json ret = json::array();
+
+        for (py::handle item : obj) {
+            ret.push_back(py2json(item));
+        }
+
+        return ret;
+    }
+
+    CHECK(0);
+    return nullptr;
 }
 
 class PyService: public Service {
@@ -113,6 +143,20 @@ PYBIND11_MODULE(_postline, module) {
                     return std::make_unique<Message>(std::move(msg));
                 },
                 py::arg("value"))
+        .def("updateHeader",
+                [](Message &msg, py::dict fields)
+                {
+                    msg.updateHeader([fields](json &h)
+                    {
+                        for (auto const &item : fields) {
+                            CHECK(py::isinstance<py::str>(item.first));
+                            std::string key =
+                                py::cast<std::string>(item.first);
+                            h[key] = py2json(item.second);
+                        }
+                    });
+                },
+                py::arg("fiels"))
         .def("get", &Message::get, py::arg("key"))
         .def("write", &Message::write, py::arg("fd"))
         .def("format", 

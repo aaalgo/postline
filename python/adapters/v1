@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
+import argparse
+import os
 import sys
-from anthropic import Anthropic
+
+from openai import OpenAI
 from postline import Message, Service
 
-MODEL = "claude-sonnet-4-5"
+MODEL = "google/gemma-3-4b-it"
+DEFAULT_URL = "https://openrouter.ai/api/v1"
 
 PROMPT = [
 """From: user
@@ -70,12 +74,12 @@ The file is created.
 """
 ]
 
-PROVIDER = "anthropic"
+PROVIDER = "openai-compatible"
 
 
 def updateAccounting(response, message):
     """
-    Extract accounting-related fields from an Anthropic response
+    Extract accounting-related fields from a chat completion response
     and store them into Postline headers.
     """
 
@@ -85,22 +89,14 @@ def updateAccounting(response, message):
     model = response["model"]
     usage = response.get("usage", {})
 
-    #
-    # First build a flat dictionary with simple field names.
-    #
-
     accounting = {}
 
     for key, value in usage.items():
-        if key == "cache_creation":
+        if isinstance(value, dict):
             for subkey, subvalue in value.items():
-                accounting[subkey] = subvalue
+                accounting[f"{key}.{subkey}"] = subvalue
         else:
             accounting[key] = value
-
-    #
-    # Then add the common Postline prefix.
-    #
 
     prefix = f"Postline-Cost:{PROVIDER}:{model}:"
 
@@ -114,9 +110,19 @@ def updateAccounting(response, message):
 
 class Agent (Service):
 
-    def __init__ (self):
+    def __init__ (self, url, model, headers):
         super().__init__()
-        self.client = Anthropic()
+        api_key = None
+        if url.startswith("https://openrouter.ai/"):
+            api_key = os.environ.get("OPENROUTER_API_KEY")
+        else:
+            api_key = os.environ.get("OPENAI_API_KEY")
+        self.client = OpenAI(
+            api_key=api_key,
+            base_url=url,
+            default_headers=headers,
+        )
+        self.model = model
         self.history = []
         for txt in PROMPT:
             self.append(Message.parse(txt))
@@ -139,13 +145,12 @@ class Agent (Service):
         print(self.history, file=sys.stderr)
         sys.stderr.flush()
 
-        response = self.client.messages.create(
-            model=MODEL,
-            max_tokens=4096,
+        response = self.client.chat.completions.create(
+            model=self.model,
             messages=self.history,
         )
 
-        text = response.content[0].text
+        text = response.choices[0].message.content
 
         print("=" * 20, file=sys.stderr)
         print(text, file=sys.stderr)
@@ -168,6 +173,40 @@ class Agent (Service):
         self.append(reply)
         resp.append(reply)
 
+
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--url",
+        default=DEFAULT_URL,
+        help=f"OpenAI-compatible API base URL. Defaults to {DEFAULT_URL}",
+    )
+    parser.add_argument(
+        "--model",
+        default=MODEL,
+        help=f"Model name. Defaults to {MODEL}",
+    )
+    parser.add_argument(
+        "--referer",
+        default=os.environ.get("OPENROUTER_HTTP_REFERER"),
+        help="Optional HTTP-Referer header for OpenRouter rankings.",
+    )
+    parser.add_argument(
+        "--title",
+        default=os.environ.get("OPENROUTER_TITLE"),
+        help="Optional X-OpenRouter-Title header for OpenRouter rankings.",
+    )
+    return parser.parse_args()
+
+
 if __name__ == "__main__":
-    agent = Agent()
+    args = parse_args()
+    headers = {}
+    if args.referer:
+        headers["HTTP-Referer"] = args.referer
+    if args.title:
+        headers["X-OpenRouter-Title"] = args.title
+
+    agent = Agent(args.url, args.model, headers)
     agent.run()
+

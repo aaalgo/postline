@@ -15,6 +15,7 @@
 #include "poller.h"
 #include "service.h"
 #include "logic.h"
+#include "accounting.h"
 
 namespace postline {
 
@@ -62,6 +63,7 @@ class Runtime: immobile, public Service {
     bool stop_requested;
     AccessID last_processed_id = NO_ACCESS_ID;
     Logic logic;
+    Accounting accounting;
 
     json dump () const {
         json j{

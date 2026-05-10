@@ -127,20 +127,56 @@ protected:
             return;
         }
 
-        std::string input = message.body();
+        std::string input_buffer = message.body();
 
-        if (input.empty() || input.back() != '\n') {
-            input.push_back('\n');
+        if (input_buffer.empty() || input_buffer.back() != '\n') {
+            input_buffer.push_back('\n');
         }
 
-        transcript_.append(input);
+        for (;;) {
+            size_t nl = input_buffer.find('\n');
 
-        terminal_->write(input);
+            if (nl == std::string::npos) {
+                break;
+            }
 
-        TerminalContext ctx = terminal_->read_until_quiet();
-        transcript_.append(strip_ansi(ctx.delta));
+            std::string input = input_buffer.substr(0, nl + 1);
+            std::string remainder = input_buffer.substr(nl + 1);
 
-        resp.append(send_transcript("terminal"));
+            transcript_.append(input);
+
+            terminal_->write(input);
+
+            TerminalContext ctx = terminal_->read_until_quiet();
+
+            std::string delta = strip_ansi(ctx.delta);
+            transcript_.append(delta);
+
+            if (ctx.exited) {
+                transcript_.append("\n[terminal exited, status ");
+                transcript_.append(std::to_string(ctx.exit_status));
+                transcript_.append("]\n");
+                transcript_.append("[Next messsage will restart terminal.]\n");
+
+                terminal_.reset();
+
+                resp.append(send_transcript("exit"));
+                break;
+            }
+
+            if (!remainder.starts_with(delta)) {
+                resp.append(send_transcript("terminal"));
+                break;
+            }
+
+            remainder.erase(0, delta.size());
+            input_buffer = std::move(remainder);
+
+            if (input_buffer.empty()) {
+                resp.append(send_transcript("terminal"));
+                break;
+            }
+        }
     }
 
     void on_exit() override
