@@ -1,35 +1,161 @@
-{
-  "id": "chatcmpl-De5ZuVWXdtp2mJ9AF6uRDD4AipqmA",
-  "choices": [
-    {
-      "finish_reason": "stop",
-      "index": 0,
-      "message": {
-        "content": "Hello! Here’s a simple JSON example:\n\n```json\n{\n  \"name\": \"Alex\",\n  \"role\": \"developer\",\n  \"active\": true\n}\n```",
-        "refusal": null,
-        "role": "assistant",
-        "annotations": []
-      }
-    }
-  ],
-  "created": 1778446934,
-  "model": "gpt-5.5-2026-04-23",
-  "object": "chat.completion",
-  "service_tier": "default",
-  "system_fingerprint": null,
-  "usage": {
-    "completion_tokens": 59,
-    "prompt_tokens": 18,
-    "total_tokens": 77,
-    "completion_tokens_details": {
-      "accepted_prediction_tokens": 0,
-      "audio_tokens": 0,
-      "reasoning_tokens": 15,
-      "rejected_prediction_tokens": 0
-    },
-    "prompt_tokens_details": {
-      "audio_tokens": 0,
-      "cached_tokens": 0
-    }
-  }
-}
+#!/usr/bin/env python3
+import argparse
+import json
+import sys
+
+from openai import OpenAI
+from postline import Message, Service, updateAccounting
+
+DEFAULT_MODEL = "gpt-5.4-mini"
+PROVIDER = "openai"
+
+PROMPT = [
+"""From: user
+To: ai
+Subject: Hello
+
+On this platform we communicate with emails.  Try respond in email format.
+""",
+"""From: ai
+To: user
+Subject: Re: Hello
+
+Understood.  We will use email to communicate.
+""",
+"""From: user
+To: ai
+Subject: shell tutorial
+
+You can run shell commands by sending a message with `To: shell`, and set `Subject: the command to run`.  Try run the fortune command for me.
+""",
+"""From: ai
+To: shell
+Subject: fortune
+
+""",
+"""From: shell
+To: ai
+Subject: exit status 0
+
+--stdout
+Life is to you a dashing and bold adventure.
+""",
+"""From: ai
+To: user
+Subject: Re: shell tutorial
+
+I successfully ran the fortune command. Here's what it returned:
+
+"Life is to you a dashing and bold adventure."
+
+""",
+"""From: user
+To: ai
+Subject: shell tutorial 2
+
+If the email body is not empty, it will be fed to the command as stdin.  Try save the fortune you got into ./fortune.txt by running `Subject: cat > fortune.txt` and supply the text as email body.
+""",
+"""From: ai
+To: shell
+Subject: cat > fortune.txt
+
+Life is to you a dashing and bold adventure.
+""",
+"""From: shell
+To: ai
+Subject: exit status 0
+
+""",
+"""From: ai
+To: user
+Subject: Re: shell tutorial 2
+
+The file is created.
+"""
+]
+
+
+class Agent (Service):
+
+    def __init__ (self, model=DEFAULT_MODEL):
+        super().__init__()
+        self.client = OpenAI()
+
+        self.models = []
+        self.model_ids = set()
+        for m in self.client.models.list():
+            self.model_ids.add(m.id)
+            self.models.append(dict(m))
+        self.model = model
+        self.history = []
+        for txt in PROMPT:
+            self.append(Message.parse(txt))
+        pass
+
+    def append(self, msg):
+        From = msg.get("From")
+        if From != self.address():
+            role = "user"
+        else:
+            role = "assistant"
+
+        content = msg.format(True)
+        self.history.append({
+            "role": role,
+            "content": content,
+        })
+
+    def generate (self):
+        print(self.history, file=sys.stderr)
+        sys.stderr.flush()
+
+        response = self.client.responses.create(
+            model=self.model,
+            input=self.history,
+        )
+
+        text = response.output_text
+
+        print("=" * 20, file=sys.stderr)
+        print(text, file=sys.stderr)
+        print("=" * 20, file=sys.stderr)
+        sys.stderr.flush()
+
+        msg = Message.parse(text)
+        updateAccounting(response, msg, PROVIDER)
+        return msg
+
+    def on_init (self, resp):
+        pass
+
+    def on_memory (self, msg):
+        self.append(msg)
+
+    def on_call (self, msg, resp):
+        if msg.get('Subject') == '/list_models':
+            resp.append(Message({}, json.dumps(self.models, indent=2)))
+            return
+
+        self.append(msg)
+        model = msg.get("Model-Requested")
+        if model in self.model_ids:
+            self.model = model
+        reply = self.generate()
+        self.append(reply)
+        resp.append(reply)
+
+
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--model",
+        default=DEFAULT_MODEL,
+        help=f"Model name. Defaults to {DEFAULT_MODEL}",
+    )
+    return parser.parse_args()
+
+
+if __name__ == "__main__":
+    args = parse_args()
+    agent = Agent(args.model)
+    agent.run()

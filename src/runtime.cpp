@@ -59,6 +59,7 @@ void Runtime::spawn(Message const &msg) {
 
         std::string const &from = commit_get_string(m, "from");
         std::string const &address = commit_get_string(m, "address");
+        std::string comment;
         std::string service;
         AgentFlags flags = 0;
 
@@ -91,6 +92,10 @@ void Runtime::spawn(Message const &msg) {
             throw commit_error(std::format("address cannot contain _: {}", address));
         }
 
+        if (m.contains("comment")) {
+            comment = commit_get_string(m, "comment");
+        }
+
         if (m.contains("service")) {
             service = commit_get_string(m, "service");
         }
@@ -113,6 +118,7 @@ void Runtime::spawn(Message const &msg) {
 
         ops.push_back(json{{"op", "spawn"},
                            {"address", address},
+                           {"comment", comment},
                            {"from", from},
                            {"service", service},
                            {"flags", flags},
@@ -134,6 +140,7 @@ void Runtime::commit(json const &ops) {
 
         if (op == "spawn") {
             std::string const &address = commit_get_string(m, "address");
+            std::string const &comment = commit_get_string(m, "comment");
             std::string const &from = commit_get_string(m, "from");
             std::string const &service = commit_get_string(m, "service");
             AgentFlags flags = commit_get_int(m, "flags");
@@ -148,7 +155,7 @@ void Runtime::commit(json const &ops) {
                 CHECK(address.ends_with(suffix));
                 ++parent.next_clone_id;
             }
-            AgentID id = agents.spawn(address, from_id, NO_ACCESS_ID, service, flags);
+            AgentID id = agents.spawn(address, comment, from_id, NO_ACCESS_ID, service, flags);
             Agent &agent = agents.get(id);
             log::info("create agent {}: {}", id, agent.address);
         } else if (op == "shutdown") {

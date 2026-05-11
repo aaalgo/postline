@@ -209,6 +209,10 @@ class CLI {
             for (size_t i = 0; i < j.size(); ++i) {
                 auto const &m = j[i];
                 if (m.contains("address")) {
+                    std::string comment;
+                    if (m.contains("comment")) {
+                        comment = m["comment"].get<std::string>();
+                    }
                     addAddress(m["address"].get<std::string>());
                 }
             }

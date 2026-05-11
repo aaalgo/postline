@@ -213,9 +213,9 @@ Message Message::read(int fd, uint64_t offset, unsigned segment, size_t *read_si
 char const *LOCAL_AGENTS = R"(
 [
 {"from": "root", "address": "echo", "service": "pipe:echo", "flags": []},
-{"from": "root", "address": "ai1", "service": "pipe:v1 --provider openai", "flags": ["history"]},
-{"from": "root", "address": "ai2", "service": "pipe:claude", "flags": ["history"]},
-{"from": "root", "address": "ai3", "service": "pipe:v1 --provider openrouter", "flags": ["history"]},
+{"from": "root", "address": "ai1", "comment": "openai", "service": "pipe:openai", "flags": ["history"]},
+{"from": "root", "address": "ai2", "comment": "anthropic", "service": "pipe:claude", "flags": ["history"]},
+{"from": "root", "address": "ai3", "comment": "openrouter", "service": "pipe:v1", "flags": ["history"]},
 {"from": "root", "address": "shell", "service": "pipe:shell", "flags": []},
 {"from": "root", "address": "mcp", "service": "pipe:mcp_bridge", "flags": []},
 {"from": "root", "address": "memory", "service": "pipe:echo -m", "flags": ["history"]},

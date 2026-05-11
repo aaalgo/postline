@@ -33,6 +33,7 @@ struct Agent: immobile {
     AgentID id;
     AgentLink link;
     std::string address;
+    std::string comment;
     std::string service;
     AgentFlags flags;
     int next_clone_id;
@@ -45,10 +46,11 @@ struct Agent: immobile {
     // expecting is the protocol with driver
 
 
-    explicit Agent(AgentID id_, AgentLink link_, std::string const &address_, std::string const &service_, AgentFlags flags_)
+    explicit Agent(AgentID id_, AgentLink link_, std::string const &address_, std::string const &comment_, std::string const &service_, AgentFlags flags_)
         : id(id_),
         link(std::move(link_)),
         address(address_),
+        comment(comment_),
         service(service_),
         flags(flags_),
         next_clone_id(0),
@@ -83,6 +85,7 @@ struct Agent: immobile {
                 {"anchor", link.anchor}
             }},
             {"address", address},
+            {"comment", comment},
             {"service", service},
             {"flags", flag_strings},
             {"oblication_count", obligation_count},
@@ -116,7 +119,7 @@ public:
         return j;
     }
 
-    AgentID spawn(std::string const &address, AgentID parent = NOT_AN_AGENT, AccessID anchor = NO_ACCESS_ID, std::string service = std::string(), AgentFlags flags = 0) {
+    AgentID spawn(std::string const &address, std::string const &comment = "", AgentID parent = NOT_AN_AGENT, AccessID anchor = NO_ACCESS_ID, std::string service = std::string(), AgentFlags flags = 0) {
         AgentID id = static_cast<AgentID>(agents_.size());
         auto [it, inserted] = lookup_.insert(std::make_pair(address, id));
         if (!inserted) return NOT_AN_AGENT;   // already exists
@@ -138,7 +141,7 @@ public:
         agents_.push_back(std::make_unique<Agent>(id, AgentLink{
             .parent = parent,
             .anchor = anchor,
-        }, address, service, flags));
+        }, address, comment, service, flags));
 
         return id;
     }

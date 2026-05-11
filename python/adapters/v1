@@ -7,12 +7,11 @@ import json
 from openai import OpenAI
 from postline import Message, Service, updateAccounting
 
-OPENAI_URL = 'https://api.openai.com/v1/chat/completions'
+#OPENAI_URL = 'https://api.openai.com/v1/chat/completions'
+#OPENAI_MODEL = 'gpt-5.4-mini-2026-03-17'
 OPENROUTER_URL = "https://openrouter.ai/api/v1"
-OPENAI_MODEL = 'gpt-5.4-mini-2026-03-17'
 OPENROUTER_MODEL = "google/gemma-3-4b-it"
 DEFAULT_MODEL = OPENROUTER_MODEL
-DEFAULT_URL = OPENROUTER_URL
 
 PROMPT = [
 """From: user
@@ -166,36 +165,21 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--provider",
-        default=None,
-        help=f"a shortcut to support --url"
-    )
-    parser.add_argument(
-        "--url",
-        default=DEFAULT_URL,
-        help=f"OpenAI-compatible API base URL. Defaults to {DEFAULT_URL}",
+        default="openrouter",
+        help=f"provider"
     )
     parser.add_argument(
         "--model",
-        default=DEFAULT_MODEL,
+        default=None,
         help=f"Model name. Defaults to {DEFAULT_MODEL}",
-    )
-    parser.add_argument(
-        "--referer",
-        default=os.environ.get("OPENROUTER_HTTP_REFERER"),
-        help="Optional HTTP-Referer header for OpenRouter rankings.",
-    )
-    parser.add_argument(
-        "--title",
-        default=os.environ.get("OPENROUTER_TITLE"),
-        help="Optional X-OpenRouter-Title header for OpenRouter rankings.",
     )
     args = parser.parse_args()
     if args.provider == 'openai':
-        args.url = OPENAI_URL
-        args.model = OPENAI_MODEL
+        assert False, "Not supported"
     elif args.provider == 'openrouter':
         args.url = OPENROUTER_URL
-        args.model = OPENROUTER_MODEL
+        if args.model is None:
+            args.model = OPENROUTER_MODEL
     else:
         assert args.provider is None
 
@@ -205,11 +189,6 @@ def parse_args():
 if __name__ == "__main__":
     args = parse_args()
     headers = {}
-    if args.referer:
-        headers["HTTP-Referer"] = args.referer
-    if args.title:
-        headers["X-OpenRouter-Title"] = args.title
-
     agent = Agent(args.url, args.model, headers)
     agent.run()
 
