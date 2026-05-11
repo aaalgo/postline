@@ -370,6 +370,9 @@ void Runtime::process(Message &&msg, Agent *from) {
                         });
             }
             if (!agent->driver) {
+                if (agent->error) {
+                    log::error("Agent is in error status.");
+                }
                 if (agent->service.empty()) {
                     log::error("agent {} {} has empty service", agent->id, agent->address);
                     return;
@@ -440,8 +443,28 @@ void Runtime::run() {
             CHECK(agent->driver);
 
             std::vector<Message> tmp;
-            int err = agent->driver->recv(tmp);
-            CHECK(err == 0);
+            try {
+                int err = agent->driver->recv(tmp);
+            }
+            catch (eof_error const &) {
+                // driver has crashed
+                agent->error = true;
+                agent->exit_code = agent->driver->shutdown(false);
+                agent->driver.reset();
+                // construct response messages to waiting parties
+                tmp.clear();
+                std::vector<std::pair<int, CallStackEntry const *>> notify;
+                logic.notifyAgentDeath(agent->id, notify);
+                for (auto [thread_id, p]: notify) {
+                    json header{{"From", "runtime"},
+                                {"To", agents.get(p->reply_to_id).address},
+                                {"On-Behalf-Of", agent->address},
+                                {"In-Reply-To", std::format("{}", p->access_id)},
+                                {"Thread-ID", std::format("{}", thread_id)},
+                                {"Subject", std::format("agent has died with code {}", agent->exit_code)}};
+                    tmp.emplace_back(std::move(header));
+                }
+            }
             for (auto &msg : tmp) {
                 std::string const &from = msg.from();
                 if (from != agent->address) {
@@ -489,6 +512,7 @@ void Runtime::run() {
         }
         if (agent->driver) {
             log::info("Stopping agent {} driver...", i);
+            agent->driver->shutdown();
             agent->driver.reset();
         }
     }

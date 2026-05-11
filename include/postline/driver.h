@@ -19,6 +19,7 @@ public:
     virtual ~Driver () {}
     virtual int send(Message const &msg) = 0;
     virtual int recv(std::vector<Message> &out) = 0;
+    virtual int shutdown (bool send = true) = 0;
     Message recv_one () {
         std::vector<Message> all;
         int err = recv(all);
@@ -99,10 +100,6 @@ public:
     ~ShellDriver()
     {
         if (input_fd_ >= 0) {
-            send(protocol::handshake::Bye::make());
-        }
-
-        if (input_fd_ >= 0) {
             close(input_fd_);
             input_fd_ = -1;
         }
@@ -112,9 +109,17 @@ public:
             output_fd_ = -1;
         }
 
+    }
+
+    int shutdown (bool notify) override {
+        if (notify && input_fd_ >= 0) {
+            send(protocol::handshake::Bye::make());
+        }
         if (pid_ > 0) { int status = 0;
             waitpid(pid_, &status, 0);
+            return status;
         }
+        return 0;
     }
 
     int send(Message const &msg) override
@@ -203,6 +208,10 @@ public:
         uint64_t one = 1;
         ssize_t rc = ::write(wake_fd, &one, sizeof(one));
         CHECK(rc == static_cast<ssize_t>(sizeof(one)));
+        return 0;
+    }
+
+    int shutdown (bool send) override {
         return 0;
     }
 

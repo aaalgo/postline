@@ -94,8 +94,8 @@ void read_all(int fd, void* buf, std::size_t n)
             if (errno == EINTR) continue;
             CHECK(0);
         }
-        if (r == 0) {   // EOF
-            CHECK(0, "EOF");
+        if (r == 0) {   // EOF  // TODO. adapter crash causes this
+            throw eof_error("");
         }
         off += static_cast<std::size_t>(r);
     }
@@ -209,5 +209,19 @@ Message Message::read(int fd, uint64_t offset, unsigned segment, size_t *read_si
     }
     return Message(header_raw, std::move(body_raw), access_id);
 }
+
+char const *LOCAL_AGENTS = R"(
+[
+{"from": "root", "address": "echo", "service": "pipe:echo", "flags": []},
+{"from": "root", "address": "ai1", "service": "pipe:v1 --provider openai", "flags": ["history"]},
+{"from": "root", "address": "ai2", "service": "pipe:claude", "flags": ["history"]},
+{"from": "root", "address": "ai3", "service": "pipe:v1 --provider openrouter", "flags": ["history"]},
+{"from": "root", "address": "shell", "service": "pipe:shell", "flags": []},
+{"from": "root", "address": "mcp", "service": "pipe:mcp_bridge", "flags": []},
+{"from": "root", "address": "memory", "service": "pipe:echo -m", "flags": ["history"]},
+{"from": "root", "address": "login", "service": "pipe:login", "flags": ["clone"]},
+{"from": "root", "address": "benchmark", "service": "pipe:benchmark", "flags": []}
+]
+)";
 
 } // namespace postline

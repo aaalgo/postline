@@ -174,6 +174,16 @@ struct Logic: noncopyable {
         ctx->thread->process(msg, ctx, ctx->logic_op);
     }
 
+    void notifyAgentDeath(int agent_id, std::vector<std::pair<int, CallStackEntry const *>> &notify) {
+        notify.clear();
+        for (auto &thread: threads) {
+            if (thread->stack.empty()) continue;
+            CallStackEntry const *p = &thread->stack.back();
+            if (p->agent_id != agent_id) continue;
+            notify.emplace_back(thread->id, p);
+        }
+    }
+
     json dump () const {
         json j = json::array();
         for (auto const &p: threads) {

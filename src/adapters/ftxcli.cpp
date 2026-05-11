@@ -8,18 +8,6 @@
 
 using namespace postline;
 
-char const *LOCAL = R"(
-[
-{"from": "root", "address": "echo", "service": "pipe:echo", "flags": []},
-{"from": "root", "address": "ai", "service": "pipe:claude", "flags": ["history"]},
-{"from": "root", "address": "shell", "service": "pipe:shell", "flags": []},
-{"from": "root", "address": "mcp", "service": "pipe:mcp_bridge", "flags": []},
-{"from": "root", "address": "memory", "service": "pipe:echo -m", "flags": ["history"]},
-{"from": "root", "address": "login", "service": "pipe:login", "flags": ["clone"]},
-{"from": "root", "address": "benchmark", "service": "pipe:benchmark", "flags": []}
-]
-)";
-
 class MessageHolder {
     std::mutex mutex_;
     std::condition_variable cv_;
@@ -71,7 +59,7 @@ public:
         json h{{"From", "user"},
                {"To", "runtime"},
                {"Subject", "spawn"}};
-        outgoing_.put(Message(std::move(h), std::string(LOCAL)));
+        outgoing_.put(Message(std::move(h), std::string(LOCAL_AGENTS)));
     }
 
     void init (Response &resp) {

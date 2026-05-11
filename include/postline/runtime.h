@@ -7,7 +7,6 @@
 #include <unordered_map>
 #include <utility>
 #include <vector>
-#include <stdexcept>
 #include "common.h"
 #include "driver.h"
 #include "agent.h"

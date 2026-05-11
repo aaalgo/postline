@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 import sys
 from anthropic import Anthropic
-from postline import Message, Service
+from postline import Message, Service, updateAccounting
 
-MODEL = "claude-sonnet-4-5"
+DEFAULT_MODEL = "claude-sonnet-4-5"
+PROVIDER = "anthropic"
 
 PROMPT = [
 """From: user
@@ -70,53 +71,19 @@ The file is created.
 """
 ]
 
-PROVIDER = "anthropic"
-
-
-def updateAccounting(response, message):
-    """
-    Extract accounting-related fields from an Anthropic response
-    and store them into Postline headers.
-    """
-
-    if hasattr(response, "to_dict"):
-        response = response.to_dict()
-
-    model = response["model"]
-    usage = response.get("usage", {})
-
-    #
-    # First build a flat dictionary with simple field names.
-    #
-
-    accounting = {}
-
-    for key, value in usage.items():
-        if key == "cache_creation":
-            for subkey, subvalue in value.items():
-                accounting[subkey] = subvalue
-        else:
-            accounting[key] = value
-
-    #
-    # Then add the common Postline prefix.
-    #
-
-    prefix = f"Postline-Cost:{PROVIDER}:{model}:"
-
-    headers = {}
-
-    for key, value in accounting.items():
-        headers[prefix + key] = str(value)
-
-    message.updateHeader(headers)
-
-
 class Agent (Service):
 
-    def __init__ (self):
+    def __init__ (self, model=DEFAULT_MODEL):
         super().__init__()
         self.client = Anthropic()
+
+        self.models = []
+        self.model_ids = set()
+        for m in self.client.models.list():
+            self.model_ids.add(m.id)
+            self.models.append(dict(m))
+        #assert model in self.model_ids
+        self.model = model
         self.history = []
         for txt in PROMPT:
             self.append(Message.parse(txt))
@@ -140,7 +107,7 @@ class Agent (Service):
         sys.stderr.flush()
 
         response = self.client.messages.create(
-            model=MODEL,
+            model=self.model,
             max_tokens=4096,
             messages=self.history,
         )
@@ -153,7 +120,7 @@ class Agent (Service):
         sys.stderr.flush()
 
         msg = Message.parse(text)
-        updateAccounting(response, msg)
+        updateAccounting(response, msg, PROVIDER)
         return msg
 
     def on_init (self, resp):
@@ -163,7 +130,13 @@ class Agent (Service):
         self.append(msg)
 
     def on_call (self, msg, resp):
+        if msg.get('Subject') == '/list_models':
+            resp.append(Message({}, json.dumps(self.models, indent=2)))
+            return
         self.append(msg)
+        model = msg.get("Model-Requested")
+        if model in self.model_ids:
+            self.model = model
         reply = self.generate()
         self.append(reply)
         resp.append(reply)

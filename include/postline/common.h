@@ -7,6 +7,7 @@
 #include <vector>
 #include <filesystem>
 #include <iostream>
+#include <stdexcept>
 #include <spdlog/spdlog.h>
 #include <nlohmann/json.hpp>
 
@@ -65,6 +66,11 @@ namespace postline {
         immobile(immobile&&) = delete;
         immobile& operator=(immobile&&) = delete;
     };
+
+    class eof_error: public std::runtime_error {
+        using std::runtime_error::runtime_error;
+    };
+
 
     // High-level message abstraction
     class Message: noncopyable {
@@ -231,6 +237,8 @@ namespace postline {
 
         std::string const &body () const { return body_raw_;}
     };
+
+extern char const *LOCAL_AGENTS;
 
 } // namespace postline
   //

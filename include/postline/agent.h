@@ -37,6 +37,8 @@ struct Agent: immobile {
     AgentFlags flags;
     int next_clone_id;
     std::vector<AccessID> memory;
+    bool error;
+    int exit_code;
     std::unique_ptr<Driver> driver;
     int obligation_count;
     // important:
@@ -50,6 +52,8 @@ struct Agent: immobile {
         service(service_),
         flags(flags_),
         next_clone_id(0),
+        error(false),
+        exit_code(0),
         obligation_count(0)
     {}
 

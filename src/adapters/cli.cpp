@@ -18,19 +18,6 @@ std::string trim(const std::string& s) {
     return (start < end) ? std::string(start, end) : std::string();
 }
 
-char const *LOCAL = R"(
-[
-{"from": "root", "address": "echo", "service": "pipe:echo", "flags": []},
-{"from": "root", "address": "ai", "service": "pipe:claude", "flags": ["history"]},
-{"from": "root", "address": "v1", "service": "pipe:v1", "flags": ["history"]},
-{"from": "root", "address": "shell", "service": "pipe:shell", "flags": []},
-{"from": "root", "address": "mcp", "service": "pipe:mcp_bridge", "flags": []},
-{"from": "root", "address": "memory", "service": "pipe:echo -m", "flags": ["history"]},
-{"from": "root", "address": "login", "service": "pipe:login", "flags": ["clone"]},
-{"from": "root", "address": "benchmark", "service": "pipe:benchmark", "flags": []}
-]
-)";
-
 class Cli : public Service {
 public:
     Cli () {
@@ -40,7 +27,7 @@ protected:
         json h{{"From", "user"},
                {"To", "runtime"},
                {"Subject", "spawn"}};
-        resp.append(Message(std::move(h), std::string(LOCAL)));
+        resp.append(Message(std::move(h), std::string(LOCAL_AGENTS)));
 
         /*
         runtime.enqueue_boot(std::move(local));

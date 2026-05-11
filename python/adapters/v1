@@ -2,12 +2,17 @@
 import argparse
 import os
 import sys
+import json
 
 from openai import OpenAI
-from postline import Message, Service
+from postline import Message, Service, updateAccounting
 
-MODEL = "google/gemma-3-4b-it"
-DEFAULT_URL = "https://openrouter.ai/api/v1"
+OPENAI_URL = 'https://api.openai.com/v1/chat/completions'
+OPENROUTER_URL = "https://openrouter.ai/api/v1"
+OPENAI_MODEL = 'gpt-5.4-mini-2026-03-17'
+OPENROUTER_MODEL = "google/gemma-3-4b-it"
+DEFAULT_MODEL = OPENROUTER_MODEL
+DEFAULT_URL = OPENROUTER_URL
 
 PROMPT = [
 """From: user
@@ -77,37 +82,6 @@ The file is created.
 PROVIDER = "openai-compatible"
 
 
-def updateAccounting(response, message):
-    """
-    Extract accounting-related fields from a chat completion response
-    and store them into Postline headers.
-    """
-
-    if hasattr(response, "to_dict"):
-        response = response.to_dict()
-
-    model = response["model"]
-    usage = response.get("usage", {})
-
-    accounting = {}
-
-    for key, value in usage.items():
-        if isinstance(value, dict):
-            for subkey, subvalue in value.items():
-                accounting[f"{key}.{subkey}"] = subvalue
-        else:
-            accounting[key] = value
-
-    prefix = f"Postline-Cost:{PROVIDER}:{model}:"
-
-    headers = {}
-
-    for key, value in accounting.items():
-        headers[prefix + key] = str(value)
-
-    message.updateHeader(headers)
-
-
 class Agent (Service):
 
     def __init__ (self, url, model, headers):
@@ -115,13 +89,20 @@ class Agent (Service):
         api_key = None
         if url.startswith("https://openrouter.ai/"):
             api_key = os.environ.get("OPENROUTER_API_KEY")
+            self.provider = 'openrouter'
         else:
             api_key = os.environ.get("OPENAI_API_KEY")
+            self.provider = 'openai'
         self.client = OpenAI(
             api_key=api_key,
             base_url=url,
             default_headers=headers,
         )
+        self.models = []
+        self.model_ids = set()
+        for m in self.client.models.list():
+            self.model_ids.add(m.id)
+            self.models.append(dict(m))
         self.model = model
         self.history = []
         for txt in PROMPT:
@@ -158,7 +139,7 @@ class Agent (Service):
         sys.stderr.flush()
 
         msg = Message.parse(text)
-        updateAccounting(response, msg)
+        updateAccounting(response, msg, self.provider)
         return msg
 
     def on_init (self, resp):
@@ -168,7 +149,14 @@ class Agent (Service):
         self.append(msg)
 
     def on_call (self, msg, resp):
+        if msg.get('Subject') == '/list_models':
+            resp.append(Message({}, json.dumps(self.models, indent=2)))
+            return
+
         self.append(msg)
+        model = msg.get("Model-Requested")
+        if model in self.model_ids:
+            self.model = model
         reply = self.generate()
         self.append(reply)
         resp.append(reply)
@@ -177,14 +165,19 @@ class Agent (Service):
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument(
+        "--provider",
+        default=None,
+        help=f"a shortcut to support --url"
+    )
+    parser.add_argument(
         "--url",
         default=DEFAULT_URL,
         help=f"OpenAI-compatible API base URL. Defaults to {DEFAULT_URL}",
     )
     parser.add_argument(
         "--model",
-        default=MODEL,
-        help=f"Model name. Defaults to {MODEL}",
+        default=DEFAULT_MODEL,
+        help=f"Model name. Defaults to {DEFAULT_MODEL}",
     )
     parser.add_argument(
         "--referer",
@@ -196,7 +189,17 @@ def parse_args():
         default=os.environ.get("OPENROUTER_TITLE"),
         help="Optional X-OpenRouter-Title header for OpenRouter rankings.",
     )
-    return parser.parse_args()
+    args = parser.parse_args()
+    if args.provider == 'openai':
+        args.url = OPENAI_URL
+        args.model = OPENAI_MODEL
+    elif args.provider == 'openrouter':
+        args.url = OPENROUTER_URL
+        args.model = OPENROUTER_MODEL
+    else:
+        assert args.provider is None
+
+    return args
 
 
 if __name__ == "__main__":
