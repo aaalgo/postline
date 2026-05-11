@@ -70,3 +70,5 @@ Testing/
 
 journal.20*
 log.20*
+
+*.pyc
