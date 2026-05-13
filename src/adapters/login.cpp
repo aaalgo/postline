@@ -97,6 +97,12 @@ public:
 
         app.add_option("--shell", shell,
                        "Shell executable");
+
+        app.add_option("--read-first-timeout-ms", read_first_timeout_ms,
+                       "Milliseconds to wait for first terminal output");
+
+        app.add_option("--read-quiet-timeout-ms", read_quiet_timeout_ms,
+                       "Milliseconds of terminal silence before responding");
     }
 
 protected:
@@ -120,7 +126,9 @@ protected:
 
             terminal_->start();
 
-            TerminalContext ctx = terminal_->read_until_quiet();
+            TerminalContext ctx = terminal_->read_until_quiet(
+                std::chrono::milliseconds(read_first_timeout_ms),
+                std::chrono::milliseconds(read_quiet_timeout_ms));
             transcript_.append(strip_ansi(ctx.delta));
 
             resp.append(send_transcript("login"));
@@ -147,7 +155,9 @@ protected:
 
             terminal_->write(input);
 
-            TerminalContext ctx = terminal_->read_until_quiet();
+            TerminalContext ctx = terminal_->read_until_quiet(
+                std::chrono::milliseconds(read_first_timeout_ms),
+                std::chrono::milliseconds(read_quiet_timeout_ms));
 
             std::string delta = strip_ansi(ctx.delta);
             transcript_.append(delta);
@@ -194,6 +204,8 @@ private:
 private:
     std::string home = DEFAULT_HOME;
     std::string shell = "/bin/bash";
+    int read_first_timeout_ms = 2000;
+    int read_quiet_timeout_ms = 200;
 
     std::optional<PtyDriver> terminal_;
     std::string transcript_;

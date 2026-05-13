@@ -354,6 +354,7 @@ void Runtime::process(Message &&msg, Agent *from) {
                 json ops = json::array();
                 ops.push_back(json{{"op", "spawn"},
                                    {"address", address},
+                                   {"comment", ""},
                                    {"from", agent->address},
                                    {"service", agent->service},
                                    {"flags", agent->flags & (~AGENT_FLAG_CLONE)},
