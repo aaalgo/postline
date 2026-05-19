@@ -27,6 +27,13 @@ namespace postline {
 #define CHECK_FD(fd)  CHECK(fd >= 0, "errno: {} ({})", errno, std::strerror(errno));
 #define CHECK_ERRNO(cond)  CHECK(cond, "errno: {} ({})", errno, std::strerror(errno));
 
+    class Error : public std::runtime_error {
+    public:
+        template <typename... Args>
+        Error(std::format_string<Args...> fmt, Args&&... args)
+            : std::runtime_error(std::format(fmt, std::forward<Args>(args)...)) {}
+    };
+
     void write_all(int fd, void const* buf, std::size_t n);
     void read_all(int fd, void* buf, std::size_t n);
 
@@ -71,6 +78,7 @@ namespace postline {
         using std::runtime_error::runtime_error;
     };
 
+    constexpr char const *CONTEXT_HEADER_NAME = "__context";
 
     // High-level message abstraction
     class Message: noncopyable {

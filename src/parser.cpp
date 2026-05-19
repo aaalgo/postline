@@ -331,6 +331,7 @@ void write_headers (std::ostream &os, json const &header, bool compact) {
     used.insert("type");
     used.insert("Thinking");
     used.insert("Trash");
+    used.insert(CONTEXT_HEADER_NAME);
     {
         auto it = header.find("Thinking");
         if (it != header.end() && it->is_string()) {
