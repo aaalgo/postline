@@ -30,12 +30,25 @@ constexpr char const *AGENT_NAME_ZERO = "zero";
 constexpr char const *AGENT_NAME_RUNTIME = "runtime";
 constexpr char const *AGENT_NAME_USER = "user";
 
+struct Domain;
+struct Thread;
+
 struct AgentLink {
     AgentID parent;
     AccessID anchor;
 };
 
 using AgentFlags = std::uint64_t;
+
+#define AGENT_FLAG_LIST(X)  \
+    X(HISTORY,  0x00000001) \
+    X(CATCH,    0x00000002) \
+    X(THREAD,   0x00000004) \
+    X(CLONE,   0x0000008)  \
+
+#define X(flag, value) AgentFlags constexpr AGENT_FLAG_##flag = value;
+    AGENT_FLAG_LIST(X)
+#undef X
 
 struct AgentParams {
     AgentLink link;
@@ -44,33 +57,19 @@ struct AgentParams {
     std::string service;
     AgentFlags flags;
 
-    AgentParams (std::string const &name_, AgentID parent = NOT_AN_AGENT, AccessID anchor = NO_ACCESS_ID, AgentFlags flags_ = 0)
-        : link{.parent=parent, .anchor=anchor},
+    AgentParams (std::string const &name_, AgentFlags flags_)
+        : link{.parent=NOT_AN_AGENT, .anchor=NO_ACCESS_ID},
         name(name_),
         flags(flags_)
     {
     }
 
-    /*
     AgentParams (json const &j) {
         CHECK(0);
     }
-    */
+
+    json dump () const;
 };
-
-struct Domain;
-struct Thread;
-
-#define AGENT_FLAG_LIST(X)  \
-    X(HISTORY,  0x00000001) \
-    X(CATCH,    0x00000002) \
-    X(THREAD,   0x00000004) \
-    X(CLONE,   0x0000008)  \
-
-
-#define X(flag, value) AgentFlags constexpr AGENT_FLAG_##flag = value;
-    AGENT_FLAG_LIST(X)
-#undef X
 
 struct Agent: immobile, AgentParams {
     AgentID id;
@@ -97,8 +96,11 @@ struct Agent: immobile, AgentParams {
         }
     }
 
-    AgentParams snapshot () const {
+    AgentParams snapshot (std::string const &name = "") const {
         AgentParams p = *this;
+        if (!name.empty()) {
+            p.name = name;
+        }
         // however we need to change link to point to this instead of this->link
         p.link.parent = id;
         p.link.anchor = anchor();
@@ -175,24 +177,6 @@ struct Domain: immobile {
     }
 
     json dump () const;
-
-#if 0
-    void checkNoMember (std::string const &member) const {
-        auto it = members.find(member);
-        if (it != members.end()) {
-            throw CheckError("member {} already exists in domain {}: {}",
-                    member, id, name);
-        }
-    }
-
-    void checkNoChild (std::string const &child) const {
-        auto it = children.find(child);
-        if (it != children.end()) {
-            throw CheckError("child {} already exists in domain {}: {}",
-                    child, id, name);
-        }
-    }
-#endif
 };
 
 struct Frame {
@@ -240,14 +224,14 @@ struct Program {
     Program () {
         // hard-coded initial state:
         //      thread-0  --  domain-0 -- {runtime, user, agent}
-        //Thread *thread = createThread();
+        Thread *thread = createThread();
         // root cannot be created with createDomain
         // all other domains must be created with createDomain
-        domains.emplace_back(std::make_unique<Domain>(domains.size(), DOMAIN_NAME_GLOBAL, nullptr, nullptr));
+        domains.emplace_back(std::make_unique<Domain>(domains.size(), DOMAIN_NAME_GLOBAL, nullptr, thread));
         global  = domains.back().get();
-        zero    = createAgent(AgentParams(AGENT_NAME_ZERO), global);
-        runtime = createAgent(AgentParams(AGENT_NAME_RUNTIME, zero->id, zero->anchor()), global);
-        user    = createAgent(AgentParams(AGENT_NAME_USER, zero->id, zero->anchor()), global);
+        zero    = createAgent(AgentParams(AGENT_NAME_ZERO, 0), global);
+        runtime = createAgent(zero->snapshot(AGENT_NAME_RUNTIME), global);
+        user    = createAgent(zero->snapshot(AGENT_NAME_USER), global);
 
         user->flags |= AGENT_FLAG_CATCH | AGENT_FLAG_THREAD;
 
@@ -325,11 +309,11 @@ struct Program {
     ResolvedTo resolve (std::string const &address, Domain *domain) {
         ResolvedTo r;
         r.tag = ResolvedTo::Tag::NONE;
-        if (address.startswith("&")) { // clone request
+        if (address.starts_with("&")) { // clone request
             // clone request
             std::string deref = address.substr(1);
-            if (deref.startswith("&")) return r;    // fail, cannot start with &&
-            Resolved r2 = resolve(deref, domain);
+            if (deref.starts_with("&")) return r;    // fail, cannot start with &&
+            ResolvedTo r2 = resolve(deref, domain);
             if (r2.tag == ResolvedTo::Tag::AGENT || r2.tag == ResolvedTo::Tag::AGENT_CLONE) {
                 r.tag = ResolvedTo::Tag::AGENT_CLONE;
                 r.agent = r2.agent;
@@ -394,8 +378,6 @@ struct Program {
         ResolvedTo to;
         std::string error;
     };
-
-
 
     void saveContext (Message &msg, Context const &ctx) const {
         msg.updateHeader([this, &ctx](json &h) {
@@ -470,7 +452,10 @@ struct Program {
         Context ctx;
         ctx.action = Action::REWIND;    // fail by default
         int thread_id = msg.thread_id();
-        CHECK(thread_id >= 0 && thread_id < threads.size());
+        if (!(thread_id >= 0 && thread_id < threads.size())) {
+            log::error("Bad thread id {}", thread_id);
+            thread_id = 0;
+        }
         ctx.thread = threads[thread_id].get();
         if (from->domain->thread) {
             if (ctx.thread != from->domain->thread) {
@@ -574,15 +559,15 @@ struct Program {
         }
         else if (ctx.action == Action::REWIND) {
             --ctx.from->obligation_count;
-            while (ctx.thread->stack().size()) {
-                auto const &f = ctx.thread->stack().back();
+            while (ctx.thread->stack.size()) {
+                auto const &f = ctx.thread->stack.back();
                 if (f.opening_agent->flags & AGENT_FLAG_CATCH) {
                     to = f.opening_agent;
-                    ctx.thread->stack().pop_back();
+                    ctx.thread->stack.pop_back();
                     break;
                 }
                 --f.opening_agent->obligation_count;
-                ctx.thread->stack().pop_back();
+                ctx.thread->stack.pop_back();
             }
         }
         else {
@@ -595,6 +580,7 @@ struct Program {
         to->memory.push_back(message_id);
         return to;
     }
+
 };
 
 class Runtime: immobile, public Service {
@@ -605,10 +591,11 @@ class Runtime: immobile, public Service {
     bool stop_requested;
 
 
+#if 0
     void dump (std::string const &path) const;
     void createAgent (Message const &msg);
+#endif
 
-    void call (Message &&msg, Response &) override;
     void updateMemory (Agent *);
 
     void enqueue (Message &&msg) {
@@ -646,10 +633,9 @@ public:
         poller.add(program.user->driver->read_fd(), program.user->id);
     }
 
-    // createAgent agent
-
-
     ~Runtime() = default;
+
+    void call (Message &&msg, Response &) override;
 
     void run ();
 };
