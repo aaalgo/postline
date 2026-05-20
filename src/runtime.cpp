@@ -1,48 +1,18 @@
-#include <postline/runtime.h>
-
+#include <string.h>
 #include <format>
 #include <fstream>
 #include <iostream>
 #include <unordered_set>
 #include <CLI/CLI.hpp>
+#include <postline/runtime.h>
 
 namespace postline {
 
-class CommitError : public Error {
+
+class SyscallError : public Error {
 public:
     using Error::Error;
 };
-
-
-std::string const &commit_get_string(json const &j, std::string const &key) {
-    if (!j.contains(key)) {
-        throw CommitError("missing {}", key);
-    }
-    if (!j[key].is_string()) {
-        throw CommitError("{} is not string", key);
-    }
-    return j[key].get_ref<std::string const &>();
-}
-
-bool commit_get_bool(json const &j, std::string const &key) {
-    if (!j.contains(key)) {
-        throw CommitError("missing {}", key);
-    }
-    if (!j[key].is_boolean()) {
-        throw CommitError("{} is not bool", key);
-    }
-    return j[key].get<bool>();
-}
-
-int64_t commit_get_int(json const &j, std::string const &key) {
-    if (!j.contains(key)) {
-        throw CommitError("missing {}", key);
-    }
-    if (!j[key].is_number_integer()) {
-        throw CommitError("{} is not bool", key);
-    }
-    return j[key].get<int64_t>();
-}
 
 json dump_agent_flags (AgentFlags flags) {
     json flag_strings = json::array();
@@ -50,6 +20,23 @@ json dump_agent_flags (AgentFlags flags) {
     AGENT_FLAG_LIST(X)
 #undef X
     return flag_strings;
+}
+
+static bool compare_flag_string (json const &j, char const *str) {
+    CHECK(str);
+    auto const &s = j.get_ref<std::string const &>();
+    return strcasecmp(s.c_str(), str) == 0;
+}
+
+AgentFlags load_agent_flags (json const &jflags) {
+    // use get_ref to check type
+    AgentFlags flags = 0;
+    for (auto const &f: jflags.get_ref<json::array_t const &>()) {
+#define X(flag, value) if (compare_flag_string(f, #flag)) { flags |= value; }
+        AGENT_FLAG_LIST(X)
+#undef X
+    }
+    return flags;
 }
 
 json AgentParams::dump () const {
@@ -63,6 +50,18 @@ json AgentParams::dump () const {
         {"flags", dump_agent_flags(flags)},
     };
     return json();
+}
+
+AgentParams::AgentParams (json const &j)
+    : link{
+          .parent = j.at("link").at("parent").get<AgentID>(),
+          .anchor = j.at("link").at("anchor").get<AccessID>(),
+      },
+      name(j.at("name").get<std::string>()),
+      comment(j.at("comment").get<std::string>()),
+      service(j.at("service").get<std::string>()),
+      flags(load_agent_flags(j.at("flags")))
+{
 }
 
 json Agent::dump () const {
@@ -125,7 +124,7 @@ json Domain::dump () const {
     };
 }
 
-json Program::dump () const {
+json Runtime::dump () const {
     json jdomains = json::array();
     for (auto const &domain: domains) {
         CHECK(domain);
@@ -157,141 +156,91 @@ json Program::dump () const {
     };
 }
 
-#if 0
-void Runtime::dump (std::string const &path) const {
-    std::ofstream ofs(path);
-    //ofs << dump().dump(4);
-}
+int Runtime::cmd_create_agents (Message const &msg, json *resp) {
 
-void Runtime::spawn(Message const &msg) {
+    json jagents = json::parse(msg.body());
     json ops = json::array();
-    json arr(json::parse(msg.body()));
 
-    if (!arr.is_array()) {
-        throw CommitError("agent list is not array");
-    }
+    for (auto const &m: jagents.get_ref<json::array_t const &>()) {
+        AgentParams params(m);
+        DomainID domain_id = m.at("domain_id").get<DomainID>();
 
-    for (size_t i = 0; i < arr.size(); ++i) {
-        auto const &m = arr[i];
-        if (!m.is_object()) {
-            throw CommitError("member is not object");
+        if (!(params.link.parent >= 0 && params.link.parent < agents.size())) {
+            throw std::runtime_error("bad params");
+        }
+        if (!(domain_id >= 0 && domain_id < domains.size())) {
+            throw std::runtime_error("bad params");
         }
 
-        std::string const &from = commit_get_string(m, "from");
-        std::string const &address = commit_get_string(m, "address");
-        std::string comment;
-        std::string service;
-        AgentFlags flags = 0;
-
-        if (m.contains("flags")) {
-            json fs = m["flags"];
-            if (!fs.is_array()) throw CommitError("flags is not array");
-            for (auto const &f: fs) {
-                if (!f.is_string()) throw CommitError("unknown flag, is not string");
-                std::string const &s = f.get_ref<std::string const&>();
-                if (s == "clone") {
-                    flags |= AGENT_FLAG_CLONE;
-                }
-                else if (s == "thread") {
-                    flags |= AGENT_FLAG_THREAD;
-                }
-                else if (s == "catch") {
-                    flags |= AGENT_FLAG_CATCH;
-                }
-                else if (s == "history") {
-                    flags |= AGENT_FLAG_HISTORY;
-                }
-                else {
-                    throw CommitError("unknown flag");
-                }
-            }
+        Domain *domain = domains[domain_id].get();
+        if (domain->getChild(params.name)) {
+            throw std::runtime_error("bad params");
         }
 
-
-        if (address.find('_') != address.npos) {
-            throw CommitError(std::format("address cannot contain _: {}", address));
-        }
-
-        if (m.contains("comment")) {
-            comment = commit_get_string(m, "comment");
-        }
-
-        if (m.contains("service")) {
-            service = commit_get_string(m, "service");
-        }
-
+#if 0
         AgentID from_id = resolve(from);
         if (from_id == NOT_AN_AGENT) {
-            throw CommitError(std::format("cannot resolve from {}", from));
+            throw SyscallError(std::format("cannot resolve from {}", from));
         }
         else {
             Agent const &p = agents.get(from_id);
             if ((p.flags & AGENT_FLAG_CLONE) && (flags & AGENT_FLAG_CLONE)) {
-                throw CommitError(std::format("cannot double clone"));
+                throw SyscallError(std::format("cannot double clone"));
             }
         }
 
         AgentID new_id = resolve(address);
         if (new_id != NOT_AN_AGENT) {
-            throw CommitError(std::format("{} already used", address));
+            throw SyscallError(std::format("{} already used", address));
         }
-
-        ops.push_back(json{{"op", "spawn"},
-                           {"address", address},
-                           {"comment", comment},
-                           {"from", from},
-                           {"service", service},
-                           {"flags", flags},
-                           {"is_clone", false},
-                           });
+#endif
+        json op = params.dump();
+        op["op"] = "create_agent";
+        op["domain_id"] = domain_id;
+        ops.emplace_back(std::move(op));
     }
 
     Message entry = protocol::runtime::Commit::make(ops);
     journal.append(entry);
     commit(ops);
+    return 0;
 }
-#endif
 
 void Runtime::commit(json const &ops) {
-#if 0
     CHECK(ops.is_array());
     for (size_t i = 0; i < ops.size(); ++i) {
         auto const &m = ops[i];
         CHECK(m.is_object());
-        std::string const &op = m["op"].get_ref<std::string const &>();
-
-        if (op == "spawn") {
-            std::string const &address = commit_get_string(m, "address");
-            std::string const &comment = commit_get_string(m, "comment");
-            std::string const &from = commit_get_string(m, "from");
-            std::string const &service = commit_get_string(m, "service");
-            AgentFlags flags = commit_get_int(m, "flags");
-            bool is_clone = commit_get_bool(m, "is_clone");
-            AgentID from_id = resolve(from);
-            CHECK(from_id != NOT_AN_AGENT);
-            Agent &parent = agents.get(from_id);
-            if (is_clone) {
-                CHECK(parent.flags & AGENT_FLAG_CLONE);
-                CHECK(!(flags & AGENT_FLAG_CLONE));
-                std::string suffix = std::format("_{}", parent.next_clone_id);
-                CHECK(address.ends_with(suffix));
-                ++parent.next_clone_id;
-            }
-            AgentID id = agents.spawn(address, comment, from_id, NO_ACCESS_ID, service, flags);
-            Agent &agent = agents.get(id);
-            log::info("create agent {}: {}", id, agent.address);
-        } else if (op == "shutdown") {
+        std::string const &op = m.at("op").get_ref<std::string const &>();
+        if (op == "create_agent") {
+            AgentParams params(m);
+            DomainID domain_id = m.at("domain_id").get<DomainID>();
+            CHECK(domain_id >= 0 && domain_id < domains.size());
+            Domain *domain = domains[domain_id].get();
+            Agent *agent = createAgent(params, domain);
+            log::info("create agent {}: {}", agent->id, agent->name);
+        } 
+        else if (op == "create_domain") {
+            std::string name = m.at("name").get<std::string>();
+            DomainID parent_id = m.at("parent_id").get<DomainID>();
+            CHECK(parent_id >= 0 && parent_id < domains.size());
+            Domain *parent = domains[parent_id].get();
+            Domain *domain = createDomain(name, parent);
+            log::info("create domain {}: {}", domain->id, domain->name);
+        }
+        else if (op == "begin_shutdown") {
+        }
+        else if (op == "end_shutdown") {
         } else {
             CHECK(0, "UNKNOWN OP");
         }
     }
-#endif
 }
 
 void Runtime::call (Message &&msg, Response &resp) {
 
     json respHeader;
-    std::string respBody;
+    json respBody;
 
     do {
 
@@ -300,15 +249,26 @@ void Runtime::call (Message &&msg, Response &resp) {
         app.require_subcommand(1);
         app.allow_extras(false);
 
-        auto cmd_exit   = app.add_subcommand("exit");
-        auto cmd_list_agents   = app.add_subcommand("list_agents");
-        /*
-        auto cmd_spawn = app.add_subcommand("spawn");
-        auto cmd_dump = app.add_subcommand("dump");
-        auto cmd_account = app.add_subcommand("account");
-        std::string dump_path;
-        cmd_dump->add_option("path", dump_path)->required();
-        */
+        using Handler = int (Runtime::*)(Message const &, json *resp);
+
+        struct Command {
+            CLI::App *cmd;
+            Handler handler;
+        };
+
+        std::vector<Command> commands;
+
+        auto add_command = [&](const std::string &name, Handler handler) {
+            auto *cmd = app.add_subcommand(name);
+            commands.push_back({cmd, handler});
+            return cmd;
+        };
+
+        add_command("exit",   &Runtime::cmd_exit);
+        add_command("list_agents",   &Runtime::cmd_list_agents);
+        add_command("create_agents", &Runtime::cmd_create_agents);
+        //add_command("create_group",  &RuntimeCli::cmd_create_group);
+        add_command("cost",  &Runtime::cmd_cost);
 
         try {
             app.parse(msg.subject(), false);
@@ -317,48 +277,24 @@ void Runtime::call (Message &&msg, Response &resp) {
             break;
         }
 
-        if (*cmd_exit) {
-            stop_requested = true;
-            respHeader["Subject"] = "Re: exit";
-            log::info("Stop request received.");
-            log::info("Runtime will shutdown.");
-            break;
-        }
-        if (*cmd_list_agents) {
-            respHeader["Subject"] = "Re: list_agents";
-            json j = json::array();
-            for (auto const &a: program.agents) {
-                j.push_back(a->dump());
+        for (auto &c : commands) {
+            if (*c.cmd) {
+                try {
+                    int ret = (this->*c.handler)(msg, &respBody);
+                } catch (json::exception const &e) {
+                    log::info("COMMIT ERROR: {}", e.what());
+                    respHeader["Subject"] = e.what();
+                } catch (std::exception const &e) {
+                    log::info("COMMIT ERROR: {}", e.what());
+                    respHeader["Subject"] = e.what();
+                }
+
+                break;
             }
-            respBody = j.dump();
-            break;
         }
-#if 0
-        if (*cmd_spawn) {
-            try {
-                spawn(msg);
-                respHeader["Subject"] = "Re: spawn";
-                respBody = agents.dump().dump();
-            } catch (CommitError &e) {
-                log::info("COMMIT ERROR: {}", e.what());
-                respHeader["Subject"] = e.what();
-            }
-            break;
-        }
-        if (*cmd_dump) {
-            respHeader["Subject"] = "Re: exit";
-            dump(dump_path);
-            break;
-        }
-        if (*cmd_account) {
-            respHeader["Subject"] = "Re: account";
-            respBody = accounting.dump().dump();
-            break;
-        }
-#endif
     } while (0);
 
-    resp.append(Message(std::move(respHeader), std::move(respBody)));
+    resp.append(Message(std::move(respHeader), respBody.dump()));
 }
 
 void Runtime::updateMemory (Agent *agent) {
@@ -372,14 +308,14 @@ void Runtime::updateMemory (Agent *agent) {
         }
         else {
             links.emplace_back(cur->link);
-            cur = program.agents[cur->link.parent].get();
+            cur = agents[cur->link.parent].get();
         }
     }
     
     agent->driver->send(protocol::handshake::BeginMemory::make());
     for (auto it = links.rbegin(); it != links.rend(); ++it) {
         auto link = *it;
-        cur = program.agents[link.parent].get();
+        cur = agents[link.parent].get();
         for (AccessID id: cur->memory) {
             if (id > link.anchor) break;
             Message msg = journal.read(id);
@@ -398,15 +334,15 @@ void Runtime::run() {
 
         std::vector<Message> todo;
         for (auto const &e : events) {
-            CHECK(e.token >= 0 && e.token < program.agents.size());
-            Agent *agent = program.agents[e.token].get();
+            CHECK(e.token >= 0 && e.token < agents.size());
+            Agent *agent = agents[e.token].get();
             CHECK(agent->driver);
 
             std::vector<Message> tmp;
             try {
                 int err = agent->driver->recv(tmp);
                 for (auto &msg : tmp) {
-                    program.preprocess(agent, msg);
+                    preprocess(agent, msg);
                     todo.emplace_back(std::move(msg));
                 }
             }
@@ -416,7 +352,7 @@ void Runtime::run() {
                 // TODO: record agent died
                 agent->driver.reset();
                 // construct response messages to waiting parties
-                todo.emplace_back(program.makeRewindMessage(agent));
+                todo.emplace_back(makeRewindMessage(agent));
             }
         }
 
@@ -430,7 +366,7 @@ void Runtime::run() {
             }
             journal.append(msg);
             accounting.update(msg);
-            Agent *agent = program.apply(msg);
+            Agent *agent = apply(msg);
             if (!agent->driver) {
                 if (agent->dead) {
                     log::error("Agent is in error status.");
@@ -454,15 +390,15 @@ void Runtime::run() {
 
     {
         json ops = json::array();
-        json op{{"op", "shutdown-request"}};
+        json op{{"op", "begin_shutdown"}};
         ops.push_back(op);
         Message msg = protocol::runtime::Commit::make(ops);
         journal.append(msg);
     }
 
     size_t trailing = 0;
-    for (std::size_t i = 0; i < program.agents.size(); ++i) {
-        Agent *agent = program.agents[i].get();
+    for (std::size_t i = 0; i < agents.size(); ++i) {
+        Agent *agent = agents[i].get();
         while (agent->obligation_count > 0) {
             CHECK(agent->driver);
             log::info("Waiting for agent {} (oc: {}) to respond...", i, agent->obligation_count);
@@ -485,7 +421,7 @@ void Runtime::run() {
     log::info("{} messages unprocessed.", trailing);
     {
         json ops = json::array();
-        json op{{"op", "shutdown"}};
+        json op{{"op", "end_shutdown"}};
         ops.push_back(op);
         Message msg = protocol::runtime::Commit::make(ops);
         journal.append(msg);

@@ -64,9 +64,7 @@ struct AgentParams {
     {
     }
 
-    AgentParams (json const &j) {
-        CHECK(0);
-    }
+    AgentParams (json const &j);
 
     json dump () const;
 };
@@ -210,7 +208,15 @@ struct Thread {
     }
 };
 
-struct Program {
+struct InitHook {
+    template<typename F>
+    InitHook(F&& f) {
+        f();
+    }
+};
+
+class Runtime: immobile, public Service {
+
     std::vector<std::unique_ptr<Domain>> domains;
     std::vector<std::unique_ptr<Agent>> agents;
     std::unordered_map<std::string, Snapshot> snapshots;
@@ -221,7 +227,15 @@ struct Program {
     Agent *runtime;
     Agent *user;
 
-    Program () {
+    InitHook initHook;
+    Journal journal;
+    Poller poller;
+    Accounting accounting;
+    bool stop_requested;
+
+// Section: program state manipulation
+
+    void initGlobal () {    // called in constructor via hook before journal replay
         // hard-coded initial state:
         //      thread-0  --  domain-0 -- {runtime, user, agent}
         Thread *thread = createThread();
@@ -245,8 +259,6 @@ struct Program {
         }
     }
 
-    json dump () const;
-
     Thread *createThread () {
         threads.emplace_back(std::make_unique<Thread>(threads.size()));
         return threads.back().get();
@@ -260,12 +272,15 @@ struct Program {
         return agent;
     }
 
-    Domain *createDomain (Snapshot const &snapshot, Domain *parent) {
-        DomainID id = domains.size();
-        std::string name = std::format("domain-{}", id);
+    Domain *createDomain (std::string const &name, Domain *parent) {
         CHECK(parent->getChild(name) == nullptr);
-        domains.emplace_back(std::make_unique<Domain>(id, name, parent, parent->thread));
-        Domain *domain = domains.back().get();
+        domains.emplace_back(std::make_unique<Domain>(domains.size(), name, parent, parent->thread));
+        return domains.back().get();
+    }
+
+    Domain *createDomain (Snapshot const &snapshot, Domain *parent) {
+        std::string name = std::format("domain-{}", domains.size());
+        Domain *domain = createDomain(name, parent);
         parent->children[name] = domain;
         // now setup the children
         for (auto const &params: snapshot.members) {
@@ -278,6 +293,7 @@ struct Program {
         return domain;
     }
 
+#if 0
     void publishSnapshot (std::string const &name, Domain const *domain) {
         CHECK(snapshots.find(name) == snapshots.end());
         snapshots.emplace(std::make_pair(name, domain->snapshot(name)));
@@ -289,6 +305,9 @@ struct Program {
         return domain->thread;
     }
     */
+#endif
+
+// Section: message routing
 
     struct ResolvedTo {
         enum class Tag: uint8_t {
@@ -581,38 +600,40 @@ struct Program {
         return to;
     }
 
-};
-
-class Runtime: immobile, public Service {
-    Program program;
-    Journal journal;
-    Poller poller;
-    Accounting accounting;
-    bool stop_requested;
-
-
-#if 0
-    void dump (std::string const &path) const;
-    void createAgent (Message const &msg);
-#endif
+// Runtime
 
     void updateMemory (Agent *);
 
+#if 0
     void enqueue (Message &&msg) {
-        auto *driver = dynamic_cast<LoopDriver *>(program.runtime->driver.get());
+        auto *driver = dynamic_cast<LoopDriver *>(runtime->driver.get());
         CHECK(driver);
         driver->enqueue(std::move(msg));
     }
+#endif
 
-    void commit (json const &ops);
+    void commit(json const &ops);
 
-    void replay (Message &&msg) {
-      if (msg.type() == "runtime:commit") {
-          protocol::runtime::Commit c(msg);
-          commit(c.ops);
-      } else {
-          program.apply(msg);
-      }
+    // commands
+    int cmd_exit (Message const &, json *resp) {
+        stop_requested = true;
+        return 0;
+    }
+
+    int cmd_list_agents (Message const &, json *resp) {
+        json j = json::array();
+        for (auto const &a: agents) {
+            j.push_back(a->dump());
+        }
+        *resp = j;
+        return 0;
+    }
+
+    int cmd_create_agents (Message const &, json *resp);
+
+    int cmd_cost (Message const &, json *resp) {
+        *resp = accounting.dump();
+        return 0;
     }
 
 public:
@@ -622,18 +643,27 @@ public:
     };
 
     Runtime(Config const &config, std::unique_ptr<Driver> &&user_driver)
-        : journal(config.journal_path, config.resume_path,
-                  [this](Message &&msg) { replay(std::move(msg));
+        : initHook([this]() { initGlobal(); }),
+        journal(config.journal_path, config.resume_path,
+                  [this](Message &&msg) { 
+                      if (msg.type() == "runtime:commit") {
+                          protocol::runtime::Commit c(msg);
+                          commit(c.ops);
+                      } else {
+                          apply(msg);
+                      }
                 }),
           stop_requested(false) {
         log::info("Initializing runtime");
-        program.runtime->driver = std::make_unique<LoopDriver>(this);
-        program.user->driver = std::move(user_driver);
-        poller.add(program.runtime->driver->read_fd(), program.runtime->id);
-        poller.add(program.user->driver->read_fd(), program.user->id);
+        runtime->driver = std::make_unique<LoopDriver>(this);
+        user->driver = std::move(user_driver);
+        poller.add(runtime->driver->read_fd(), runtime->id);
+        poller.add(user->driver->read_fd(), user->id);
     }
 
     ~Runtime() = default;
+
+    json dump () const;
 
     void call (Message &&msg, Response &) override;
 
