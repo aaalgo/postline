@@ -111,11 +111,14 @@ json Domain::dump () const {
         jchildren[name] = domain->id;
     }
 
+    CHECK(thread);
+
     return json{
         {"id", id},
         {"name", name},
         {"parent_id", parent ? json(parent->id) : json(nullptr)},
-        {"thread_id", thread ? json(thread->id) : json(nullptr)},
+        {"thread_id", json(thread->id)},
+        {"detached", detached},
         {"entry", {{"from", entry.from ? json(entry.from->id) : json(nullptr)},
                    {"to", entry.to ? json(entry.to->id) : json(nullptr)}
                    }},

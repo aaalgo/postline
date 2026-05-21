@@ -23,6 +23,7 @@ public:
     Cli () {
     }
 protected:
+#if 0
     void init (Response &resp) override {
         json h{{"From", "user"},
                {"To", "runtime"},
@@ -37,6 +38,7 @@ protected:
         resp.append(Message(std::move(h)));
         */
     }
+#endif
 
     void call (Message&& message, Response &resp) override
     {

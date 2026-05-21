@@ -186,6 +186,14 @@ namespace postline {
             return get_id("Thread-ID");
         }
 
+        int64_t from_domain_id () const {
+            return get_id("From-Domain-ID");
+        }
+
+        int64_t to_domain_id () const {
+            return get_id("To-Domain-ID");
+        }
+
         int64_t message_id () const {
             return get_id("Message-ID");
         }

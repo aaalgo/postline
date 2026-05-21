@@ -129,23 +129,24 @@ struct Snapshot {
 struct Domain: immobile {
     DomainID id;
     std::string name;
-    Domain *parent;
-    Thread *thread;
-    struct Entry {
-        Agent *from;
-        Agent *to;
+    Domain *parent;     // only global has null parent
+    Thread *thread;     // thread must always be not null
+    bool detached;
+    struct Entry {      // only attached domain have from/to
+        Agent *from;    // detached domains cannot be called
+        Agent *to;      // so they don't have from/to
     } entry;
     std::unordered_map<std::string, Agent *> members;
     std::unordered_map<std::string, Domain *> children;
 
     Domain (DomainID id_,
             std::string const &name_,
-            Domain *parent_ = nullptr,
-            Thread *thread_ = nullptr)
+            Domain *parent_ = nullptr)
         : id(id_),
         name(name_),
         parent(parent_),
-        thread(thread_)
+        thread(parent_ ? parent_->thread : nullptr),
+        detached(false)
     {
         entry.from = nullptr;
         entry.to = nullptr;
@@ -177,24 +178,39 @@ struct Domain: immobile {
     json dump () const;
 };
 
+struct Endpoint {
+    Agent *agent;
+    Domain *domain;
+};
+
 struct Frame {
     AccessID opening_message_id = 0;
-    Agent *opening_agent;
+    Endpoint opening_endpoint;
 
     json dump () const {
         return json{{"opening_message_id", opening_message_id},
-                    {"opening_agent_id", opening_agent->id},
-                    {"opening_agent_name", opening_agent->name}};
+                    {"opening_agent_id", opening_endpoint.agent->id},
+                    {"opening_agent_name", opening_endpoint.agent->name},
+                    {"opening_domain_id", opening_endpoint.domain->id},
+                    {"opening_domain_name", opening_endpoint.domain->name}};
     }
 };
 
 struct Thread {
     ThreadID id;
     std::string name;
+    Domain *root;
+    //Agent *continuation_owner;
     std::vector<Frame> stack;
     std::vector<AccessID> trace;
 
-    Thread (ThreadID id_): id(id_) {}
+    Thread (ThreadID id_, Domain *root_, Agent *owner): id(id_), root(root_) {
+        CHECK(!root->detached);
+        root->thread = this;
+        root->detached = true;
+        root->entry.from = nullptr;
+        root->entry.to = nullptr;
+    }
 
     json dump () const {
         json jstack = json::array();
@@ -203,6 +219,8 @@ struct Thread {
         }
         return json{{"id", id},
                     {"name", name},
+                    {"root", root->id},
+                    //{"continuation_owner", continuation_owner->id},
                     {"stack", jstack},
                     {"trace", trace}};
     }
@@ -227,6 +245,10 @@ class Runtime: immobile, public Service {
     Agent *runtime;
     Agent *user;
 
+    bool allowUnsolicited (Agent *agent) const {
+        return agent == user;
+    }
+
     InitHook initHook;
     Journal journal;
     Poller poller;
@@ -238,10 +260,9 @@ class Runtime: immobile, public Service {
     void initGlobal () {    // called in constructor via hook before journal replay
         // hard-coded initial state:
         //      thread-0  --  domain-0 -- {runtime, user, agent}
-        Thread *thread = createThread();
         // root cannot be created with createDomain
         // all other domains must be created with createDomain
-        domains.emplace_back(std::make_unique<Domain>(domains.size(), DOMAIN_NAME_GLOBAL, nullptr, thread));
+        domains.emplace_back(std::make_unique<Domain>(domains.size(), DOMAIN_NAME_GLOBAL, nullptr));
         global  = domains.back().get();
         zero    = createAgent(AgentParams(AGENT_NAME_ZERO, 0), global);
         runtime = createAgent(zero->snapshot(AGENT_NAME_RUNTIME), global);
@@ -257,10 +278,12 @@ class Runtime: immobile, public Service {
         if (!global->entry.to) {
             log::warn("Global entry.to {} not found.", GLOBAL_ENTRY_TO);
         }
+
+        createThread(global, user);
     }
 
-    Thread *createThread () {
-        threads.emplace_back(std::make_unique<Thread>(threads.size()));
+    Thread *createThread (Domain *root, Agent *owner) {
+        threads.emplace_back(std::make_unique<Thread>(threads.size(), root, owner));
         return threads.back().get();
     }
 
@@ -274,7 +297,7 @@ class Runtime: immobile, public Service {
 
     Domain *createDomain (std::string const &name, Domain *parent) {
         CHECK(parent->getChild(name) == nullptr);
-        domains.emplace_back(std::make_unique<Domain>(domains.size(), name, parent, parent->thread));
+        domains.emplace_back(std::make_unique<Domain>(domains.size(), name, parent));
         return domains.back().get();
     }
 
@@ -393,8 +416,9 @@ class Runtime: immobile, public Service {
     struct Context {
         Thread *thread;
         Action action;
-        Agent *from;
-        ResolvedTo to;
+        Endpoint from;
+        Endpoint to;
+        //ResolvedTo to;
         std::string error;
     };
 
@@ -403,10 +427,13 @@ class Runtime: immobile, public Service {
             json j{
                 {"thread_id", ctx.thread->id},
                 {"action", static_cast<int>(ctx.action)},
-                {"from_agent_id", ctx.from->id},
-                {"to_tag", static_cast<int>(ctx.to.tag)},
+                {"from_agent_id", ctx.from.agent->id},
+                {"from_domain_id", ctx.from.domain->id},
+                {"to_agent_id", ctx.to.agent->id},
+                {"to_domain_id", ctx.to.domain->id},
                 {"error", ctx.error}
                 };
+#if 0
             if (ctx.to.tag == ResolvedTo::Tag::AGENT || ctx.to.tag == ResolvedTo::Tag::AGENT_CLONE) {
                 j["to_agent_id"] = int64_t(ctx.to.agent->id);
             }
@@ -419,53 +446,66 @@ class Runtime: immobile, public Service {
             else {
                 CHECK(0, "Unknown to tag: {}", static_cast<int>(ctx.to.tag));
             }
+#endif
             h[CONTEXT_HEADER_NAME] = j;
+            h["To-Domain-ID"] = std::format("{}", ctx.to.domain->id);
         });
     }
 
     void loadContext (Message const &msg, Context &ctx) {
         json j = msg.header()[CONTEXT_HEADER_NAME];
-        ThreadID thread_id = j["thread_id"].get<ThreadID>();
+        ThreadID thread_id = j.at("thread_id").get<ThreadID>();
         CHECK(thread_id >= 0 && thread_id < threads.size());
         ctx.thread = threads[thread_id].get();
-        ctx.action = static_cast<Action>(j["action"].get<int>());
-        AgentID from_agent_id = j["from_agent_id"].get<AgentID>();
+        ctx.action = static_cast<Action>(j.at("action").get<int>());
+        AgentID from_agent_id = j.at("from_agent_id").get<AgentID>();
         CHECK(from_agent_id >= 0 && from_agent_id < agents.size());
-        ctx.from = agents[from_agent_id].get();
-        ctx.to.tag = static_cast<ResolvedTo::Tag>(j["to_tag"].get<int>());
-        if (ctx.to.tag == ResolvedTo::Tag::AGENT || ctx.to.tag == ResolvedTo::Tag::AGENT_CLONE) {
-            AgentID id = j["to_agent_id"].get<AgentID>();
-            CHECK(id >= 0 && id < agents.size());
-            ctx.to.agent = agents[id].get();
+        ctx.from.agent = agents[from_agent_id].get();
+        DomainID from_domain_id = j.at("from_domain_id").get<DomainID>();
+        CHECK(from_domain_id >= 0 && from_domain_id < domains.size());
+        ctx.from.domain = domains[from_domain_id].get();
+        ctx.to.agent = nullptr;
+        ctx.to.domain = nullptr;
+        if (ctx.action != Action::RETURN && ctx.action != Action::REWIND) {
+            AgentID to_agent_id = j.at("to_agent_id").get<AgentID>();
+            CHECK(to_agent_id >= 0 && to_agent_id < agents.size());
+            ctx.to.agent = agents[to_agent_id].get();
+            DomainID to_domain_id = j.at("to_domain_id").get<DomainID>();
+            CHECK(to_domain_id >= 0 && to_domain_id < domains.size());
+            ctx.to.domain = domains[to_domain_id].get();
         }
-        else if (ctx.to.tag == ResolvedTo::Tag::DOMAIN || ctx.to.tag == ResolvedTo::Tag::DOMAIN_CLONE) {
-            DomainID id = j["to_domain_id"].get<DomainID>();
-            CHECK(id >= 0 && id < domains.size());
-            ctx.to.domain = domains[id].get();
-        }
-        else if (ctx.to.tag == ResolvedTo::Tag::SNAPSHOT) {
-            std::string name = j["to_snapshot"].get<std::string>();
-            auto it = snapshots.find(name);
-            CHECK(it != snapshots.end());
-            ctx.to.snapshot = &it->second;
-        }
-        ctx.error = j["error"].get<std::string>();
+        ctx.error = j.at("error").get<std::string>();
     }
 
-    Message makeRewindMessage (Agent *from) const {
+    Message makeRewindMessage (Agent *fromAgent, Domain *fromDomain = nullptr) const {
+        if (!fromDomain) {
+            fromDomain = fromAgent->domain;
+        }
+        CHECK(fromDomain != global);
+        // global:
+        //      - runtime: should never EOF
+        //      - user: user EOF should not a trigger a rewind, it should just
+        //              put the thread in paused state
         Message msg;
         Context ctx;
-        ctx.thread = from->domain->thread;   // cannot rewind from global agents
+        ctx.thread = fromDomain->thread;   // cannot rewind from global agents
         CHECK(ctx.thread, "global agents should not EOF");
         ctx.action = Action::REWIND;
-        ctx.from = from;
-        ctx.to.tag = ResolvedTo::Tag::NONE;
+        ctx.from.agent = fromAgent;
+        ctx.from.domain = fromDomain;
+        ctx.to.agent = nullptr;
+        ctx.to.domain = nullptr;
         ctx.error = "adapter of agent has died.";
         saveContext(msg, ctx);
         return msg;
     }
 
     void preprocess (Agent *from, Message &msg) {
+        // by the time a message is received
+        // we expect the agent implement make sure that
+        // the following fields are correct:
+        //      - thread_id
+        //      - from_domain_id
         // create context & save to msg
         // update headers when necessary
         Context ctx;
@@ -473,16 +513,28 @@ class Runtime: immobile, public Service {
         int thread_id = msg.thread_id();
         if (!(thread_id >= 0 && thread_id < threads.size())) {
             log::error("Bad thread id {}", thread_id);
-            thread_id = 0;
+            CHECK(0);
         }
         ctx.thread = threads[thread_id].get();
+        /*
         if (from->domain->thread) {
             if (ctx.thread != from->domain->thread) {
                 log::warn("thread not matching");
             }
         }
-        ctx.from = from;
-        ctx.to = resolve(msg.to(), from->domain);
+        */
+        int domain_id = msg.from_domain_id();
+        if (!(domain_id >= 0 && domain_id < domains.size())) {
+            log::error("Bad domain id {}", domain_id);
+            CHECK(0);
+        }
+        ctx.from.agent = from;
+        ctx.from.domain = domains[domain_id].get();
+        if (from->domain != global) {
+            // this can be relaxed later, but for now we
+            // want all non-global agent to send from their own domains
+            CHECK(from->domain == ctx.from.domain);
+        }
 
         do {
             // do all error checking and add additional field to msg
@@ -501,15 +553,10 @@ class Runtime: immobile, public Service {
                     break;
                 }
                 // CHECK matching of TO
-                ctx.to.tag = ResolvedTo::Tag::AGENT;
-                ctx.to.agent = f.opening_agent;
+                ctx.to = f.opening_endpoint;
                 ctx.action = Action::RETURN;
             }
             else {
-                if (ctx.to.tag == ResolvedTo::Tag::NONE) {
-                    ctx.error = "Fail to resolve";
-                    break;
-                }
                 if (in_response_to != NO_ACCESS_ID) {
                     if (ctx.thread->stack.empty()) {
                         ctx.error = "Resopnd to empty stack";
@@ -523,14 +570,45 @@ class Runtime: immobile, public Service {
                 }
                 else {
                     if (!ctx.thread->stack.empty()) {
-                        ctx.error = "Spontaneus message on non empty stack";
+                        if (!allowUnsolicited(ctx.from.agent)) {
+                            ctx.error = "Spontaneus message on non empty stack";
+                        }
                         break;
                     }
+                }
+                ResolvedTo to = resolve(msg.to(), ctx.from.domain);
+                // now create necessary group & agents
+                // and setup ctx.to
+                if (to.tag == ResolvedTo::Tag::NONE) {
+                    ctx.error = "Fail to resolve";
+                    break;
+                }
+                else if (to.tag == ResolvedTo::Tag::AGENT) {
+                    ctx.to.domain = ctx.from.domain;
+                    ctx.to.agent = to.agent;
+                }
+                else if (to.tag == ResolvedTo::Tag::AGENT_CLONE) {
+                    ctx.error = "Not supported.";
+                    break;
+                }
+                else if (to.tag == ResolvedTo::Tag::DOMAIN) {
+                    ctx.error = "Not supported.";
+                    break;
+                }
+                else if (to.tag == ResolvedTo::Tag::DOMAIN_CLONE) {
+                    ctx.error = "Not supported.";
+                    break;
+                }
+                else if (to.tag == ResolvedTo::Tag::SNAPSHOT) {
+                    ctx.error = "Not supported.";
+                    break;
                 }
                 ctx.action = Action::CALL;
             }
         }
         while (false);
+        if (ctx.action == Action::REWIND) {
+        }
         saveContext(msg, ctx);
     }
 
@@ -541,61 +619,37 @@ class Runtime: immobile, public Service {
         loadContext(msg, ctx);
         if (ctx.action == Action::RETURN) {
             ctx.thread->stack.pop_back();
-            --ctx.from->obligation_count;
-            CHECK(ctx.to.tag == ResolvedTo::Tag::AGENT);
+            --ctx.from.agent->obligation_count;
             to = ctx.to.agent;
         }
         else if (ctx.action == Action::CALL) {
             ctx.thread->stack.emplace_back();
             auto &f = ctx.thread->stack.back();
             f.opening_message_id = msg.access_id();
-            f.opening_agent = ctx.from;
-            // realize cloning and resolving
-            if (ctx.to.tag == ResolvedTo::Tag::AGENT) {
-                to = ctx.to.agent;
-            }
-            else if (ctx.to.tag == ResolvedTo::Tag::AGENT_CLONE) {
-                AgentParams params = ctx.to.agent->snapshot();
-                params.name = std::format("{}_{}", ctx.to.agent->name, agents.size());
-                to = createAgent(params, ctx.from->domain);
-            }
-            else if (ctx.to.tag == ResolvedTo::Tag::DOMAIN) {
-                to = ctx.to.domain->entry.to;
-            }
-            else if (ctx.to.tag == ResolvedTo::Tag::DOMAIN_CLONE) {
-                std::string name = std::format("{}_{}", ctx.to.domain->name, domains.size());
-                Snapshot snapshot = ctx.to.domain->snapshot(name);
-                Domain *domain = createDomain(snapshot, ctx.from->domain);
-                to = ctx.to.domain->entry.to;
-            }
-            else if (ctx.to.tag == ResolvedTo::Tag::SNAPSHOT) {
-                Domain *domain = createDomain(*ctx.to.snapshot, ctx.from->domain);
-                to = domain->entry.to;
-            }
-            else CHECK(0);
-            CHECK(to);
+            f.opening_endpoint = ctx.from;
+            to = ctx.to.agent;
             ++to->obligation_count;
         }
         else if (ctx.action == Action::REWIND) {
-            --ctx.from->obligation_count;
+            --ctx.from.agent->obligation_count;
             while (ctx.thread->stack.size()) {
                 auto const &f = ctx.thread->stack.back();
-                if (f.opening_agent->flags & AGENT_FLAG_CATCH) {
-                    to = f.opening_agent;
+                if (f.opening_endpoint.agent->flags & AGENT_FLAG_CATCH) {
+                    to = f.opening_endpoint.agent;
                     ctx.thread->stack.pop_back();
                     break;
                 }
-                --f.opening_agent->obligation_count;
+                --f.opening_endpoint.agent->obligation_count;
                 ctx.thread->stack.pop_back();
             }
         }
         else {
             CHECK(0);
         }
-        CHECK(ctx.from);
+        CHECK(ctx.from.agent);
         AccessID message_id = msg.access_id();
         ctx.thread->trace.push_back(message_id);
-        ctx.from->memory.push_back(message_id);
+        ctx.from.agent->memory.push_back(message_id);
         to->memory.push_back(message_id);
         return to;
     }
@@ -671,3 +725,4 @@ public:
 };
 
 } // namespace postline
+

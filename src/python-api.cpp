@@ -64,6 +64,7 @@ json py2json(py::handle obj)
 class PyService: public Service {
     Server::Config config;
     Server server;
+    std::string address;
 public:
     PyService (): server(config) {
     }
@@ -73,11 +74,16 @@ public:
     }
 
     virtual void on_memory (Message && msg) {
+        if (address.empty()) {
+            address = msg.to();
+            CHECK(!address.empty());
+        }
         py::gil_scoped_acquire gil;
         py::cast(this, py::return_value_policy::reference)
         .attr("on_memory")(std::make_unique<Message>(std::move(msg)));
     }
 
+#if 0
     virtual void init (Response &resp) override {
         py::gil_scoped_acquire gil;
         /*
@@ -95,8 +101,13 @@ public:
         );
         self.attr("on_init")(py_resp);
     }
+#endif
 
     virtual void call (Message &&msg, Response &resp) override {
+        if (address.empty()) {
+            address = msg.to();
+            CHECK(!address.empty());
+        }
         py::gil_scoped_acquire gil;
         py::object self = py::cast(
             this,

@@ -23,13 +23,13 @@ class Service {
 protected:
     struct Entry {
         std::string thread_id;
+        std::string my_address;
+        std::string my_domain_id;
         std::string peer_address;
+        std::string peer_domain_id;
         std::string message_id;
         bool is_incoming;
     };
-
-    std::string address;
-    std::string thread_id;
     std::vector<Entry> stack;
 public:
     Service () {
@@ -41,39 +41,9 @@ public:
     virtual void on_exit () {
     }
 
-    virtual std::vector<Message> on_connect () {
-        Response resp;
-        init(resp);
-        std::vector<Message> msgs = resp.get();
-        CHECK(msgs.size() <= 1);
-        for (auto &msg: msgs) {
-            std::string const &to = msg.to();
-            std::string const &from = msg.from();
-            CHECK(!to.empty());
-            CHECK(!from.empty());
-            address = from;
-            stack.emplace_back();
-            stack.back().peer_address = to;
-            stack.back().message_id.clear();
-            stack.back().thread_id.clear();
-            stack.back().is_incoming = false;
-        }
-        return msgs;
-    }
-
     virtual std::vector<Message> on_message (Message &&msg) {
         {   // before call, setup logic
             std::string const &to = msg.to();
-
-            if (address.empty()) {
-                address = to;
-            }
-            if (thread_id.empty()) {
-                thread_id = msg.get("Thread-ID");
-            }
-
-            CHECK(address == msg.to(), "address {} != to {}", address, msg.to());
-
             std::string const &from = msg.from();
 
             if (msg.header().contains("In-Reply-To")) {
@@ -91,10 +61,14 @@ public:
             }
             else {
                 stack.emplace_back();
-                stack.back().peer_address = from;
-                stack.back().is_incoming = true;
-                stack.back().thread_id = msg.get("Thread-ID");
-                stack.back().message_id = msg.get("Message-ID");
+                auto &e = stack.back();
+                e.thread_id = msg.get("Thread-ID");
+                e.my_address = to;
+                e.my_domain_id = msg.get("To-Domain-ID");
+                e.peer_address = from;
+                e.peer_domain_id = msg.get("From-Domain-ID");
+                e.message_id = msg.get("Message-ID");
+                e.is_incoming = true;
             }
         }
         // call implementation
@@ -104,53 +78,40 @@ public:
         std::vector<Message> msgs = resp.get();
         CHECK(msgs.size() == 1);
         for (auto &msg: msgs) {
-            if (stack.empty()) {
-                msg.updateHeader([this](json &header) {
-                    header["From"] = address;
-                    CHECK(header.contains("To"));
-                    header["Thread-ID"] = thread_id;
-                });
-                stack.emplace_back();
-                stack.back().peer_address = msg.to();
-                stack.back().message_id.clear();
-                stack.back().thread_id = thread_id;
-                stack.back().is_incoming = false;
+            CHECK(!stack.empty());
+            auto const &e = stack.back();
+            CHECK(e.is_incoming);
+            msg.updateHeader([this, &e](json &header) {
+                header["From"] = e.my_address;
+                header["From-Domain-ID"] = e.my_domain_id;
+                if (!header.contains("To")) {
+                    header["To"] = e.peer_address;
+                }
+                // we are not responsible to set To-Domain-ID
+                header["Thread-ID"] = e.thread_id;
+            });
+            std::string const &to = msg.to();
+            if (e.peer_address == to) {   // this is a reply
+                msg.updateHeader([&e](json &header) {
+                    header["In-Reply-To"] = e.message_id;
+                        });
+                stack.pop_back();
             }
             else {
-                auto const &e = stack.back();
-                CHECK(e.is_incoming);
-                msg.updateHeader([this, &e](json &header) {
-                    header["From"] = address;
-                    if (!header.contains("To")) {
-                        header["To"] = e.peer_address;
-                    }
-                    header["Thread-ID"] = e.thread_id;
-                });
-                std::string const &to = msg.to();
-                if (e.peer_address == to) {   // this is a reply
-                    msg.updateHeader([&e](json &header) {
-                        header["In-Reply-To"] = e.message_id;
-                            });
-                    stack.pop_back();
-                }
-                else {
-                    msg.updateHeader([&e](json &header) {
-                        header["In-Response-To"] = e.message_id;
-                            });
-                    stack.emplace_back();
-                    stack.back().peer_address = to;
-                    stack.back().message_id.clear();
-                    stack.back().thread_id.clear();
-                    stack.back().is_incoming = false;
-                }
+                msg.updateHeader([&e](json &header) {
+                    header["In-Response-To"] = e.message_id;
+                        });
+                stack.emplace_back();
+                auto &e = stack.back();
+                e.is_incoming = false;
+                e.peer_address = to;
+
             }
         }
         return msgs;
     }
 
 protected:
-    virtual void init (Response &) {
-    }
 
     virtual void call (Message &&, Response &) {
         // no need to fill the following of the resp message:

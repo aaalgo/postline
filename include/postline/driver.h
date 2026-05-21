@@ -163,10 +163,12 @@ public:
         service(service_)
     {
         CHECK(wake_fd >= 0);
+        /*
         std::vector<Message> resp = service->on_connect();
         for (auto &msg: resp) {
             enqueue(std::move(msg));
         }
+        */
     }
 
     ~LoopDriver () {

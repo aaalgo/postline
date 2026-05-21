@@ -62,9 +62,11 @@ public:
         outgoing_.put(Message(std::move(h), std::string(LOCAL_AGENTS)));
     }
 
+#if 0
     void init (Response &resp) {
         resp.append(outgoing_.get());
     }
+#endif
 
     void call (Message &&msg, Response &resp) {
         cli_.recv(std::move(msg));

@@ -72,6 +72,7 @@ std::string read_file(std::filesystem::path const& input_path) {
     return ss.str();
 }
 
+#if 0
 class Autopilot: public Service {
     Message payload;
     Message exit;
@@ -91,10 +92,10 @@ public:
         resp.append(std::move(exit));
     }
 };
+#endif
 
 int main(int argc, char** argv) {
     // Parse CLI options
-
     CLI::App app{"Postline Agent Runtime"};
     Runtime::Config config;
     config.journal_path = make_journal_name();
@@ -129,6 +130,8 @@ int main(int argc, char** argv) {
             user_driver = std::make_unique<ShellDriver>(user_stdin, user_stdout);
         }
         else {
+            CHECK(0, "Autopilot not supported.");
+#if 0
             if (user_stdin.size()
                     || user_stdout.size()) {
                 std::cerr << "When you set -i,--input you cannot set --user-stdin or --user-stdout." << std::endl;
@@ -136,11 +139,13 @@ int main(int argc, char** argv) {
             }
             autopilot = std::make_unique<Autopilot>(input_path);
             user_driver = std::make_unique<LoopDriver>(autopilot.get());
+#endif
         }
     }
 
     setup_environ();
     welcome();
+
     init_logging();
     log::info("constructing runtime");
 
