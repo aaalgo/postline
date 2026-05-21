@@ -41,6 +41,10 @@ public:
     virtual void on_exit () {
     }
 
+    virtual std::vector<Message> on_connect () {
+        return std::vector<Message>();
+    }
+
     virtual std::vector<Message> on_message (Message &&msg) {
         {   // before call, setup logic
             std::string const &to = msg.to();

@@ -50,17 +50,18 @@ namespace runtime {
 
 struct Commit : public View {
     static constexpr std::string_view type = "runtime:commit";
-    json ops;    // operations
+    json op;    // operations
 
     explicit Commit(Message const& msg)
         : View(msg, type),
-        ops(json::parse(msg.body()))
+        op(json::parse(msg.body()))
     {
+        CHECK(op.is_object());
     }
 
-    static Message make(json const &ops) {
+    static Message make(json const &op) {
         json header{{"type", type}};
-        std::string body = ops.dump();
+        std::string body = op.dump();
         return Message(std::move(header), std::move(body));
     }
 };

@@ -54,10 +54,18 @@ int64_t parse_i64(std::string const& s) {
 
 constexpr uint32_t RECORD_MAGIC = 0x54534f50; // "POST"
 
-constexpr uint32_t ACCESS_SEGMENT_BITS = 15;
-constexpr uint32_t ACCESS_OFFSET_BITS = 48;
+// access id layout
+// -- highest --
+// 1-bit 1: receiving bit
+// ..... [ unused ]
+// 16-bit segment
+// 40-bit offset
+// -- lowest --
+constexpr uint64_t RECEIVING_MASK = 1ULL << 63;
+constexpr uint32_t ACCESS_SEGMENT_BITS = 16;
+constexpr uint32_t ACCESS_OFFSET_BITS = 40;
 constexpr uint64_t ACCESS_OFFSET_MASK =
-    (uint64_t(1) << ACCESS_OFFSET_BITS) - 1;
+    (1ULL << ACCESS_OFFSET_BITS) - 1;
 
 // Binary framing header (on disk / on wire)
 struct RecordHeader
@@ -135,9 +143,18 @@ void split_access_id(AccessID access_id, uint32_t *segment, uint64_t *offset)
     CHECK(offset != nullptr);
 
     uint64_t value = static_cast<uint64_t>(access_id);
-    *segment = static_cast<uint32_t>(value >> ACCESS_OFFSET_BITS);
+    *segment = static_cast<uint32_t>((value >> ACCESS_OFFSET_BITS) & ((1ULL << ACCESS_SEGMENT_BITS) - 1));
     *offset = value & ACCESS_OFFSET_MASK;
 }
+
+AccessID mark_receiving (AccessID id) {
+    return id | RECEIVING_MASK;
+}
+
+bool is_receiving (AccessID id) {
+    return (id & RECEIVING_MASK) != 0;
+}
+
 
 uint32_t crc (std::string_view header_raw_,
               std::string_view body_raw_) {

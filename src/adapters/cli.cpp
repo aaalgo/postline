@@ -23,22 +23,17 @@ public:
     Cli () {
     }
 protected:
-#if 0
-    void init (Response &resp) override {
+    std::vector<Message> on_connect () override {
         json h{{"From", "user"},
                {"To", "runtime"},
-               {"Subject", "spawn"}};
-        resp.append(Message(std::move(h), std::string(LOCAL_AGENTS)));
-
-        /*
-        runtime.enqueue_boot(std::move(local));
-        json h{{"From", "user"},
-               {"To", "runtime"},
-               {"Subject", "list_agents"}};
-        resp.append(Message(std::move(h)));
-        */
+               {"Subject", "list_agents"},
+               {"Thread-ID", "0"},
+               {"From-Domain-ID", "0"}}
+               ;
+        std::vector<Message> resp;
+        resp.emplace_back(std::move(h)); //, std::string(LOCAL_AGENTS));
+        return resp;
     }
-#endif
 
     void call (Message&& message, Response &resp) override
     {

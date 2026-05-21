@@ -10,6 +10,8 @@ using journal_replay_fn = std::function<void(Message &&)>;
 
 AccessID make_access_id(uint32_t segment, uint64_t offset);
 void split_access_id(AccessID access_id, uint32_t *segment, uint64_t *offset);
+AccessID mark_receiving (AccessID);
+bool is_receiving (AccessID);
 
 class Journal {
 

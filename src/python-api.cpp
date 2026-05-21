@@ -64,20 +64,11 @@ json py2json(py::handle obj)
 class PyService: public Service {
     Server::Config config;
     Server server;
-    std::string address;
 public:
     PyService (): server(config) {
     }
 
-    std::string get_address () const {
-        return address;
-    }
-
     virtual void on_memory (Message && msg) {
-        if (address.empty()) {
-            address = msg.to();
-            CHECK(!address.empty());
-        }
         py::gil_scoped_acquire gil;
         py::cast(this, py::return_value_policy::reference)
         .attr("on_memory")(std::make_unique<Message>(std::move(msg)));
@@ -104,10 +95,6 @@ public:
 #endif
 
     virtual void call (Message &&msg, Response &resp) override {
-        if (address.empty()) {
-            address = msg.to();
-            CHECK(!address.empty());
-        }
         py::gil_scoped_acquire gil;
         py::object self = py::cast(
             this,
@@ -170,6 +157,10 @@ PYBIND11_MODULE(_postline, module) {
                 py::arg("fiels"))
         .def("get", &Message::get, py::arg("key"))
         .def("write", &Message::write, py::arg("fd"))
+        .def("isReceiving", 
+                [](Message &msg) {
+                    return msg.header().contains("Is-Receiving");
+                })
         .def("format", 
                 [](Message &msg, bool compact) {
                     std::ostringstream ss;
@@ -180,7 +171,6 @@ PYBIND11_MODULE(_postline, module) {
     py::class_<PyService>(module, "Service")
         .def(py::init<>())
         .def("run", &PyService::run)
-        .def("address", &PyService::get_address)
         ;
     py::class_<Response>(module, "Response")
         .def("append", 

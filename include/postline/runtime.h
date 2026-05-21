@@ -8,8 +8,8 @@
 #include <utility>
 #include <vector>
 #include "common.h"
-#include "driver.h"
 #include "journal.h"
+#include "driver.h"
 #include "poller.h"
 #include "service.h"
 #include "accounting.h"
@@ -29,6 +29,8 @@ constexpr char const *GLOBAL_ENTRY_TO = "zero";
 constexpr char const *AGENT_NAME_ZERO = "zero";
 constexpr char const *AGENT_NAME_RUNTIME = "runtime";
 constexpr char const *AGENT_NAME_USER = "user";
+char constexpr ADDRESS_CHAR_DETACH = '&';
+char constexpr ADDRESS_CHAR_CLONE  = '*';
 
 struct Domain;
 struct Thread;
@@ -44,7 +46,7 @@ using AgentFlags = std::uint64_t;
     X(HISTORY,  0x00000001) \
     X(CATCH,    0x00000002) \
     X(THREAD,   0x00000004) \
-    X(CLONE,   0x0000008)  \
+    X(CLONE,   0x0000008)
 
 #define X(flag, value) AgentFlags constexpr AGENT_FLAG_##flag = value;
     AGENT_FLAG_LIST(X)
@@ -131,7 +133,8 @@ struct Domain: immobile {
     std::string name;
     Domain *parent;     // only global has null parent
     Thread *thread;     // thread must always be not null
-    bool detached;
+    bool detached;      // detached domain are root of the subtree
+                        // correspond to a thread
     struct Entry {      // only attached domain have from/to
         Agent *from;    // detached domains cannot be called
         Agent *to;      // so they don't have from/to
@@ -179,8 +182,9 @@ struct Domain: immobile {
 };
 
 struct Endpoint {
-    Agent *agent;
-    Domain *domain;
+    Agent *agent;   // an agent might be communicating
+    Domain *domain; // in a domain other than its home domain
+                    // e.g. user, runtime
 };
 
 struct Frame {
@@ -200,12 +204,17 @@ struct Thread {
     ThreadID id;
     std::string name;
     Domain *root;
-    //Agent *continuation_owner;
+    Endpoint pending;
+    // let's try this logic for now;
+    // if stack is empty, pending is always (user, root)
+    // later we might want to relax this to a user role rather than just user
     std::vector<Frame> stack;
     std::vector<AccessID> trace;
 
     Thread (ThreadID id_, Domain *root_, Agent *owner): id(id_), root(root_) {
         CHECK(!root->detached);
+        pending.domain = root;
+        pending.agent = owner;
         root->thread = this;
         root->detached = true;
         root->entry.from = nullptr;
@@ -220,21 +229,16 @@ struct Thread {
         return json{{"id", id},
                     {"name", name},
                     {"root", root->id},
-                    //{"continuation_owner", continuation_owner->id},
+                    {"pending_domain_id", pending.domain->id},
+                    {"pending_agent_id", pending.agent->id},
                     {"stack", jstack},
                     {"trace", trace}};
     }
 };
 
-struct InitHook {
-    template<typename F>
-    InitHook(F&& f) {
-        f();
-    }
-};
+class Runtime;
 
-class Runtime: immobile, public Service {
-
+struct Program: immobile {
     std::vector<std::unique_ptr<Domain>> domains;
     std::vector<std::unique_ptr<Agent>> agents;
     std::unordered_map<std::string, Snapshot> snapshots;
@@ -245,19 +249,7 @@ class Runtime: immobile, public Service {
     Agent *runtime;
     Agent *user;
 
-    bool allowUnsolicited (Agent *agent) const {
-        return agent == user;
-    }
-
-    InitHook initHook;
-    Journal journal;
-    Poller poller;
-    Accounting accounting;
-    bool stop_requested;
-
-// Section: program state manipulation
-
-    void initGlobal () {    // called in constructor via hook before journal replay
+    Program () {    // called in constructor via hook before journal replay
         // hard-coded initial state:
         //      thread-0  --  domain-0 -- {runtime, user, agent}
         // root cannot be created with createDomain
@@ -281,6 +273,8 @@ class Runtime: immobile, public Service {
 
         createThread(global, user);
     }
+
+    json dump () const;
 
     Thread *createThread (Domain *root, Agent *owner) {
         threads.emplace_back(std::make_unique<Thread>(threads.size(), root, owner));
@@ -316,29 +310,11 @@ class Runtime: immobile, public Service {
         return domain;
     }
 
-#if 0
-    void publishSnapshot (std::string const &name, Domain const *domain) {
-        CHECK(snapshots.find(name) == snapshots.end());
-        snapshots.emplace(std::make_pair(name, domain->snapshot(name)));
-    }
-
-    /*
-    Thread *detach (Domain *domain) {
-        domain->thread = createThread();
-        return domain->thread;
-    }
-    */
-#endif
-
-// Section: message routing
-
     struct ResolvedTo {
         enum class Tag: uint8_t {
             NONE = 0,       // only for rewind, or it is an error
             AGENT,          // resolved in the order below
-            AGENT_CLONE,
             DOMAIN,
-            DOMAIN_CLONE,
             SNAPSHOT,
         } tag;
         union {
@@ -346,327 +322,51 @@ class Runtime: immobile, public Service {
             Domain *domain;
             Snapshot *snapshot;
         };
-    };
-
-    ResolvedTo resolve (std::string const &address, Domain *domain) {
-        ResolvedTo r;
-        r.tag = ResolvedTo::Tag::NONE;
-        if (address.starts_with("&")) { // clone request
-            // clone request
-            std::string deref = address.substr(1);
-            if (deref.starts_with("&")) return r;    // fail, cannot start with &&
-            ResolvedTo r2 = resolve(deref, domain);
-            if (r2.tag == ResolvedTo::Tag::AGENT || r2.tag == ResolvedTo::Tag::AGENT_CLONE) {
-                r.tag = ResolvedTo::Tag::AGENT_CLONE;
-                r.agent = r2.agent;
-            }
-            else if (r2.tag == ResolvedTo::Tag::DOMAIN) {
-                r.tag = ResolvedTo::Tag::DOMAIN_CLONE;
-                r.domain = r2.domain;
-            }
-            else {
-                // we cannot clone others
-                return r;
-            }
-        }
-        if (domain) {
-            r.agent = domain->getMember(address);
-            if (r.agent) {
-                if (r.agent->flags & AGENT_FLAG_CLONE) {
-                    r.tag = ResolvedTo::Tag::AGENT_CLONE;
-                }
-                else {
-                    r.tag = ResolvedTo::Tag::AGENT;
-                }
-                return r;
-            }
-        }
-        {
-            r.agent = global->getMember(address);
-            if (r.agent) {
-                r.tag = ResolvedTo::Tag::AGENT;
-                return r;
-            }
-        }
-        if (domain) {
-            r.domain = domain->getChild(address);
-            if (r.domain) {
-                r.tag = ResolvedTo::Tag::DOMAIN;
-                return r;
-            }
-        }
-        {
-            auto it = snapshots.find(address);
-            if (it != snapshots.end()) {
-                r.tag = ResolvedTo::Tag::SNAPSHOT;
-                r.snapshot = &it->second;
-                return r;
-            }
-        }
-        return r;
-    }
-
-    enum class Action: uint8_t {
-        YIELD = 0,
-        CALL = 1,
-        RETURN = 2,
-        REWIND = 3
-    };
-
-    struct Context {
-        Thread *thread;
-        Action action;
-        Endpoint from;
-        Endpoint to;
-        //ResolvedTo to;
+        bool detach;
+        bool clone;
         std::string error;
     };
 
-    void saveContext (Message &msg, Context const &ctx) const {
-        msg.updateHeader([this, &ctx](json &h) {
-            json j{
-                {"thread_id", ctx.thread->id},
-                {"action", static_cast<int>(ctx.action)},
-                {"from_agent_id", ctx.from.agent->id},
-                {"from_domain_id", ctx.from.domain->id},
-                {"to_agent_id", ctx.to.agent->id},
-                {"to_domain_id", ctx.to.domain->id},
-                {"error", ctx.error}
-                };
-#if 0
-            if (ctx.to.tag == ResolvedTo::Tag::AGENT || ctx.to.tag == ResolvedTo::Tag::AGENT_CLONE) {
-                j["to_agent_id"] = int64_t(ctx.to.agent->id);
-            }
-            else if (ctx.to.tag == ResolvedTo::Tag::DOMAIN || ctx.to.tag == ResolvedTo::Tag::DOMAIN_CLONE) {
-                j["to_domain_id"] = int64_t(ctx.to.domain->id);
-            }
-            else if (ctx.to.tag == ResolvedTo::Tag::SNAPSHOT) {
-                j["to_snapshot"] = ctx.to.snapshot->name;
-            }
-            else {
-                CHECK(0, "Unknown to tag: {}", static_cast<int>(ctx.to.tag));
-            }
-#endif
-            h[CONTEXT_HEADER_NAME] = j;
-            h["To-Domain-ID"] = std::format("{}", ctx.to.domain->id);
-        });
-    }
+    ResolvedTo resolve (std::string_view address, Domain *domain);
 
-    void loadContext (Message const &msg, Context &ctx) {
-        json j = msg.header()[CONTEXT_HEADER_NAME];
-        ThreadID thread_id = j.at("thread_id").get<ThreadID>();
-        CHECK(thread_id >= 0 && thread_id < threads.size());
-        ctx.thread = threads[thread_id].get();
-        ctx.action = static_cast<Action>(j.at("action").get<int>());
-        AgentID from_agent_id = j.at("from_agent_id").get<AgentID>();
-        CHECK(from_agent_id >= 0 && from_agent_id < agents.size());
-        ctx.from.agent = agents[from_agent_id].get();
-        DomainID from_domain_id = j.at("from_domain_id").get<DomainID>();
-        CHECK(from_domain_id >= 0 && from_domain_id < domains.size());
-        ctx.from.domain = domains[from_domain_id].get();
-        ctx.to.agent = nullptr;
-        ctx.to.domain = nullptr;
-        if (ctx.action != Action::RETURN && ctx.action != Action::REWIND) {
-            AgentID to_agent_id = j.at("to_agent_id").get<AgentID>();
-            CHECK(to_agent_id >= 0 && to_agent_id < agents.size());
-            ctx.to.agent = agents[to_agent_id].get();
-            DomainID to_domain_id = j.at("to_domain_id").get<DomainID>();
-            CHECK(to_domain_id >= 0 && to_domain_id < domains.size());
-            ctx.to.domain = domains[to_domain_id].get();
-        }
-        ctx.error = j.at("error").get<std::string>();
-    }
+    enum class Action: uint8_t {
+        YIELD = 0,          // not used for now
+        CALL = 1,           // must have a to
+        RETURN = 2,         // to not needed
+        REWIND = 3          // to not needed
+    };
 
-    Message makeRewindMessage (Agent *fromAgent, Domain *fromDomain = nullptr) const {
-        if (!fromDomain) {
-            fromDomain = fromAgent->domain;
-        }
-        CHECK(fromDomain != global);
-        // global:
-        //      - runtime: should never EOF
-        //      - user: user EOF should not a trigger a rewind, it should just
-        //              put the thread in paused state
-        Message msg;
-        Context ctx;
-        ctx.thread = fromDomain->thread;   // cannot rewind from global agents
-        CHECK(ctx.thread, "global agents should not EOF");
-        ctx.action = Action::REWIND;
-        ctx.from.agent = fromAgent;
-        ctx.from.domain = fromDomain;
-        ctx.to.agent = nullptr;
-        ctx.to.domain = nullptr;
-        ctx.error = "adapter of agent has died.";
-        saveContext(msg, ctx);
-        return msg;
-    }
+    struct Context {
+        Action action;
+        Thread *thread;
+        Endpoint from;
+        Endpoint to;
+        std::string error;
+    };
 
-    void preprocess (Agent *from, Message &msg) {
-        // by the time a message is received
-        // we expect the agent implement make sure that
-        // the following fields are correct:
-        //      - thread_id
-        //      - from_domain_id
-        // create context & save to msg
-        // update headers when necessary
-        Context ctx;
-        ctx.action = Action::REWIND;    // fail by default
-        int thread_id = msg.thread_id();
-        if (!(thread_id >= 0 && thread_id < threads.size())) {
-            log::error("Bad thread id {}", thread_id);
-            CHECK(0);
-        }
-        ctx.thread = threads[thread_id].get();
-        /*
-        if (from->domain->thread) {
-            if (ctx.thread != from->domain->thread) {
-                log::warn("thread not matching");
-            }
-        }
-        */
-        int domain_id = msg.from_domain_id();
-        if (!(domain_id >= 0 && domain_id < domains.size())) {
-            log::error("Bad domain id {}", domain_id);
-            CHECK(0);
-        }
-        ctx.from.agent = from;
-        ctx.from.domain = domains[domain_id].get();
-        if (from->domain != global) {
-            // this can be relaxed later, but for now we
-            // want all non-global agent to send from their own domains
-            CHECK(from->domain == ctx.from.domain);
-        }
+    void saveContext (Message &msg, Context const &ctx) const;
+    void loadContext (Message const &msg, Context &ctx);
+    Message makeRewindMessage (Agent *fromAgent, Domain *fromDomain = nullptr, char const *error = "") const;
 
-        do {
-            // do all error checking and add additional field to msg
-            // determine op
-            AccessID in_reply_to = msg.in_reply_to();
-            AccessID in_response_to = msg.in_response_to();
+    void preprocess (Agent *from, Message &msg, Runtime *runtime);
+    Agent *apply (Message const &msg);
+};
 
-            if (in_reply_to != NO_ACCESS_ID) {
-                if (ctx.thread->stack.empty()) {
-                    ctx.error = "reply to an empty stack";
-                    break;
-                }
-                auto const &f = ctx.thread->stack.back();
-                if (f.opening_message_id != in_reply_to) {
-                    ctx.error = std::format("msg in reply to {} doesn't match stack {}", in_reply_to, f.opening_message_id);
-                    break;
-                }
-                // CHECK matching of TO
-                ctx.to = f.opening_endpoint;
-                ctx.action = Action::RETURN;
-            }
-            else {
-                if (in_response_to != NO_ACCESS_ID) {
-                    if (ctx.thread->stack.empty()) {
-                        ctx.error = "Resopnd to empty stack";
-                        break;
-                    }
-                    auto const &f = ctx.thread->stack.back();
-                    if (f.opening_message_id != in_response_to) {
-                        ctx.error = "Resopnd not matching";
-                        break;
-                    }
-                }
-                else {
-                    if (!ctx.thread->stack.empty()) {
-                        if (!allowUnsolicited(ctx.from.agent)) {
-                            ctx.error = "Spontaneus message on non empty stack";
-                        }
-                        break;
-                    }
-                }
-                ResolvedTo to = resolve(msg.to(), ctx.from.domain);
-                // now create necessary group & agents
-                // and setup ctx.to
-                if (to.tag == ResolvedTo::Tag::NONE) {
-                    ctx.error = "Fail to resolve";
-                    break;
-                }
-                else if (to.tag == ResolvedTo::Tag::AGENT) {
-                    ctx.to.domain = ctx.from.domain;
-                    ctx.to.agent = to.agent;
-                }
-                else if (to.tag == ResolvedTo::Tag::AGENT_CLONE) {
-                    ctx.error = "Not supported.";
-                    break;
-                }
-                else if (to.tag == ResolvedTo::Tag::DOMAIN) {
-                    ctx.error = "Not supported.";
-                    break;
-                }
-                else if (to.tag == ResolvedTo::Tag::DOMAIN_CLONE) {
-                    ctx.error = "Not supported.";
-                    break;
-                }
-                else if (to.tag == ResolvedTo::Tag::SNAPSHOT) {
-                    ctx.error = "Not supported.";
-                    break;
-                }
-                ctx.action = Action::CALL;
-            }
-        }
-        while (false);
-        if (ctx.action == Action::REWIND) {
-        }
-        saveContext(msg, ctx);
-    }
+class Runtime: public Program, public Service {
 
-    Agent *apply (Message const &msg) {
-        // now msg has an id
-        Context ctx;
-        Agent *to = nullptr;
-        loadContext(msg, ctx);
-        if (ctx.action == Action::RETURN) {
-            ctx.thread->stack.pop_back();
-            --ctx.from.agent->obligation_count;
-            to = ctx.to.agent;
-        }
-        else if (ctx.action == Action::CALL) {
-            ctx.thread->stack.emplace_back();
-            auto &f = ctx.thread->stack.back();
-            f.opening_message_id = msg.access_id();
-            f.opening_endpoint = ctx.from;
-            to = ctx.to.agent;
-            ++to->obligation_count;
-        }
-        else if (ctx.action == Action::REWIND) {
-            --ctx.from.agent->obligation_count;
-            while (ctx.thread->stack.size()) {
-                auto const &f = ctx.thread->stack.back();
-                if (f.opening_endpoint.agent->flags & AGENT_FLAG_CATCH) {
-                    to = f.opening_endpoint.agent;
-                    ctx.thread->stack.pop_back();
-                    break;
-                }
-                --f.opening_endpoint.agent->obligation_count;
-                ctx.thread->stack.pop_back();
-            }
-        }
-        else {
-            CHECK(0);
-        }
-        CHECK(ctx.from.agent);
-        AccessID message_id = msg.access_id();
-        ctx.thread->trace.push_back(message_id);
-        ctx.from.agent->memory.push_back(message_id);
-        to->memory.push_back(message_id);
-        return to;
-    }
+    Journal journal;
+    Poller poller;
+    Accounting accounting;
+    bool stop_requested;
 
-// Runtime
+    struct SyscallResult {
+        union {
+        Agent *agent;
+        Domain *domain;
+        };
+    };
 
-    void updateMemory (Agent *);
-
-#if 0
-    void enqueue (Message &&msg) {
-        auto *driver = dynamic_cast<LoopDriver *>(runtime->driver.get());
-        CHECK(driver);
-        driver->enqueue(std::move(msg));
-    }
-#endif
-
-    void commit(json const &ops);
+    SyscallResult __commit (json const &op);
 
     // commands
     int cmd_exit (Message const &, json *resp) {
@@ -690,6 +390,8 @@ class Runtime: immobile, public Service {
         return 0;
     }
 
+    void updateMemory (Agent *);
+
 public:
     struct Config {
         std::string journal_path;
@@ -697,12 +399,11 @@ public:
     };
 
     Runtime(Config const &config, std::unique_ptr<Driver> &&user_driver)
-        : initHook([this]() { initGlobal(); }),
-        journal(config.journal_path, config.resume_path,
+        : journal(config.journal_path, config.resume_path,
                   [this](Message &&msg) { 
                       if (msg.type() == "runtime:commit") {
                           protocol::runtime::Commit c(msg);
-                          commit(c.ops);
+                          __commit(c.op);
                       } else {
                           apply(msg);
                       }
@@ -717,9 +418,15 @@ public:
 
     ~Runtime() = default;
 
-    json dump () const;
-
     void call (Message &&msg, Response &) override;
+
+    SyscallResult syscall (json const &op);
+
+    void syscalls (json const &ops) {
+        for (json const &j: ops.get_ref<json::array_t const &>()) {
+            syscall(j);
+        }
+    }
 
     void run ();
 };

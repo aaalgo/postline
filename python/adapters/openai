@@ -93,8 +93,7 @@ class Agent (Service):
         pass
 
     def append(self, msg):
-        From = msg.get("From")
-        if From != self.address():
+        if msg.isReceiving():
             role = "user"
         else:
             role = "assistant"

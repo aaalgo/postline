@@ -150,14 +150,12 @@ public:
     {
         protocol::handshake::Hello::make().write(write_fd_);
 
-#if 0
         {
             std::vector<Message> resp = service->on_connect();
             for (auto &msg: resp) {
                 msg.write(write_fd_);
             }
         }
-#endif
 
         for (;;) {
             Message msg = Message::read(read_fd_);
