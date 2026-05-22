@@ -24,9 +24,7 @@ protected:
     struct Entry {
         std::string thread_id;
         std::string my_address;
-        std::string my_domain_id;
         std::string peer_address;
-        std::string peer_domain_id;
         std::string message_id;
         bool is_incoming;
     };
@@ -68,9 +66,7 @@ public:
                 auto &e = stack.back();
                 e.thread_id = msg.get("Thread-ID");
                 e.my_address = to;
-                e.my_domain_id = msg.get("To-Domain-ID");
                 e.peer_address = from;
-                e.peer_domain_id = msg.get("From-Domain-ID");
                 e.message_id = msg.get("Message-ID");
                 e.is_incoming = true;
             }
@@ -87,7 +83,6 @@ public:
             CHECK(e.is_incoming);
             msg.updateHeader([this, &e](json &header) {
                 header["From"] = e.my_address;
-                header["From-Domain-ID"] = e.my_domain_id;
                 if (!header.contains("To")) {
                     header["To"] = e.peer_address;
                 }

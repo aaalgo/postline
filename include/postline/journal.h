@@ -121,7 +121,7 @@ public:
     }
 
     Message read(AccessID access_id) const {
-        CHECK(access_id >= 0);
+        //CHECK(access_id >= 0);
         uint32_t segment = 0;
         uint64_t offset = 0;
         split_access_id(access_id, &segment, &offset);

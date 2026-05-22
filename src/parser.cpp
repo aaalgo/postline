@@ -401,6 +401,11 @@ static std::string const BOUNDARY_PREFIX("multipart/mixed; boundary=");
 
 void Message::formatEmail(std::ostream& os, bool compact) const
 {
+    if (!compact) {
+        if (header_.contains(CONTEXT_HEADER_NAME)) {
+            os << header_.at(CONTEXT_HEADER_NAME).dump(2) << '\n';
+        }
+    }
     write_headers(os, header_, compact);
     os << '\n';
     if (!compact) {

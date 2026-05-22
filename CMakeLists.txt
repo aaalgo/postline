@@ -111,6 +111,7 @@ add_library(postline
     src/parser.cpp
     src/environ.cpp
     src/runtime.cpp
+    src/program.cpp
 )
 add_library(postline::postline ALIAS postline)
 
@@ -193,15 +194,15 @@ set_target_properties(benchmark_actor PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/install/bin/adapters"
 )
 
-add_executable(ftxcli_actor
-    src/adapters/ftxcli.cpp
-)
-target_link_libraries(ftxcli_actor PRIVATE postline::postline CLI11::CLI11)
-target_link_libraries(ftxcli_actor PRIVATE postline::tui_deps)
-set_target_properties(ftxcli_actor PROPERTIES
-    OUTPUT_NAME ftxcli
-    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/install/bin/adapters"
-)
+#add_executable(ftxcli_actor
+#    src/adapters/ftxcli.cpp
+#)
+#target_link_libraries(ftxcli_actor PRIVATE postline::postline CLI11::CLI11)
+#target_link_libraries(ftxcli_actor PRIVATE postline::tui_deps)
+#set_target_properties(ftxcli_actor PROPERTIES
+#    OUTPUT_NAME ftxcli
+#    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/install/bin/adapters"
+#)
 
 add_executable(login_actor
     src/adapters/login.cpp

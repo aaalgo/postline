@@ -42,7 +42,7 @@ public:
         }
     };
 
-private:
+protected:
     int read_fd_ = STDIN_FILENO;
     int write_fd_ = STDOUT_FILENO;
 

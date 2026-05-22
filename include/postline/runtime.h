@@ -51,6 +51,8 @@ using AgentFlags = std::uint64_t;
 #define X(flag, value) AgentFlags constexpr AGENT_FLAG_##flag = value;
     AGENT_FLAG_LIST(X)
 #undef X
+    
+json dump_agent_flags (AgentFlags flags);
 
 struct AgentParams {
     AgentLink link;
@@ -188,15 +190,20 @@ struct Endpoint {
 };
 
 struct Frame {
-    AccessID opening_message_id = 0;
-    Endpoint opening_endpoint;
+    AccessID message_id = 0;
+    Endpoint from;
+    Endpoint to;
 
     json dump () const {
-        return json{{"opening_message_id", opening_message_id},
-                    {"opening_agent_id", opening_endpoint.agent->id},
-                    {"opening_agent_name", opening_endpoint.agent->name},
-                    {"opening_domain_id", opening_endpoint.domain->id},
-                    {"opening_domain_name", opening_endpoint.domain->name}};
+        return json{{"message_id", message_id},
+                    {"from_agent_id", from.agent->id},
+                    {"from_agent_name", from.agent->name},
+                    {"from_domain_id", from.domain->id},
+                    {"from_domain_name", from.domain->name},
+                    {"to_agent_id", to.agent->id},
+                    {"to_agent_name", to.agent->name},
+                    {"to_domain_id", to.domain->id},
+                    {"to_domain_name", to.domain->name}};
     }
 };
 
@@ -204,21 +211,20 @@ struct Thread {
     ThreadID id;
     std::string name;
     Domain *root;
-    Endpoint pending;
     // let's try this logic for now;
     // if stack is empty, pending is always (user, root)
     // later we might want to relax this to a user role rather than just user
     std::vector<Frame> stack;
     std::vector<AccessID> trace;
 
-    Thread (ThreadID id_, Domain *root_, Agent *owner): id(id_), root(root_) {
+    Thread (ThreadID id_, Domain *root_): id(id_), root(root_) {
         CHECK(!root->detached);
-        pending.domain = root;
-        pending.agent = owner;
         root->thread = this;
         root->detached = true;
+        /*
         root->entry.from = nullptr;
         root->entry.to = nullptr;
+        */
     }
 
     json dump () const {
@@ -229,8 +235,6 @@ struct Thread {
         return json{{"id", id},
                     {"name", name},
                     {"root", root->id},
-                    {"pending_domain_id", pending.domain->id},
-                    {"pending_agent_id", pending.agent->id},
                     {"stack", jstack},
                     {"trace", trace}};
     }
@@ -262,7 +266,7 @@ struct Program: immobile {
 
         user->flags |= AGENT_FLAG_CATCH | AGENT_FLAG_THREAD;
 
-        global->entry.from = global->getMember(GLOBAL_ENTRY_FROM);
+        global->entry.from = user;
         global->entry.to = global->getMember(GLOBAL_ENTRY_TO);
         if (!global->entry.from) {
             log::warn("Global entry.from {} not found.", GLOBAL_ENTRY_FROM);
@@ -271,13 +275,13 @@ struct Program: immobile {
             log::warn("Global entry.to {} not found.", GLOBAL_ENTRY_TO);
         }
 
-        createThread(global, user);
+        createThread(global);
     }
 
     json dump () const;
 
-    Thread *createThread (Domain *root, Agent *owner) {
-        threads.emplace_back(std::make_unique<Thread>(threads.size(), root, owner));
+    Thread *createThread (Domain *root) {
+        threads.emplace_back(std::make_unique<Thread>(threads.size(), root));
         return threads.back().get();
     }
 
@@ -310,7 +314,7 @@ struct Program: immobile {
         return domain;
     }
 
-    struct ResolvedTo {
+    struct ResolvedAddress {
         enum class Tag: uint8_t {
             NONE = 0,       // only for rewind, or it is an error
             AGENT,          // resolved in the order below
@@ -327,14 +331,15 @@ struct Program: immobile {
         std::string error;
     };
 
-    ResolvedTo resolve (std::string_view address, Domain *domain);
+    ResolvedAddress resolve (std::string_view address, Domain *domain);
 
     enum class Action: uint8_t {
         YIELD = 0,          // not used for now
         CALL = 1,           // must have a to
-        RETURN = 2,         // to not needed
+        RETURN = 2,         // must have a to
         REWIND = 3          // to not needed
     };
+
 
     struct Context {
         Action action;
@@ -342,6 +347,10 @@ struct Program: immobile {
         Endpoint from;
         Endpoint to;
         std::string error;
+
+        static bool to_needed (Action a) {
+            return (a == Action::YIELD) || (a == Action::CALL) || (a == Action::RETURN);
+        }
     };
 
     void saveContext (Message &msg, Context const &ctx) const;
@@ -368,11 +377,7 @@ class Runtime: public Program, public Service {
 
     SyscallResult __commit (json const &op);
 
-    // commands
-    int cmd_exit (Message const &, json *resp) {
-        stop_requested = true;
-        return 0;
-    }
+    void regularizeAgentParams (json &m, Domain *domain);
 
     int cmd_list_agents (Message const &, json *resp) {
         json j = json::array();
@@ -384,11 +389,7 @@ class Runtime: public Program, public Service {
     }
 
     int cmd_create_agents (Message const &, json *resp);
-
-    int cmd_cost (Message const &, json *resp) {
-        *resp = accounting.dump();
-        return 0;
-    }
+    int cmd_create_domain (Message const &, json *resp);
 
     void updateMemory (Agent *);
 
@@ -432,4 +433,3 @@ public:
 };
 
 } // namespace postline
-

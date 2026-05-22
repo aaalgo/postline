@@ -18,84 +18,91 @@ std::string trim(const std::string& s) {
     return (start < end) ? std::string(start, end) : std::string();
 }
 
-class Cli : public Service {
-public:
-    Cli () {
-    }
-protected:
-    std::vector<Message> on_connect () override {
-        json h{{"From", "user"},
-               {"To", "runtime"},
-               {"Subject", "list_agents"},
-               {"Thread-ID", "0"},
-               {"From-Domain-ID", "0"}}
-               ;
-        std::vector<Message> resp;
-        resp.emplace_back(std::move(h)); //, std::string(LOCAL_AGENTS));
-        return resp;
-    }
+class Cli : public Server {
+    /*
+    struct Thread {
+        ThreadID thread_id;
+        DomainID domain_id;
+    };
+    */
 
-    void call (Message&& message, Response &resp) override
-    {
-        std::cout << "======== " << message.type() << std::endl;
-        if (message.header().contains("To")) {
-            message.formatEmail(std::cout);
-        }
-        else {
-            std::cout << message.header().dump(4) << std::endl;
-            std::cout << message.body() << std::endl;
-        }
-        std::cout << "========" << std::endl;
-
-        auto const& header = message.header();
-
-        std::string to;
-        std::string subject;
-        std::string body;
-
-        if (header.contains("From")) {
-            to = header["From"].get<std::string>();
-        }
-
-        if (header.contains("Reply-To")) {
-            to = header["Reply-To"].get<std::string>();
-        }
-
+    void recv_thread () {
         for (;;) {
-            std::cout << "To: " << to << "\t" << "Subject: " << subject << std::endl;
-            if ((!std::getline(std::cin, body)) || body == "/x") {
-                json h{
-                    {"To", "runtime"},
-                    {"Subject", "exit"}
-                };
-                resp.append(Message(std::move(h)));
-                return;
-            }
-            // parse command
-            if (body.starts_with('/') && body.size() > 3) {
-                if (body[1] == 's') {
-                    // change subject
-                    subject = trim(body.substr(3));
-                }
-                else if (body[1] == 't') {
-                    // change to
-                    to = trim(body.substr(3));
-                }
-            }
-            else {
+            Message msg = Message::read(read_fd_);
+            std::string type = msg.type();
+
+            if (type == protocol::handshake::Bye::type) {
                 break;
             }
         }
+    }
 
-        json h{
-            {"type", "agent:message"},
-            {"To", to},
-            {"Subject", subject}
-        };
+public:
+    Cli (Config const &config): Server(config) {
+    }
 
-        resp.append(Message(std::move(h), std::move(body)));
+    int run () {
+        std::thread thread([this](){this->recv_thread();});
+        protocol::handshake::Hello::make().write(write_fd_);
+        std::string to = "runtime";
+        std::string subject;
+        std::string body;
+        std::string thread_id = "0";
+        std::string domain_id = "0";
+        {
+            json h{{"To", "runtime"},
+                   {"Subject", "create_agents"},
+                   {"Thread-ID", thread_id},
+                   {"From-Domain-ID", domain_id}
+                };
+            Message(std::move(h),std::string(LOCAL_AGENTS)).write(write_fd_);
+        }
+        bool stop = false;
+        while (!stop) {
+            std::cout << "Thread: " << thread_id << "\t" << "Domain: " << domain_id << std::endl;
+            std::cout << "To: " << to << "\t" << "Subject: " << subject << std::endl;
+            if ((!std::getline(std::cin, body)) || body.starts_with("/x")) {
+                json h{
+                    {"To", "runtime"},
+                    {"Subject", "exit"},
+                    {"Thread-ID", thread_id},
+                    {"From-Domain-ID", domain_id}
+                };
+                Message(std::move(h)).write(write_fd_);
+                stop = true;
+                continue;
+            }
+            // parse command
+            if (body.starts_with("/s ")) {
+                subject = trim(body.substr(3));
+                continue;
+            }
+            if (body.starts_with("/t ")) {
+                to = trim(body.substr(3));
+                continue;
+            }
+            if (body.starts_with("/")) {
+                std::cout << "Bad command." << std::endl;
+                continue;
+            }
+            json h{
+                {"type", "agent:message"},
+                {"To", to},
+                {"Subject", subject},
+                {"Thread-ID", thread_id},
+                {"From-Domain-ID", domain_id}
+            };
+            if (to == "runtime" && subject == "exit") {
+                stop = true;
+            }
+            Message(std::move(h), std::move(body)).write(write_fd_);
+        }
+        std::cerr << "Stopping..." << std::endl;
+        thread.join();
+        return 0;
     }
 };
+
 }
 
 using namespace postline;
@@ -108,9 +115,9 @@ int main(int argc, char** argv)
     config.configure(app);
     CLI11_PARSE(app, argc, argv);
     Server server(config);
-    Cli cli;
+    Cli cli(config);;
 
     std::cout << "/s subject | /t to | /x or Ctrl-D to exit" << std::endl;
 
-    return server.run(&cli);
+    return cli.run();
 }
