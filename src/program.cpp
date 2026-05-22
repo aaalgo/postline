@@ -468,17 +468,15 @@ Agent *Program::apply (Message const &msg) {
         ++to->obligation_count;
     }
     else if (ctx.action == Action::REWIND) {
-        --ctx.from.agent->obligation_count;
-        while (ctx.thread->stack.size()) {
+        to = ctx.from.agent;
+        do {
+            if (to->flags & AGENT_FLAG_CATCH) break;
+            if (ctx.thread->stack.empty()) break;
             auto const &f = ctx.thread->stack.back();
-            if (f.from.agent->flags & AGENT_FLAG_CATCH) {
-                to = f.from.agent;
-                ctx.thread->stack.pop_back();
-                break;
-            }
-            --f.from.agent->obligation_count;
+            to = f.from.agent;
+            --f.to.agent->obligation_count;
             ctx.thread->stack.pop_back();
-        }
+        } while (true);
     }
     else {
         CHECK(0);

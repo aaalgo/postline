@@ -85,6 +85,39 @@ int Runtime::cmd_create_agents (Message const &msg, json *resp) {
 }
 
 int Runtime::cmd_create_domain (Message const &msg, json *resp) {
+    Context ctx;
+    loadContext(msg, ctx);
+
+    json params = json::parse(msg.body());
+    Domain *domain = ctx.from.domain;
+    std::string name;
+    if (params.contains("name")) {
+        name = params.at("name").get_ref<std::string const &>();
+    }
+    else {
+        name = std::format("domain-{}", domains.size());
+    }
+    if (domain->getChild(name) != nullptr) {
+        throw Error("Domain {} already exists.", name);
+    }
+    bool detach = false;
+    if (params.contains("detach")) {
+        detach = params.at("detach").get<bool>();
+    }
+
+    json op{{"op", "create_domain"},
+            {"name", name},
+            {"parent_id", domain->id}};
+    auto r = syscall(op);
+    *resp = json{{"domain_id", r.domain->id}};
+
+    if (detach) {
+        json op{{"op", "create_thread"},
+                {"domain_id", r.domain->id}};
+        auto r = syscall(op);
+        (*resp)["thread_id"] = r.thread->id;
+    }
+
     return 0;
 }
 
@@ -124,6 +157,15 @@ Runtime::SyscallResult Runtime::__commit (json const &m) {
         result.domain = createDomain(it->second, parent);
         log::info("create domain {}: {}", result.domain->id, result.domain->name);
     }
+    else if (op == "create_thread") {
+        DomainID domain_id = m.at("domain_id").get<DomainID>();
+        CHECK(domain_id >= 0 && domain_id < domains.size());
+        Domain *domain = domains[domain_id].get();
+        CHECK(!domain->detached);
+        result.thread = createThread(domain);
+        // We haven't handled entry.from/to yet
+        log::info("create thread {} from domain {}", result.thread->id, domain->id);
+    }
     else if (op == "begin_shutdown") {
     }
     else if (op == "end_shutdown") {
@@ -154,9 +196,25 @@ void Runtime::call (Message &&msg, Response &resp) {
             respBody = accounting.dump();
         });
 
-    app.add_subcommand("list_agents")
-        ->callback([&] {
-            status = cmd_list_agents(msg, &respBody);
+    bool list_all = false;
+    auto sub_list_agents = app.add_subcommand("list_agents");
+    sub_list_agents->add_flag("-a,--all", list_all);
+    sub_list_agents->callback([&] {
+            json j = json::array();
+            if (list_all) {
+                for (auto const &a: agents) {
+                    j.push_back(a->dump());
+                }
+            }
+            else {
+                // only list domain
+                Context ctx;
+                loadContext(msg, ctx);
+                for (auto const &p: ctx.from.domain->members) {
+                    j.push_back(p.second->dump());
+                }
+            }
+            respBody.swap(j);
         });
 
     app.add_subcommand("create_agents")

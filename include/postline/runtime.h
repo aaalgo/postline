@@ -296,7 +296,11 @@ struct Program: immobile {
     Domain *createDomain (std::string const &name, Domain *parent) {
         CHECK(parent->getChild(name) == nullptr);
         domains.emplace_back(std::make_unique<Domain>(domains.size(), name, parent));
-        return domains.back().get();
+        Domain *domain = domains.back().get();
+        // TODO: we need to improve this
+        domain->entry.from = user;
+        domain->entry.to = runtime;
+        return domain;
     }
 
     Domain *createDomain (Snapshot const &snapshot, Domain *parent) {
@@ -372,21 +376,13 @@ class Runtime: public Program, public Service {
         union {
         Agent *agent;
         Domain *domain;
+        Thread *thread;
         };
     };
 
     SyscallResult __commit (json const &op);
 
     void regularizeAgentParams (json &m, Domain *domain);
-
-    int cmd_list_agents (Message const &, json *resp) {
-        json j = json::array();
-        for (auto const &a: agents) {
-            j.push_back(a->dump());
-        }
-        *resp = j;
-        return 0;
-    }
 
     int cmd_create_agents (Message const &, json *resp);
     int cmd_create_domain (Message const &, json *resp);
