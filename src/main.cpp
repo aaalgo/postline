@@ -18,10 +18,10 @@
 #include <CLI/CLI.hpp>
 #include <postline/runtime.h>
 #include <postline/ansi.h>
+#include <postline/ui.h>
 #include "build_info.hpp"
 
 using namespace postline;
-
 
 extern char const *banner;
 
@@ -57,6 +57,7 @@ std::string make_journal_name()
     return oss.str();
 }
 
+#if 0
 std::string read_file(std::filesystem::path const& input_path) {
     std::ifstream in(input_path, std::ios::binary);
 
@@ -72,7 +73,6 @@ std::string read_file(std::filesystem::path const& input_path) {
     return ss.str();
 }
 
-#if 0
 class Autopilot: public Service {
     Message payload;
     Message exit;
@@ -94,15 +94,22 @@ public:
 };
 #endif
 
+#include <mutex>
+#include <string>
+#include <vector>
+
 int main(int argc, char** argv) {
     // Parse CLI options
     CLI::App app{"Postline Agent Runtime"};
     Runtime::Config config;
     config.journal_path = make_journal_name();
-    std::string ui_server = "ftxcli";
+    std::string ui_choice = "tui";
+    //std::string ui_server = "ftxcli";
+    /*
     std::string input_path;
     std::string user_stdin;
     std::string user_stdout;
+    */
     std::unique_ptr<Service> autopilot;
     std::unique_ptr<Driver> user_driver;
     bool detach = false;
@@ -114,12 +121,16 @@ int main(int argc, char** argv) {
         argv = app.ensure_utf8(argv);
         app.add_option("-j,--journal", config.journal_path, "");
         app.add_option("-r,--resume", config.resume_path, "");
+        app.add_option("--ui", ui_choice, "UI: null, cli, tui, web, auto");
+        /*
         app.add_option("--user-stdin", user_stdin, "");
         app.add_option("--user-stdout", user_stdout, "");
         app.add_option("-i,--input", input_path, "");
+        */
         //app.add_option("--ui", ui_server, "");
         //app.add_flag("--detach", detach, "");
         CLI11_PARSE(app, argc, argv);
+#if 0
         if (input_path.empty()) {
             if (user_stdin.empty()
                     || user_stdout.empty()) {
@@ -131,7 +142,6 @@ int main(int argc, char** argv) {
         }
         else {
             CHECK(0, "Autopilot not supported.");
-#if 0
             if (user_stdin.size()
                     || user_stdout.size()) {
                 std::cerr << "When you set -i,--input you cannot set --user-stdin or --user-stdout." << std::endl;
@@ -139,21 +149,30 @@ int main(int argc, char** argv) {
             }
             autopilot = std::make_unique<Autopilot>(input_path);
             user_driver = std::make_unique<LoopDriver>(autopilot.get());
-#endif
         }
+#endif
     }
 
     setup_environ();
     welcome();
 
     init_logging();
+
     log::info("constructing runtime");
 
-    Runtime runtime(config, std::move(user_driver));
+    Runtime runtime(config);
+    auto ui = ui::make_ui(ui_choice, &runtime);
+    runtime.attachUser(ui.get());
 
-    log::info("Starting runtime.");
-    runtime.run();
+    std::thread runtime_thread([&runtime]() {
+            log::info("Starting runtime.");
+            runtime.run();
+            });
+    ui->run();
+    log::info("UI has been gracefully shutdown.");
+    runtime_thread.join();
     log::info("Runtime has been gracefully shutdown.");
+    ui.reset();
     std::cerr << "[exit]" << std::endl;
     return 0;
 }

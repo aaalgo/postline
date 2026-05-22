@@ -395,7 +395,7 @@ public:
         std::string resume_path;
     };
 
-    Runtime(Config const &config, std::unique_ptr<Driver> &&user_driver)
+    Runtime(Config const &config)
         : journal(config.journal_path, config.resume_path,
                   [this](Message &&msg) { 
                       if (msg.type() == "runtime:commit") {
@@ -408,12 +408,20 @@ public:
           stop_requested(false) {
         log::info("Initializing runtime");
         runtime->driver = std::make_unique<LoopDriver>(this);
-        user->driver = std::move(user_driver);
-        poller.add(runtime->driver->read_fd(), runtime->id);
-        poller.add(user->driver->read_fd(), user->id);
+        //user->driver = std::make_unique<LoopDriver>(this);
     }
 
     ~Runtime() = default;
+
+    int enqueueUser (Message && msg) {
+        auto *driver = dynamic_cast<LoopDriver*>(user->driver.get());
+        CHECK(driver);
+        return driver->enqueue(std::move(msg));
+    }
+
+    void attachUser (Service *user_service) {
+        user->driver = std::make_unique<LoopDriver>(user_service);
+    }
 
     void call (Message &&msg, Response &) override;
 

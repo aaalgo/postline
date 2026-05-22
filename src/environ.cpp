@@ -3,8 +3,6 @@
 #include <cstdlib>
 #include <cstring>
 #include <string>
-#include <spdlog/sinks/stdout_color_sinks.h>
-#include <spdlog/sinks/rotating_file_sink.h>
 #include <postline/common.h>
 
 namespace postline {
@@ -51,6 +49,7 @@ void setup_environ()
     log::info("PYTHONPATH updated: {}", value);
 }
 
+#if 0
 void init_logging()
 {
 #if 0
@@ -91,5 +90,6 @@ void init_logging()
         spdlog::shutdown();
     });
 }
+#endif
 
 } // namespace postline

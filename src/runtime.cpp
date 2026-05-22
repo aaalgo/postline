@@ -291,6 +291,10 @@ void Runtime::updateMemory (Agent *agent) {
 
 void Runtime::run() {
 
+    CHECK(user->driver, "Must attachUser first.");
+    poller.add(runtime->driver->read_fd(), runtime->id);
+    poller.add(user->driver->read_fd(), user->id);
+
     while (!stop_requested) {
         auto events = poller.wait();
         CHECK(!events.empty());

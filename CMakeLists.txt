@@ -112,6 +112,9 @@ add_library(postline
     src/environ.cpp
     src/runtime.cpp
     src/program.cpp
+    src/ui.cpp
+    src/tui.cpp
+    src/web.cpp
 )
 add_library(postline::postline ALIAS postline)
 
@@ -128,6 +131,10 @@ target_link_libraries(postline
         CLI11::CLI11
         nlohmann_json::nlohmann_json
         spdlog::spdlog_header_only
+    PRIVATE
+        ftxui::screen
+        ftxui::dom
+        ftxui::component
 )
 
 add_library(postline_install_bin_deps INTERFACE)
@@ -154,7 +161,7 @@ add_executable(postline_bin
 target_link_libraries(postline_bin PRIVATE postline_install_bin_deps)
 target_link_libraries(postline_bin PRIVATE postline::tui_deps)
 set_target_properties(postline_bin PROPERTIES
-    OUTPUT_NAME postline
+    OUTPUT_NAME pl
     RUNTIME_OUTPUT_DIRECTORY "${POSTLINE_INSTALL_BIN_DIR}"
 )
 

@@ -19,7 +19,7 @@ public:
     virtual ~Driver () {}
     virtual int send(Message const &msg) = 0;
     virtual int recv(std::vector<Message> &out) = 0;
-    virtual int shutdown (bool send = true) = 0;
+    virtual int shutdown () = 0;
     Message recv_one () {
         std::vector<Message> all;
         int err = recv(all);
@@ -111,8 +111,8 @@ public:
 
     }
 
-    int shutdown (bool notify) override {
-        if (notify && input_fd_ >= 0) {
+    int shutdown () override {
+        if (input_fd_ >= 0) {
             send(protocol::handshake::Bye::make());
         }
         if (pid_ > 0) { int status = 0;
@@ -213,7 +213,8 @@ public:
         return 0;
     }
 
-    int shutdown (bool send) override {
+    int shutdown () override {
+        service->on_exit();
         return 0;
     }
 
