@@ -67,10 +67,17 @@ class ListData : public ListDataRef {
       return size_t(end());
   }
 
+  bool contains(int index) const {
+    return index >= firstValid() && index < end();
+  }
+
+  T const& at(int index) const {
+    CHECK(contains(index));
+    return items_[index - first_valid_];
+  }
+
   Element Render(int index, ListEntryState const& state) const override {
-    CHECK(index >= firstValid());
-    CHECK(index < end());
-    return renderer_(items_[index - first_valid_], state);
+    return renderer_(at(index), state);
   }
 
   void push_back(T const& item) {
@@ -128,6 +135,10 @@ class ListBase : public ComponentBase, public ListOption {
     }
 
     const int last_visible = std::min(end(), first_visible_ + VisibleHeight());
+    const int visible_count = last_visible - first_visible_;
+    boxes_.reserve(visible_count);
+    box_indexes_.reserve(visible_count);
+
     for (int i = first_visible_; i < last_visible; ++i) {
       boxes_.emplace_back();
       box_indexes_.push_back(i);

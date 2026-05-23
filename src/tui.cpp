@@ -25,6 +25,7 @@ namespace postline { namespace ui {
 using namespace ftxui;
 
 static constexpr size_t MAX_VISIBLE_THREADS = 4096;
+static constexpr size_t MAX_VISIBLE_LOGS = 4096;
 
 using ThreadID = size_t;
 
@@ -84,13 +85,26 @@ struct Tab {
 
 struct GlobalData {
     Runtime *runtime;
-    std::vector<std::string> log_entries;
+    ListData<std::string> log_entries;
     ListData<ThreadSummary> thread_summaries;
 
     std::function<void(ThreadSummary const &)> onOpenThread;
 
     GlobalData()
-        : thread_summaries(MAX_VISIBLE_THREADS,
+        : log_entries(MAX_VISIBLE_LOGS,
+              [](std::string const &line, ListEntryState const& state) {
+                  Element element = text(line);
+
+                  if (state.focused) {
+                      element |= inverted;
+                  }
+                  if (state.active) {
+                      element |= bold;
+                  }
+
+                  return element;
+              }),
+          thread_summaries(MAX_VISIBLE_THREADS,
               [](ThreadSummary const &summary, ListEntryState const& state) {
                   Element element;
 
@@ -121,7 +135,8 @@ struct GlobalTab : Tab {
     GlobalData *data;
     int thread_selected = -1;
     bool thread_follow_tail = true;
-    int log_selected = 0;
+    int log_selected = -1;
+    bool log_follow_tail = true;
 
     /*
     std::vector<std::string> thread_entries = {
@@ -145,7 +160,9 @@ struct GlobalTab : Tab {
         thread_list = List(&data->thread_summaries,
                            &thread_selected,
                            &thread_follow_tail);
-        log_list = Menu(&data->log_entries, &log_selected);
+        log_list = List(&data->log_entries,
+                        &log_selected,
+                        &log_follow_tail);
 
         left_renderer = Renderer(thread_list, [&] {
             data->syncThreads();
@@ -158,11 +175,10 @@ struct GlobalTab : Tab {
         right_renderer = Renderer(log_list, [&] {
             Element selected_log = text("");
 
-            if (log_selected >= 0 &&
-                log_selected < int(data->log_entries.size())) {
+            if (data->log_entries.contains(log_selected)) {
                 selected_log = vbox({
                     text("selected log") | bold,
-                    text(data->log_entries[log_selected]),
+                    text(data->log_entries.at(log_selected)),
                     text(""),
                     paragraph("This is simulated global runtime log detail. "
                               "Later this can show journal position, message "
@@ -369,7 +385,6 @@ struct ThreadTab : Tab {
 };
 
 class TUI: public UI {
-    size_t max_log_entries = 4096;
     GlobalData global;
 
     std::vector<std::unique_ptr<ThreadData>> threads;
@@ -471,10 +486,6 @@ public:
 
     virtual void appendLog (std::string &&line) {
         global.log_entries.push_back(std::move(line));
-        while (global.log_entries.size() > max_log_entries) {
-            CHECK(0); // switch to deque
-            // global.log_entries.pop_front();
-        }
         screen.PostEvent(ftxui::Event::Custom);
     }
 

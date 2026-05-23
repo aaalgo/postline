@@ -341,12 +341,14 @@ void Runtime::run() {
                 preprocess(todo.agent, msg, this);
             }
             int64_t flags = msg.flags();
+#if 0
             if ((flags & MESSAGE_QUIET) == 0) {
                 std::cerr << "PROCESS " << flags << std::endl;
                 std::cerr << "====" << std::endl;
                 msg.formatEmail(std::cerr);
                 std::cerr << std::endl;
             }
+#endif
             journal.append(msg);
             accounting.update(msg);
             Agent *agent = apply(msg);
