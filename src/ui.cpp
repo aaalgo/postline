@@ -57,6 +57,55 @@ protected:
 static std::shared_ptr<Sink> sink;
 
 
+void UI::initArena () {
+    {
+// TODO: don't do this when resume
+        json h{{"To", "runtime"},
+               {"Subject", "create_domain"},
+               {"Thread-ID", "0"}
+            };
+        json op{{"detach", true}};
+        send(Message(std::move(h),op.dump()));
+    }
+    {
+        json h{{"To", "runtime"},
+               {"Subject", "create_agents"},
+               {"Thread-ID", "1"},
+            };
+        send(Message(std::move(h),std::string(LOCAL_AGENTS)));
+    }
+#if 0
+    {
+        json h{{"To", "runtime"},
+               {"Subject", "create_domain"},
+               {"Thread-ID", "0"}
+            };
+        json op{{"detach", true}};
+        send(Message(std::move(h),op.dump()));
+    }
+    {
+        json h{{"To", "runtime"},
+               {"Subject", "create_agents"},
+               {"Thread-ID", "2"},
+            };
+static char const *LOCAL_AGENTS_2 = R"(
+[
+{"from": "zero", "name": "echo", "service": "pipe:echo", "flags": []},
+{"from": "zero", "name": "ai1", "comment": "openai", "service": "pipe:openai", "flags": ["history"]},
+{"from": "zero", "name": "ai2", "comment": "anthropic", "service": "pipe:claude", "flags": ["history"]},
+{"from": "zero", "name": "ai3", "comment": "openrouter", "service": "pipe:v1", "flags": ["history"]},
+{"from": "zero", "name": "shell", "service": "pipe:shell", "flags": []},
+{"from": "zero", "name": "mcp", "service": "pipe:mcp_bridge", "flags": []},
+{"from": "zero", "name": "memory", "service": "pipe:echo -m", "flags": ["history"]},
+{"from": "zero", "name": "login", "service": "pipe:login", "flags": ["clone"]},
+{"from": "zero", "name": "benchmark", "service": "pipe:benchmark", "flags": []}
+]
+)";
+        send(Message(std::move(h),std::string(LOCAL_AGENTS_2)));
+    }
+#endif
+}
+
 UI::~UI () {
     sink->detachUI();
 }
@@ -82,17 +131,13 @@ public:
 };
 
 
-std::unique_ptr<UI> make_cli (Runtime *) {
-    CHECK(0);
-    return nullptr;
-}
-
 std::unique_ptr<UI> make_auto (Runtime *) {
     CHECK(0);
     return nullptr;
 }
 
 std::unique_ptr<UI> make_tui (Runtime *);
+std::unique_ptr<UI> make_cli (Runtime *);
 std::unique_ptr<UI> make_web (Runtime *);
 
 

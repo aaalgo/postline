@@ -114,6 +114,7 @@ add_library(postline
     src/program.cpp
     src/ui.cpp
     src/tui.cpp
+    src/cli.cpp
     src/web.cpp
 )
 add_library(postline::postline ALIAS postline)
@@ -180,15 +181,6 @@ add_executable(shell_actor
 target_link_libraries(shell_actor PRIVATE postline::postline CLI11::CLI11)
 set_target_properties(shell_actor PROPERTIES
     OUTPUT_NAME shell
-    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/install/bin/adapters"
-)
-
-add_executable(cli_actor
-    src/adapters/cli.cpp
-)
-target_link_libraries(cli_actor PRIVATE postline::postline CLI11::CLI11)
-set_target_properties(cli_actor PROPERTIES
-    OUTPUT_NAME cli
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/install/bin/adapters"
 )
 

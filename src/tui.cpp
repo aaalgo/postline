@@ -1,6 +1,7 @@
 // CLI.cpp
 
 #include <chrono>
+#include <format>
 #include <memory>
 #include <string>
 #include <thread>
@@ -15,11 +16,15 @@
 #include <ftxui/dom/elements.hpp>
 #include <ftxui/component/screen_interactive.hpp>
 
+#include "ftx_list.hpp"
+
 #include <postline/ui.h>
 
 namespace postline { namespace ui {
 
 using namespace ftxui;
+
+static constexpr size_t MAX_VISIBLE_THREADS = 4096;
 
 using ThreadID = size_t;
 
@@ -78,14 +83,47 @@ struct Tab {
 
 
 struct GlobalData {
+    Runtime *runtime;
     std::vector<std::string> log_entries;
+    ListData<ThreadSummary> thread_summaries;
+
+    std::function<void(ThreadSummary const &)> onOpenThread;
+
+    GlobalData()
+        : thread_summaries(MAX_VISIBLE_THREADS,
+              [](ThreadSummary const &summary, ListEntryState const& state) {
+                  Element element;
+
+                  if (summary.name.empty()) {
+                      element = text(std::format("{}", summary.id));
+                  }
+                  else {
+                      element = text(std::format("{}: {}", summary.id, summary.name));
+                  }
+
+                  if (state.focused) {
+                      element |= inverted;
+                  }
+                  if (state.active) {
+                      element |= bold;
+                  }
+
+                  return element;
+              }) {}
+
+    void syncThreads () {
+        runtime->updateThreadSummaries(&thread_summaries);
+    }
 };
+
 
 struct GlobalTab : Tab {
     GlobalData *data;
-    int thread_selected = 0;
+    int thread_selected = -1;
+    bool thread_follow_tail = true;
     int log_selected = 0;
 
+    /*
     std::vector<std::string> thread_entries = {
         "T0  paused   /root/user",
         "T1  running  /root/build",
@@ -93,6 +131,7 @@ struct GlobalTab : Tab {
         "T3  error    /root/compiler",
         "T4  paused   /root/test",
     };
+    */
 
     Component thread_list;
     Component log_list;
@@ -102,10 +141,14 @@ struct GlobalTab : Tab {
     Component renderer;
 
     GlobalTab(GlobalData *d): data(d) {
-        thread_list = Menu(&thread_entries, &thread_selected);
+        data->syncThreads();
+        thread_list = List(&data->thread_summaries,
+                           &thread_selected,
+                           &thread_follow_tail);
         log_list = Menu(&data->log_entries, &log_selected);
 
         left_renderer = Renderer(thread_list, [&] {
+            data->syncThreads();
             return vbox({
                 text("threads") | bold,
                 thread_list->Render() | flex,
@@ -143,7 +186,7 @@ struct GlobalTab : Tab {
 
         renderer = Renderer(root, [&] {
             return hbox({
-                left_renderer->Render() | size(WIDTH, EQUAL, 32),
+                left_renderer->Render() | size(WIDTH, EQUAL, 16),
                 separator(),
                 right_renderer->Render() | flex,
             }) | flex;
@@ -313,7 +356,7 @@ struct ThreadTab : Tab {
                     right_renderer->Render() | flex,
                 }) | flex,
             });
-        });        
+        });
     }
 
     std::string label() const override {
@@ -351,25 +394,34 @@ protected:
         screen.Exit();
     }
 
+    virtual std::vector<Message> on_message (Message &&msg) override {
+        screen.PostEvent(ftxui::Event::Custom);
+        return std::vector<Message>();
+    }
+
 public:
     TUI(Runtime *runtime)
         : UI(runtime),
         screen(ScreenInteractive::Fullscreen()) {
+        global.runtime = runtime;
         // fake threads
+        /*
         for (size_t i = 0; i < 3; ++i) {
             auto t = std::make_unique<ThreadData>();
             t->id = i;
             t->name = "Thread_" + std::to_string(i);
 
             threads.push_back(std::move(t));
-        }
+        }*/
 
         // create tabs
         tabs.push_back(
             std::make_unique<GlobalTab>(&global));
 
+        /*
         tabs.push_back(
             std::make_unique<ThreadTab>(threads[0].get()));
+            */
 
         rebuild_tabs();
 
@@ -467,4 +519,3 @@ std::unique_ptr<UI> make_tui (Runtime *runtime) {
 
 
 }}
-

@@ -242,7 +242,14 @@ struct Thread {
 
 class Runtime;
 
+struct ThreadSummary {
+  ThreadID id;
+  std::string name;
+};
+
+
 struct Program: immobile {
+    std::mutex mutex;
     std::vector<std::unique_ptr<Domain>> domains;
     std::vector<std::unique_ptr<Agent>> agents;
     std::unordered_map<std::string, Snapshot> snapshots;
@@ -281,8 +288,19 @@ struct Program: immobile {
     json dump () const;
 
     Thread *createThread (Domain *root) {
+        std::lock_guard<std::mutex> lock(mutex);
         threads.emplace_back(std::make_unique<Thread>(threads.size(), root));
         return threads.back().get();
+    }
+
+    template <typename T>
+    void updateThreadSummaries (T *summaries) {
+        std::lock_guard<std::mutex> lock(mutex);
+        size_t off = summaries->size();
+        for (size_t i = off; i < threads.size(); ++i) {
+            auto const &from = *threads[i];
+            summaries->push_back(ThreadSummary{.id=from.id, .name=from.name});
+        }
     }
 
     Agent *createAgent (AgentParams const &params, Domain *domain) {
@@ -387,7 +405,7 @@ class Runtime: public Program, public Service {
     int cmd_create_agents (Message const &, json *resp);
     int cmd_create_domain (Message const &, json *resp);
 
-    void updateMemory (Agent *);
+    void updateMemory (Agent *, AccessID end);
 
 public:
     struct Config {

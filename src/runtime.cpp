@@ -255,7 +255,7 @@ void Runtime::call (Message &&msg, Response &resp) {
     resp.append(Message(std::move(respHeader), respBody.dump()));
 }
 
-void Runtime::updateMemory (Agent *agent) {
+void Runtime::updateMemory (Agent *agent, AccessID end) {
     if (agent->flags & AGENT_FLAG_HISTORY == 0) return;
     std::vector<AgentLink> links;
     links.emplace_back(agent->id, agent->anchor());
@@ -283,13 +283,19 @@ void Runtime::updateMemory (Agent *agent) {
                     h["Is-Receiving"] = "1";
                 });
             }
-            agent->driver->send(msg);
+            if (msg.access_id() < end) {
+                agent->driver->send(msg);
+            }
         }
     }
     agent->driver->send(protocol::handshake::EndMemory::make());
 }
 
 void Runtime::run() {
+    struct Todo {
+        Message message;
+        Agent *agent;
+    };
 
     CHECK(user->driver, "Must attachUser first.");
     poller.add(runtime->driver->read_fd(), runtime->id);
@@ -299,7 +305,7 @@ void Runtime::run() {
         auto events = poller.wait();
         CHECK(!events.empty());
 
-        std::vector<Message> todo;
+        std::vector<Todo> todos;
         for (auto const &e : events) {
             CHECK(e.token >= 0 && e.token < agents.size());
             Agent *agent = agents[e.token].get();
@@ -309,8 +315,8 @@ void Runtime::run() {
             try {
                 int err = agent->driver->recv(tmp);
                 for (auto &msg : tmp) {
-                    preprocess(agent, msg, this);
-                    todo.emplace_back(std::move(msg));
+                    //preprocess(agent, msg, this);
+                    todos.emplace_back(Todo{.message = std::move(msg), .agent = agent});
                 }
             }
             catch (eof_error const &) {
@@ -324,12 +330,16 @@ void Runtime::run() {
                     stop_requested = true;
                 }
                 else {
-                    todo.emplace_back(makeRewindMessage(agent, nullptr, "agent has died."));
+                    todos.emplace_back(Todo{.message = makeRewindMessage(agent, nullptr, "agent has died."), .agent = nullptr});
                 }
             }
         }
 
-        for (auto &msg : todo) {
+        for (auto &todo: todos) {
+            Message &msg = todo.message;
+            if (todo.agent) {   // is not rewind message
+                preprocess(todo.agent, msg, this);
+            }
             int64_t flags = msg.flags();
             if ((flags & MESSAGE_QUIET) == 0) {
                 std::cerr << "PROCESS " << flags << std::endl;
@@ -354,7 +364,7 @@ void Runtime::run() {
                           agent->service);
                 agent->driver = create_driver(agent->service);
                 CHECK(agent->driver);
-                updateMemory(agent);
+                updateMemory(agent, msg.access_id());
                 poller.add(agent->driver->read_fd(), agent->id);
             }
             agent->driver->send(msg);
