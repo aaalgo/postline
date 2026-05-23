@@ -16,6 +16,8 @@
 #include <sstream>
 #include <string>
 #include <CLI/CLI.hpp>
+#include <spdlog/spdlog.h>
+#include <unistd.h>
 #include <postline/runtime.h>
 #include <postline/ansi.h>
 #include <postline/ui.h>
@@ -55,6 +57,34 @@ std::string make_journal_name()
         << std::put_time(&tm, "%Y%m%d%H%M%S");
 
     return oss.str();
+}
+
+static void restore_terminal_after_tui()
+{
+    static constexpr char seq[] =
+        "\033[?1000l"
+        "\033[?1002l"
+        "\033[?1003l"
+        "\033[?1005l"
+        "\033[?1006l"
+        "\033[?1015l"
+        "\033[?1016l"
+        "\033[?1049l"
+        "\033[?25h"
+        "\033[?7h"
+        "\033[0m";
+    ::write(STDERR_FILENO, seq, sizeof(seq) - 1);
+}
+
+static void install_atexit_handlers(bool restore_terminal)
+{
+    std::atexit([]{
+        spdlog::shutdown();
+    });
+
+    if (restore_terminal) {
+        std::atexit(restore_terminal_after_tui);
+    }
 }
 
 #if 0
@@ -157,6 +187,7 @@ int main(int argc, char** argv) {
     welcome();
 
     init_logging();
+    install_atexit_handlers(ui_choice == "tui");
 
     log::info("constructing runtime");
 
@@ -177,4 +208,3 @@ int main(int argc, char** argv) {
     std::cerr << "[exit]" << std::endl;
     return 0;
 }
-

@@ -180,10 +180,6 @@ void init_logging () {
     logger->flush_on(spdlog::level::debug);
 
     spdlog::set_default_logger(logger);
-    std::atexit([]{
-        spdlog::shutdown();
-    });
 }
 
 }
-
