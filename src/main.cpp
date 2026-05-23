@@ -177,12 +177,11 @@ int main(int argc, char** argv) {
     Runtime runtime(config);
     auto ui = ui::make_ui(ui_choice, &runtime);
     runtime.attachUser(ui.get());
-    ui->initArena();    // create starting threads
-
     std::thread runtime_thread([&runtime]() {
             log::info("Starting runtime.");
             runtime.run();
             });
+    ui->initArena();    // create starting threads
     ui->run();
     log::info("UI has been gracefully shutdown.");
     runtime_thread.join();

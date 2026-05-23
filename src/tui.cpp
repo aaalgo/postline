@@ -442,7 +442,7 @@ protected:
 
     virtual std::vector<Message> on_message (Message &&msg) override {
         screen.PostEvent(ftxui::Event::Custom);
-        return std::vector<Message>();
+        return UI::on_message(std::move(msg));
     }
 
 public:
@@ -465,9 +465,8 @@ public:
         ButtonOption exit_option;
         exit_option.label = "Exit";
         exit_option.on_click = [this] {
-            this->send(Message(json{{"To", "runtime"},
-                         {"Subject", "exit"},
-                         {"Thread-ID", "0"}}));
+            this->send(0, Message(json{{"To", "runtime"},
+                         {"Subject", "exit"}}));
         };
         exit_option.transform = [this](EntryState const& state) {
             Element element = text(state.label);

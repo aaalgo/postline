@@ -62,29 +62,33 @@ static std::shared_ptr<Sink> sink;
 
 void UI::initArena () {
     {
+        std::lock_guard lock(mutex);
+        threads.emplace_back(std::make_unique<State>());
+        threads.emplace_back(std::make_unique<State>());
+        threads.emplace_back(std::make_unique<State>());
+    }
+    {
 // TODO: don't do this when resume
         json h{{"To", "runtime"},
                {"Subject", "create_domain"},
                {"Thread-ID", "0"}
             };
         json op{{"detach", true}};
-        send(Message(std::move(h),op.dump()));
+        syscall(0, Message(std::move(h),op.dump()));
     }
     {
         json h{{"To", "runtime"},
                {"Subject", "create_agents"},
-               {"Thread-ID", "1"},
             };
-        send(Message(std::move(h),std::string(LOCAL_AGENTS)));
+        syscall(1, Message(std::move(h),std::string(LOCAL_AGENTS)));
     }
     // DEBUG BEGIN:  adding the following two messages triggers segmentation fault
     {
         json h{{"To", "runtime"},
                {"Subject", "create_domain"},
-               {"Thread-ID", "0"}
             };
         json op{{"detach", true}};
-        send(Message(std::move(h),op.dump()));
+        syscall(0, Message(std::move(h),op.dump()));
     }
     {
         json h{{"To", "runtime"},
@@ -104,7 +108,7 @@ static char const *LOCAL_AGENTS_2 = R"(
 {"from": "zero", "name": "benchmark", "service": "pipe:benchmark", "flags": []}
 ]
 )";
-        send(Message(std::move(h),std::string(LOCAL_AGENTS_2)));
+        syscall(2, Message(std::move(h),std::string(LOCAL_AGENTS_2)));
     }
     // DEBUG END
 }
@@ -126,9 +130,8 @@ public:
     }
 
     void run () override {
-        send(Message(json{{"To", "runtime"},
-                     {"Subject", "exit"},
-                     {"Thread-ID", "0"}}));
+        send(0, Message(json{{"To", "runtime"},
+                     {"Subject", "exit"}}));
         ready.wait();
     };
 };

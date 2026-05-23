@@ -1,26 +1,121 @@
 #pragma once
+#include <future>
 #include <postline/runtime.h>
 #include <spdlog/details/log_msg.h>
 
 namespace postline { namespace ui {
 
+
     class UI: public Service {
-        Runtime *rt;
+        struct State {
+            bool pending = false;
+            bool wants_result = false;
+
+            std::promise<Message> promise;
+        };
+        std::vector<std::unique_ptr<State>> threads;
+        std::mutex mutex;
     protected:
-        void send (Message &&msg) {
+
+        Runtime *rt;
+
+        Message syscall(ThreadID thread_id, Message &&msg) {
+            CHECK(thread_id >= 0);
+
+            std::future<Message> future;
+
+            {
+                std::lock_guard lock(mutex);
+
+                CHECK(thread_id < (int)threads.size());
+                CHECK(threads[thread_id]);
+
+                auto &thread = *threads[thread_id];
+
+                CHECK(!thread.pending);
+
+                thread.pending = true;
+                thread.wants_result = true;
+
+                thread.promise = std::promise<Message>{};
+                future = thread.promise.get_future();
+            }
+            msg.updateHeader([thread_id](json &h) {
+                    h["Thread-ID"] = std::format("{}", thread_id);
+                    });
+            rt->enqueueUser(std::move(msg));
+            return future.get();
+        }
+
+        void send(int thread_id, Message &&msg) {
+            CHECK(thread_id >= 0);
+
+            {
+                std::lock_guard lock(mutex);
+
+                CHECK(thread_id < (int)threads.size());
+                CHECK(threads[thread_id]);
+
+                auto &thread = *threads[thread_id];
+
+                CHECK(!thread.pending);
+
+                thread.pending = true;
+                thread.wants_result = false;
+
+                thread.promise = std::promise<Message>{};
+            }
+            msg.updateHeader([thread_id](json &h) {
+                    h["Thread-ID"] = std::format("{}", thread_id);
+                    });
             rt->enqueueUser(std::move(msg));
         }
 
-        virtual std::vector<Message> on_message (Message &&msg) override {
-            return std::vector<Message>();
-        }
+        virtual std::vector<Message> on_message(Message &&msg) override {
+            // handle syscall results
+            // update threads
+            //msg.formatEmail(std::cerr);
 
-        virtual void call (Message &&, Response &) override {
-            CHECK(0);   // not used
+            int thread_id = msg.thread_id();
+
+            CHECK(thread_id >= 0);
+
+            std::promise<Message> promise;
+            bool wants_result = false;
+
+            {
+                std::lock_guard lock(mutex);
+
+                CHECK(thread_id < (int)threads.size());
+                CHECK(threads[thread_id]);
+
+                auto &thread = *threads[thread_id];
+
+                CHECK(thread.pending);
+
+                wants_result = thread.wants_result;
+
+                if (wants_result) {
+                    promise = std::move(thread.promise);
+                    thread.promise = std::promise<Message>{};
+                }
+
+                thread.pending = false;
+                thread.wants_result = false;
+            }
+
+            if (wants_result) {
+                promise.set_value(std::move(msg));
+            }
+
+            return {};
         }
 
     public:
-        UI (Runtime *rt_): rt(rt_) {}
+
+        UI (Runtime *rt_): rt(rt_) {
+            threads.emplace_back(std::make_unique<State>());
+        }
 
         virtual ~UI ();
 
