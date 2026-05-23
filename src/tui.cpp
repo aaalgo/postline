@@ -1,34 +1,121 @@
-// CLI.cpp
-
 #include <chrono>
+#include <ctime>
 #include <format>
+#include <iomanip>
 #include <memory>
 #include <mutex>
+#include <sstream>
 #include <string>
 #include <thread>
 #include <vector>
-
-//#include <ftxui/component/app.hpp>
+#include <spdlog/details/log_msg_buffer.h>
 #include <ftxui/component/component.hpp>
 #include <ftxui/component/component_base.hpp>
 #include <ftxui/component/component_options.hpp>
 #include <ftxui/component/loop.hpp>
-
 #include <ftxui/dom/elements.hpp>
 #include <ftxui/component/screen_interactive.hpp>
-
-#include "ftx_list.hpp"
-
 #include <postline/ui.h>
+#include "ftx_list.hpp"
 
 namespace postline { namespace ui {
 
 using namespace ftxui;
 
 static constexpr size_t MAX_VISIBLE_THREADS = 4096;
-static constexpr size_t MAX_VISIBLE_LOGS = 4096;
+static constexpr size_t MAX_VISIBLE_LOGS = 16384;
 
 using ThreadID = size_t;
+
+static Decorator logLevelColor(spdlog::level::level_enum level) {
+    switch (level) {
+    case spdlog::level::trace:
+        return color(Color::GrayLight);
+    case spdlog::level::debug:
+        return color(Color::Cyan);
+    case spdlog::level::info:
+        return color(Color::Green);
+    case spdlog::level::warn:
+        return color(Color::Yellow);
+    case spdlog::level::err:
+        return color(Color::RedLight) | bold;
+    case spdlog::level::critical:
+        return color(Color::Red) | bold;
+    default:
+        return color(Color::GrayDark);
+    }
+}
+
+std::string toString(spdlog::string_view_t view) {
+    return std::string(view.data(), view.size());
+}
+
+
+static Element renderLogEntry(spdlog::details::log_msg const& msg) {
+    std::string level = toString(spdlog::level::to_string_view(msg.level));
+    std::string payload = toString(msg.payload);
+
+    return hbox({
+        text("["),
+        text(level) | logLevelColor(msg.level),
+        text("] "),
+        text(payload),
+    });
+}
+
+static std::string formatLogTime(spdlog::log_clock::time_point time) {
+    auto time_t = spdlog::log_clock::to_time_t(time);
+    std::tm tm;
+    localtime_r(&time_t, &tm);
+
+    auto millis = std::chrono::duration_cast<std::chrono::milliseconds>(
+        time.time_since_epoch()).count() % 1000;
+
+    std::ostringstream out;
+    out << std::put_time(&tm, "%H:%M:%S")
+        << "." << std::setfill('0') << std::setw(3) << millis;
+    return out.str();
+}
+
+static Element renderLogDetail(spdlog::details::log_msg const& msg) {
+    std::string level = toString(spdlog::level::to_string_view(msg.level));
+    std::string logger = toString(msg.logger_name);
+    std::string payload = toString(msg.payload);
+    std::string filename = msg.source.filename ? msg.source.filename : "";
+    std::string funcname = msg.source.funcname ? msg.source.funcname : "";
+
+    if (logger.empty()) {
+        logger = "(default)";
+    }
+
+    if (filename.empty()) {
+        filename = "(unknown)";
+    }
+
+    if (funcname.empty()) {
+        funcname = "(unknown)";
+    }
+
+    return vbox({
+        hbox({
+            text("["),
+            text(level) | logLevelColor(msg.level),
+            text("] "),
+            text(logger) | color(Color::Cyan),
+            text("  "),
+            text(formatLogTime(msg.time)) | color(Color::Green),
+            text("  #"),
+            text(std::format("{}", msg.thread_id)) | color(Color::Yellow),
+        }),
+        hbox({
+            text(std::format("{}:{}", filename, msg.source.line))
+                | color(Color::GrayLight),
+            text("  "),
+            text(funcname) | color(Color::Magenta),
+        }),
+        paragraph(payload),
+    });
+}
 
 struct ThreadData {
     ThreadID id;
@@ -45,15 +132,15 @@ struct Tab {
 
 struct GlobalData {
     Runtime *runtime;
-    ListData<std::string> log_entries;
+    ListData<spdlog::details::log_msg_buffer> log_entries;
     ListData<ThreadSummary> thread_summaries;
 
     std::function<void(ThreadSummary const &)> onOpenThread;
 
     GlobalData()
         : log_entries(MAX_VISIBLE_LOGS,
-              [](std::string const &line) {
-                  return text(line);
+              [](spdlog::details::log_msg const &msg) {
+                  return renderLogEntry(msg);
               }),
           thread_summaries(MAX_VISIBLE_THREADS,
               [](ThreadSummary const &summary) {
@@ -77,20 +164,10 @@ struct GlobalData {
 
 struct GlobalTab : Tab {
     GlobalData *data;
-    int thread_selected = -1;
-    bool thread_follow_tail = true;
+    int thread_selected = 0;
+    bool thread_follow_tail = false;
     int log_selected = -1;
     bool log_follow_tail = true;
-
-    /*
-    std::vector<std::string> thread_entries = {
-        "T0  paused   /root/user",
-        "T1  running  /root/build",
-        "T2  blocked  /root/ui",
-        "T3  error    /root/compiler",
-        "T4  paused   /root/test",
-    };
-    */
 
     Component thread_list;
     Component log_list;
@@ -120,22 +197,14 @@ struct GlobalTab : Tab {
             Element selected_log = text("");
 
             if (data->log_entries.contains(log_selected)) {
-                selected_log = vbox({
-                    text("selected log") | bold,
-                    text(data->log_entries.at(log_selected)),
-                    text(""),
-                    paragraph("This is simulated global runtime log detail. "
-                              "Later this can show journal position, message "
-                              "headers, domain/thread identifiers, and error "
-                              "diagnostics."),
-                });
+                selected_log = renderLogDetail(data->log_entries.at(log_selected));
             }
 
             return vbox({
                 text("runtime log") | bold,
                 log_list->Render() | flex,
                 separator(),
-                selected_log | size(HEIGHT, EQUAL, 6),
+                selected_log | size(HEIGHT, EQUAL, 5),
             });
         });
 
@@ -331,7 +400,7 @@ struct ThreadTab : Tab {
 class TUI: public UI {
     GlobalData global;
     std::mutex pending_log_mutex;
-    std::vector<std::string> pending_logs;
+    std::vector<spdlog::details::log_msg_buffer> pending_logs;
 
     std::vector<std::unique_ptr<ThreadData>> threads;
 
@@ -431,10 +500,10 @@ public:
         });
     }
 
-    virtual void appendLog (std::string &&line) {
+    void appendLog (spdlog::details::log_msg const& msg) override {
         {
             std::lock_guard<std::mutex> lock(pending_log_mutex);
-            pending_logs.push_back(std::move(line));
+            pending_logs.emplace_back(msg);
         }
         screen.PostEvent(ftxui::Event::Custom);
     }
@@ -455,14 +524,14 @@ public:
 
 private:
     void drainLogs() {
-        std::vector<std::string> logs;
+        std::vector<spdlog::details::log_msg_buffer> logs;
         {
             std::lock_guard<std::mutex> lock(pending_log_mutex);
             logs.swap(pending_logs);
         }
 
-        for (auto &line: logs) {
-            global.log_entries.push_back(std::move(line));
+        for (auto &msg: logs) {
+            global.log_entries.push_back(std::move(msg));
         }
     }
 

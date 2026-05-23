@@ -170,14 +170,21 @@ class ListBase : public ComponentBase, public ListOption {
     const bool old_follow_tail = follow_tail();
 
     if (event == Event::ArrowUp || event == Event::Character('k')) {
-      SelectFromTailOrViewport(/*from_bottom=*/true);
-      selected() = std::max(firstValid(), selected() - 1);
+      if (selected() < 0) {
+        selected() = end() - 1;
+      } else {
+        selected() = std::max(firstValid(), selected() - 1);
+      }
       follow_tail() = false;
     }
 
     if (event == Event::ArrowDown || event == Event::Character('j')) {
+      if (follow_tail()) {
+        return false;
+      }
+
       if (selected() < 0) {
-        SelectFromViewport(/*from_bottom=*/false);
+        selected() = firstValid();
         follow_tail() = false;
       } else if (selected() + 1 >= end()) {
         selected() = -1;
@@ -195,6 +202,10 @@ class ListBase : public ComponentBase, public ListOption {
     }
 
     if (event == Event::PageDown) {
+      if (follow_tail()) {
+        return false;
+      }
+
       if (selected() < 0) {
         SelectFromViewport(/*from_bottom=*/false);
         follow_tail() = false;
