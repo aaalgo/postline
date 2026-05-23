@@ -21,11 +21,11 @@
 namespace postline { namespace ui {
 
 using namespace ftxui;
+using postline::NOT_A_THREAD;
+using postline::ThreadID;
 
 static constexpr size_t MAX_VISIBLE_THREADS = 4096;
 static constexpr size_t MAX_VISIBLE_LOGS = 16384;
-
-using ThreadID = size_t;
 
 static Decorator logLevelColor(spdlog::level::level_enum level) {
     switch (level) {
@@ -127,6 +127,7 @@ struct Tab {
 
     virtual std::string label() const = 0;
     virtual Component component() = 0;
+    virtual ThreadID threadId() const { return NOT_A_THREAD; }
 };
 
 
@@ -178,9 +179,20 @@ struct GlobalTab : Tab {
 
     GlobalTab(GlobalData *d): data(d) {
         data->syncThreads();
+
+        ListOption thread_list_option;
+        thread_list_option.on_open_selection = [this] {
+            if (!data->thread_summaries.contains(thread_selected)) {
+                return;
+            }
+            if (data->onOpenThread) {
+                data->onOpenThread(data->thread_summaries.at(thread_selected));
+            }
+        };
         thread_list = List(&data->thread_summaries,
                            &thread_selected,
-                           &thread_follow_tail);
+                           &thread_follow_tail,
+                           std::move(thread_list_option));
         log_list = List(&data->log_entries,
                         &log_selected,
                         &log_follow_tail);
@@ -395,6 +407,10 @@ struct ThreadTab : Tab {
     Component component() override {
         return renderer;
     }
+
+    ThreadID threadId() const override {
+        return thread->id;
+    }
 };
 
 class TUI: public UI {
@@ -434,24 +450,15 @@ public:
         : UI(runtime),
         screen(ScreenInteractive::Fullscreen()) {
         global.runtime = runtime;
-        // fake threads
-        /*
-        for (size_t i = 0; i < 3; ++i) {
-            auto t = std::make_unique<ThreadData>();
-            t->id = i;
-            t->name = "Thread_" + std::to_string(i);
-
-            threads.push_back(std::move(t));
-        }*/
+        global.onOpenThread = [this](ThreadSummary const &summary) {
+            openThreadTab(summary);
+        };
 
         // create tabs
         tabs.push_back(
             std::make_unique<GlobalTab>(&global));
 
-        /*
-        tabs.push_back(
-            std::make_unique<ThreadTab>(threads[0].get()));
-            */
+        openThreadTab(ThreadSummary{.id = 0, .name = ""});
 
         rebuild_tabs();
 
@@ -533,6 +540,26 @@ private:
         for (auto &msg: logs) {
             global.log_entries.push_back(std::move(msg));
         }
+    }
+
+    void openThreadTab(ThreadSummary const &summary) {
+        for (size_t i = 0; i < tabs.size(); ++i) {
+            if (tabs[i]->threadId() == summary.id) {
+                tab_index = int(i);
+                return;
+            }
+        }
+
+        auto thread = std::make_unique<ThreadData>();
+        thread->id = summary.id;
+        thread->name = summary.name;
+
+        ThreadData *thread_ptr = thread.get();
+        threads.push_back(std::move(thread));
+        tabs.push_back(std::make_unique<ThreadTab>(thread_ptr));
+
+        tab_index = int(tabs.size()) - 1;
+        rebuild_tabs();
     }
 
     void rebuild_tabs() {

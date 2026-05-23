@@ -22,6 +22,7 @@ inline void print_stacktrace(int fd = STDERR_FILENO)
     int line,
     const std::string& msg)
 {
+    restore_terminal();
     std::cerr << std::format(
             "CHECK failed: {}\nat {}:{}\n{}\n",
             expr, file, line, msg);
@@ -240,5 +241,22 @@ char const *LOCAL_AGENTS = R"(
 {"from": "zero", "name": "benchmark", "service": "pipe:benchmark", "flags": []}
 ]
 )";
+
+void restore_terminal () {
+    static constexpr char seq[] =
+        "\033[?1000l"
+        "\033[?1002l"
+        "\033[?1003l"
+        "\033[?1005l"
+        "\033[?1006l"
+        "\033[?1015l"
+        "\033[?1016l"
+        "\033[?1049l"
+        "\033[?25h"
+        "\033[?7h"
+        "\033[0m";
+    ::write(STDERR_FILENO, seq, sizeof(seq) - 1);
+}
+
 
 } // namespace postline

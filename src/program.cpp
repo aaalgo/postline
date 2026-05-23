@@ -343,11 +343,13 @@ void Program::preprocess (Agent *from, Message &msg, Runtime *runtime) {
         else {
             expected = ctx.thread->stack.back().to;
         }
+        ctx.from = expected;
+        CHECK(ctx.from.agent);
+        CHECK(ctx.from.domain);
         if (expected.agent != from) {
             ctx.error = std::format("expected from agent {} but got {}", expected.agent->name, from->name);
             break;
         }
-        ctx.from = expected;
         if (from->domain != global) {
             // this can be relaxed later, but for now we
             // want all non-global agent to send from their own domains

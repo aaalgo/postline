@@ -59,31 +59,14 @@ std::string make_journal_name()
     return oss.str();
 }
 
-static void restore_terminal_after_tui()
-{
-    static constexpr char seq[] =
-        "\033[?1000l"
-        "\033[?1002l"
-        "\033[?1003l"
-        "\033[?1005l"
-        "\033[?1006l"
-        "\033[?1015l"
-        "\033[?1016l"
-        "\033[?1049l"
-        "\033[?25h"
-        "\033[?7h"
-        "\033[0m";
-    ::write(STDERR_FILENO, seq, sizeof(seq) - 1);
-}
-
-static void install_atexit_handlers(bool restore_terminal)
+static void install_atexit_handlers(bool is_tui)
 {
     std::atexit([]{
         spdlog::shutdown();
     });
 
-    if (restore_terminal) {
-        std::atexit(restore_terminal_after_tui);
+    if (is_tui) {
+        std::atexit(restore_terminal);
     }
 }
 

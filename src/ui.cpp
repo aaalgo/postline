@@ -77,7 +77,7 @@ void UI::initArena () {
             };
         send(Message(std::move(h),std::string(LOCAL_AGENTS)));
     }
-#if 0
+    // DEBUG BEGIN:  adding the following two messages triggers segmentation fault
     {
         json h{{"To", "runtime"},
                {"Subject", "create_domain"},
@@ -106,7 +106,7 @@ static char const *LOCAL_AGENTS_2 = R"(
 )";
         send(Message(std::move(h),std::string(LOCAL_AGENTS_2)));
     }
-#endif
+    // DEBUG END
 }
 
 UI::~UI () {

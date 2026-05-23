@@ -248,6 +248,8 @@ namespace postline {
 
 extern char const *LOCAL_AGENTS;
 
+void restore_terminal();
+
 } // namespace postline
   //
 #include "protocol.h"
