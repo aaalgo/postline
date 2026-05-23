@@ -1,5 +1,6 @@
 #pragma once
 #include <postline/runtime.h>
+#include <spdlog/details/log_msg.h>
 
 namespace postline { namespace ui {
 
@@ -25,7 +26,7 @@ namespace postline { namespace ui {
 
         void initArena ();
 
-        virtual void appendLog (std::string &&) {
+        virtual void appendLog (spdlog::details::log_msg const&) {
         }
 
         virtual void run () = 0;
@@ -35,4 +36,3 @@ namespace postline { namespace ui {
 
 }
 }
-

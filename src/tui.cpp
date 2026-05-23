@@ -3,6 +3,7 @@
 #include <chrono>
 #include <format>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <thread>
 #include <vector>
@@ -34,47 +35,6 @@ struct ThreadData {
     std::string name;
 };
 
-Component SlimButton(std::string label, std::function<void()> on_click) {
-    class Impl : public ComponentBase {
-    public:
-        Impl(std::string label_, std::function<void()> on_click_)
-            : label(std::move(label_)),
-              on_click(std::move(on_click_)) {}
-
-        Element OnRender() override {
-            auto e = text(label);
-            if (Focused())
-                e = e | inverted;
-            return e;
-        }
-
-        bool OnEvent(Event event) override {
-            if (event == Event::Return ||
-                event == Event::Character(' ')) {
-                on_click();
-                return true;
-            }
-
-            /*
-            if (event.is_mouse() &&
-                event.mouse().button == Mouse::Left &&
-                event.mouse().motion == Mouse::Pressed) {
-                on_click();
-                return true;
-            }
-            */
-
-            return false;
-        }
-
-    private:
-        std::string label;
-        std::function<void()> on_click;
-    };
-
-    return Make<Impl>(std::move(label), std::move(on_click));
-}
-
 struct Tab {
     virtual ~Tab() = default;
 
@@ -92,20 +52,11 @@ struct GlobalData {
 
     GlobalData()
         : log_entries(MAX_VISIBLE_LOGS,
-              [](std::string const &line, ListEntryState const& state) {
-                  Element element = text(line);
-
-                  if (state.focused) {
-                      element |= inverted;
-                  }
-                  if (state.active) {
-                      element |= bold;
-                  }
-
-                  return element;
+              [](std::string const &line) {
+                  return text(line);
               }),
           thread_summaries(MAX_VISIBLE_THREADS,
-              [](ThreadSummary const &summary, ListEntryState const& state) {
+              [](ThreadSummary const &summary) {
                   Element element;
 
                   if (summary.name.empty()) {
@@ -113,13 +64,6 @@ struct GlobalData {
                   }
                   else {
                       element = text(std::format("{}: {}", summary.id, summary.name));
-                  }
-
-                  if (state.focused) {
-                      element |= inverted;
-                  }
-                  if (state.active) {
-                      element |= bold;
                   }
 
                   return element;
@@ -386,6 +330,8 @@ struct ThreadTab : Tab {
 
 class TUI: public UI {
     GlobalData global;
+    std::mutex pending_log_mutex;
+    std::vector<std::string> pending_logs;
 
     std::vector<std::unique_ptr<ThreadData>> threads;
 
@@ -470,6 +416,7 @@ public:
         });
 
         main_renderer = Renderer(main_container, [&] {
+            drainLogs();
             return vbox({
                 hbox({
                     text("Postline") | bold,
@@ -485,7 +432,10 @@ public:
     }
 
     virtual void appendLog (std::string &&line) {
-        global.log_entries.push_back(std::move(line));
+        {
+            std::lock_guard<std::mutex> lock(pending_log_mutex);
+            pending_logs.push_back(std::move(line));
+        }
         screen.PostEvent(ftxui::Event::Custom);
     }
 
@@ -504,6 +454,18 @@ public:
     }
 
 private:
+    void drainLogs() {
+        std::vector<std::string> logs;
+        {
+            std::lock_guard<std::mutex> lock(pending_log_mutex);
+            logs.swap(pending_logs);
+        }
+
+        for (auto &line: logs) {
+            global.log_entries.push_back(std::move(line));
+        }
+    }
+
     void rebuild_tabs() {
         tab_labels.clear();
         tab_components.clear();

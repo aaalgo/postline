@@ -1,6 +1,8 @@
+#include <iostream>
 #include <latch>
 #include <spdlog/spdlog.h>
 #include <spdlog/details/log_msg.h>
+#include <spdlog/details/log_msg_buffer.h>
 #include <spdlog/sinks/base_sink.h>
 #include <spdlog/sinks/rotating_file_sink.h>
 #include <postline/ui.h>
@@ -9,14 +11,20 @@ namespace postline { namespace ui {
 
 class Sink final : public spdlog::sinks::base_sink<std::mutex> {
     UI* ui;
-    std::vector<std::string> pending_lines;
+    std::vector<spdlog::details::log_msg_buffer> pending_logs;
+
+    std::string format (spdlog::details::log_msg const& msg) {
+        spdlog::memory_buf_t buf;
+        this->formatter_->format(msg, buf);
+        return fmt::to_string(buf);
+    }
 public:
     Sink(): ui(nullptr) {
     }
 
     ~Sink () {
-        for (auto const &line: pending_lines) {
-            std::cerr << line << std::endl;
+        for (auto const &msg: pending_logs) {
+            std::cerr << format(msg) << std::endl;
         }
     }
 
@@ -25,10 +33,10 @@ public:
         CHECK(ui_);
         std::lock_guard<std::mutex> lock(mutex_);
         ui = ui_;
-        for (auto& line : pending_lines) {
-            ui->appendLog(std::move(line));
+        for (auto const& msg : pending_logs) {
+            ui->appendLog(msg);
         }
-        pending_lines.clear();
+        pending_logs.clear();
     }
 
     void detachUI() {
@@ -38,15 +46,10 @@ public:
 
 protected:
     void sink_it_(spdlog::details::log_msg const& msg) override {
-        spdlog::memory_buf_t buf;
-        this->formatter_->format(msg, buf);
-
-        std::string line = fmt::to_string(buf);
-
         if (ui) {
-            ui->appendLog(std::move(line));
+            ui->appendLog(msg);
         } else {
-            pending_lines.push_back(std::move(line));
+            pending_logs.emplace_back(msg);
         }
     }
 
@@ -183,5 +186,4 @@ void init_logging () {
 }
 
 }
-
 

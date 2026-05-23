@@ -21,23 +21,18 @@
 namespace ftxui {
     using postline::check_fail;
 
-struct ListEntryState {
-  bool active = false;
-  bool focused = false;
-};
-
 class ListDataRef {
  public:
   virtual ~ListDataRef() = default;
 
   virtual int firstValid() const = 0;
   virtual int end() const = 0;
-  virtual Element Render(int index, ListEntryState const& state) const = 0;
+  virtual Element Render(int index) const = 0;
 };
 
 template <typename T>
 class ListData : public ListDataRef {
-  using Renderer = std::function<Element(T const&, ListEntryState const&)>;
+  using Renderer = std::function<Element(T const&)>;
 
   std::deque<T> items_;
   size_t limit_;
@@ -76,8 +71,8 @@ class ListData : public ListDataRef {
     return items_[index - first_valid_];
   }
 
-  Element Render(int index, ListEntryState const& state) const override {
-    return renderer_(at(index), state);
+  Element Render(int index) const override {
+    return renderer_(at(index));
   }
 
   void push_back(T const& item) {
@@ -144,13 +139,12 @@ class ListBase : public ComponentBase, public ListOption {
       box_indexes_.push_back(i);
 
       const bool active = selected() == i;
-      const ListEntryState state{
-          active,
-          active && Focused(),
-      };
-
-      Element element = entries->Render(i, state);
+      Element element = entries->Render(i);
+      if (active && Focused()) {
+        element |= inverted;
+      }
       if (active) {
+        element |= bold;
         element |= focus;
       }
       elements.push_back(element | reflect(boxes_.back()));
