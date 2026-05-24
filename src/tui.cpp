@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <chrono>
 #include <ctime>
 #include <format>
@@ -9,6 +10,8 @@
 #include <sstream>
 #include <string>
 #include <thread>
+#include <tuple>
+#include <unordered_set>
 #include <vector>
 #include <spdlog/details/log_msg_buffer.h>
 #include <ftxui/component/component.hpp>
@@ -125,6 +128,96 @@ static Element renderLogDetail(spdlog::details::log_msg const& msg) {
     });
 }
 
+static std::string renderHeaderValue(json const &value, bool force_list) {
+    if (value.is_array()) {
+        std::ostringstream os;
+        bool is_first = true;
+        for (auto const &v: value) {
+            CHECK(v.is_string());
+            if (is_first) {
+                is_first = false;
+            }
+            else {
+                os << ", ";
+            }
+            os << v.get_ref<std::string const &>();
+        }
+        return os.str();
+    }
+
+    CHECK(!force_list);
+    CHECK(value.is_string());
+    return value.get_ref<std::string const &>();
+}
+
+static void appendTextLines(Elements &lines, std::string_view text_lines) {
+    for (;;) {
+        auto off = text_lines.find('\n');
+        if (off == std::string_view::npos) {
+            if (!text_lines.empty()) {
+                lines.push_back(paragraph(std::string(text_lines)));
+            }
+            return;
+        }
+
+        lines.push_back(paragraph(std::string(text_lines.substr(0, off))));
+        text_lines.remove_prefix(off + 1);
+    }
+}
+
+static void appendHeaderLine(
+        Elements &lines,
+        std::string const &key,
+        json const &value,
+        bool force_list) {
+    if (value.is_null()) {
+        return;
+    }
+
+    lines.push_back(hbox({
+        text(key + ": ") | color(Color::Cyan) | bold,
+        text(renderHeaderValue(value, force_list)),
+    }));
+}
+
+static void appendMessageHeaders(Elements &lines, json const &header) {
+    static const std::vector<std::tuple<char const *, bool, bool>> canonical = {
+        {"From", false, true},
+        {"To", false, true},
+        {"Cc", true, true},
+        {"Subject", false, true},
+        {"Content-Type", false, false},
+        {"Content-Disposition", false, false},
+    };
+
+    std::unordered_set<std::string> used;
+    used.insert("type");
+    used.insert("Thinking");
+    used.insert("Trash");
+    used.insert(CONTEXT_HEADER_NAME);
+
+    auto thinking = header.find("Thinking");
+    if (thinking != header.end() && thinking->is_string()) {
+        appendTextLines(lines, thinking->get_ref<std::string const &>());
+    }
+
+    for (auto const &[key, is_list, is_essential] : canonical) {
+        auto it = header.find(key);
+        if (it == header.end()) {
+            continue;
+        }
+        used.insert(key);
+        appendHeaderLine(lines, key, *it, is_list);
+    }
+
+    for (auto const &[key, value] : header.items()) {
+        if (used.contains(key)) {
+            continue;
+        }
+        appendHeaderLine(lines, key, value, false);
+    }
+}
+
 struct Tab {
     virtual ~Tab() = default;
 
@@ -235,6 +328,9 @@ struct ThreadTab : Tab {
     int nav_selected = 0;
     int trace_selected = 0;
     bool trace_follow_tail = true;
+    int message_scroll = 0;
+    int message_line_count = 0;
+    AccessID message_access_id = NO_ACCESS_ID;
 
     std::vector<std::string> nav_modes = {
         "tree", "stack", "members",
@@ -273,25 +369,69 @@ struct ThreadTab : Tab {
     Component member_list;
     Component nav_content;
     Component trace_list;
+    Component message_viewer;
     Component editor;
 
     Component left_renderer;
+    Component middle_renderer;
     Component right_renderer;
     Component root;
     Component renderer;
 
     Element renderMessage (AccessID id) {
+        if (message_access_id != id) {
+            message_access_id = id;
+            message_scroll = 0;
+        }
+
         Message msg = runtime->readMessage(id);
-        // below is a placeholder to be replaced
-        return vbox({
-                        text("selected message") | bold,
-                        text("From: compiler"),
-                        text("To: writer"),
-                        text("Type: return"),
-                        text(""),
-                        paragraph("Compilation finished successfully. "
-                                  "No diagnostics were produced."),
-                    });
+        Elements lines;
+        json const &header = msg.header();
+
+        /*
+        if (header.contains(CONTEXT_HEADER_NAME)) {
+            appendTextLines(lines, header.at(CONTEXT_HEADER_NAME).dump(2));
+        }
+        */
+
+        appendMessageHeaders(lines, header);
+        lines.push_back(text(""));
+        appendTextLines(lines, msg.body());
+        message_line_count = int(lines.size());
+        message_scroll = std::clamp(message_scroll, 0,
+                                    std::max(0, message_line_count - 1));
+
+        return vbox(std::move(lines));
+    }
+
+    bool onMessageViewerEvent(Event event) {
+        if (event == Event::ArrowUp || event == Event::Character('k')) {
+            message_scroll = std::max(0, message_scroll - 1);
+            return true;
+        }
+        if (event == Event::ArrowDown || event == Event::Character('j')) {
+            message_scroll = std::min(std::max(0, message_line_count - 1),
+                                      message_scroll + 1);
+            return true;
+        }
+        if (event == Event::PageUp) {
+            message_scroll = std::max(0, message_scroll - 10);
+            return true;
+        }
+        if (event == Event::PageDown) {
+            message_scroll = std::min(std::max(0, message_line_count - 1),
+                                      message_scroll + 10);
+            return true;
+        }
+        if (event == Event::Home) {
+            message_scroll = 0;
+            return true;
+        }
+        if (event == Event::End) {
+            message_scroll = std::max(0, message_line_count - 1);
+            return true;
+        }
+        return false;
     }
 
     explicit ThreadTab(Runtime *runtime_, Observer::Thread *data_)
@@ -315,6 +455,20 @@ struct ThreadTab : Tab {
                            &trace_selected,
                            &trace_follow_tail);
 
+        message_viewer = Renderer([&](bool) {
+            Element message = text("");
+
+            if (trace_selected >= 0 &&
+                trace_selected < int(data->trace.size())) {
+                message = renderMessage(data->trace.at(trace_selected).id);
+            }
+
+            return message | focusPosition(0, message_scroll) | yframe;
+        });
+        message_viewer |= CatchEvent([&](Event event) {
+            return onMessageViewerEvent(event);
+        });
+
         editor = Input(&editor_content, "message");
 
         left_renderer = Renderer(
@@ -337,33 +491,29 @@ struct ThreadTab : Tab {
                         text(std::format("{}", data->id)) | color(Color::Yellow),
                         thread_name,
                     }),
-                    separator(),
                     nav_mode_menu->Render(),
                     separator(),
                     nav_content->Render() | flex,
                 });
             });
 
-        right_renderer = Renderer(
-            Container::Vertical({
-                trace_list,
-                editor,
-            }),
+        middle_renderer = Renderer(
+            trace_list,
             [&] {
-                Element selected_message = text("");
-
-                if (trace_selected >= 0 &&
-                    trace_selected < int(data->trace.size())) {
-                    selected_message = renderMessage(data->trace.at(trace_selected).id);
-                }
-
                 return vbox({
                     text("trace") | bold,
                     trace_list->Render() | flex,
+                });
+            });
 
-                    separator(),
-
-                    selected_message | size(HEIGHT, EQUAL, 4),
+        right_renderer = Renderer(
+            Container::Vertical({
+                message_viewer,
+                editor,
+            }),
+            [&] {
+                return vbox({
+                    message_viewer->Render() | flex,
 
                     separator(),
 
@@ -373,12 +523,13 @@ struct ThreadTab : Tab {
                             text("To: "),
                             editor->Render() | flex,
                         }),
-                    }) | size(HEIGHT, EQUAL, 7),
-                });                        
+                    }) | size(HEIGHT, EQUAL, 12),
+                });
             });
 
         root = Container::Horizontal({
             left_renderer,
+            middle_renderer,
             right_renderer,
         });
 
@@ -391,7 +542,9 @@ struct ThreadTab : Tab {
                     text(thread->name),
                 }),*/
                 hbox({
-                    left_renderer->Render() | size(WIDTH, EQUAL, 24),
+                    left_renderer->Render() | size(WIDTH, LESS_THAN, 24),
+                    separator(),
+                    middle_renderer->Render() | size(WIDTH, LESS_THAN, 40) | flex,
                     separator(),
                     right_renderer->Render() | flex,
                 }) | flex,
@@ -465,13 +618,7 @@ class TUI: public UI, public Observer {
                 return;
             }
         }
-
-        addTab(std::make_unique<ThreadTab>(global.runtime, Observer::threads[id].get()));
-
-        tab_index = int(tabs.size()) - 1;
-        if (main_renderer) {
-            screen.PostEvent(ftxui::Event::Custom);
-        }
+        CHECK(0);
     }
 
     void syncObserver() {
@@ -485,6 +632,7 @@ class TUI: public UI, public Observer {
                 name = std::format("{}: {}", th->id, th->name);
             }
             global.threads.push_back(std::move(name));
+            addTab(std::make_unique<ThreadTab>(global.runtime, th));
         }
     }
 
@@ -507,7 +655,6 @@ public:
 
         // create tabs
         addTab(std::make_unique<GlobalTab>(&global));
-
 
         tab_selection = Menu(
             &tab_labels,
