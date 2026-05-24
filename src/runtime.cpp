@@ -123,7 +123,8 @@ int Runtime::cmd_create_domain (Message const &msg, json *resp) {
 
 Runtime::SyscallResult Runtime::syscall (json const &op) {
     Message entry = protocol::runtime::Commit::make(op);
-    append(entry);
+    journal.append(entry);
+    if (consume) consume(std::move(entry));
     return __commit(op);
 }
 
@@ -349,7 +350,7 @@ void Runtime::run() {
                 std::cerr << std::endl;
             }
 #endif
-            append(msg);
+            journal.append(msg);
             accounting.update(msg);
             Agent *agent = apply(msg);
             if (!agent->driver) {
@@ -370,15 +371,18 @@ void Runtime::run() {
                 poller.add(agent->driver->read_fd(), agent->id);
             }
             agent->driver->send(msg);
+            if (consume) consume(std::move(msg));
         }
     }
 
+    // from this point on we don't call consume anymore
+    // as we are in shutdown process
     {
         json ops = json::array();
         json op{{"op", "begin_shutdown"}};
         ops.push_back(op);
         Message msg = protocol::runtime::Commit::make(ops);
-        append(msg);
+        journal.append(msg);
     }
 
     size_t trailing = 0;
@@ -392,7 +396,7 @@ void Runtime::run() {
             agent->driver->recv(tmp);
             for (auto &msg: tmp) {
                 --agent->obligation_count;
-                append(msg);
+                journal.append(msg);
             }
             trailing += tmp.size();
         }
@@ -409,7 +413,7 @@ void Runtime::run() {
         json op{{"op", "end_shutdown"}};
         ops.push_back(op);
         Message msg = protocol::runtime::Commit::make(ops);
-        append(msg);
+        journal.append(msg);
         log::info("runtime shutdown.");
     }
 }

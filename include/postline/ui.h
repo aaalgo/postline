@@ -10,7 +10,6 @@ namespace postline { namespace ui {
         struct State {
             bool pending = false;
             bool wants_result = false;
-
             std::promise<Message> promise;
         };
         std::vector<std::unique_ptr<State>> threads;
@@ -126,6 +125,10 @@ namespace postline { namespace ui {
         virtual ~UI ();
 
         void initArena ();
+
+        virtual std::function<void(Message &&)> consume () {
+            return {};
+        }
 
         virtual void appendLog (spdlog::details::log_msg const&) {
         }

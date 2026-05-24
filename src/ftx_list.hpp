@@ -75,7 +75,7 @@ class ListData : public ListDataRef {
     return renderer_(at(index));
   }
 
-  void push_back(T const& item) {
+  void push_back(T const &item) {
     items_.push_back(item);
     TrimToLimit();
   }

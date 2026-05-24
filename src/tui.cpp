@@ -27,8 +27,12 @@ using namespace ftxui;
 using postline::NOT_A_THREAD;
 using postline::ThreadID;
 
+
 static constexpr size_t MAX_VISIBLE_THREADS = 4096;
 static constexpr size_t MAX_VISIBLE_LOGS = 16384;
+static constexpr size_t MAX_VISIBLE_MESSAGES = 16384;
+
+#include "observer.h"
 
 static Decorator logLevelColor(spdlog::level::level_enum level) {
     switch (level) {
@@ -80,70 +84,6 @@ static std::string formatLogTime(spdlog::log_clock::time_point time) {
     return out.str();
 }
 
-static std::optional<int> parseNumber(std::string_view text) {
-    int value = 0;
-    auto result = std::from_chars(text.data(), text.data() + text.size(), value);
-    if (result.ec != std::errc() || result.ptr != text.data() + text.size()) {
-        return std::nullopt;
-    }
-
-    return value;
-}
-
-static std::optional<int> parseAltDigit(Event event) {
-    std::string const& input = event.input();
-
-    if (input.size() == 2 && input[0] == '\x1b' &&
-        input[1] >= '1' && input[1] <= '9') {
-        return input[1] - '0';
-    }
-
-    if (input.size() < 5 || input[0] != '\x1b' || input[1] != '[') {
-        return std::nullopt;
-    }
-
-    char const terminator = input.back();
-    if (terminator != 'u' && terminator != '~') {
-        return std::nullopt;
-    }
-
-    std::vector<int> numbers;
-    std::string_view body(input.data() + 2, input.size() - 3);
-    while (!body.empty()) {
-        size_t const separator = body.find(';');
-        std::string_view token = body.substr(0, separator);
-        std::optional<int> number = parseNumber(token);
-        if (!number) {
-            return std::nullopt;
-        }
-        numbers.push_back(*number);
-
-        if (separator == std::string_view::npos) {
-            break;
-        }
-        body.remove_prefix(separator + 1);
-    }
-
-    int codepoint = 0;
-    int modifier = 0;
-    if (terminator == 'u' && numbers.size() == 2) {
-        codepoint = numbers[0];
-        modifier = numbers[1];
-    }
-    else if (terminator == '~' && numbers.size() == 3 && numbers[0] == 27) {
-        modifier = numbers[1];
-        codepoint = numbers[2];
-    }
-    else {
-        return std::nullopt;
-    }
-
-    if (modifier != 3 || codepoint < '1' || codepoint > '9') {
-        return std::nullopt;
-    }
-
-    return codepoint - '0';
-}
 
 static Element renderLogDetail(spdlog::details::log_msg const& msg) {
     std::string level = toString(spdlog::level::to_string_view(msg.level));
@@ -185,11 +125,6 @@ static Element renderLogDetail(spdlog::details::log_msg const& msg) {
     });
 }
 
-struct ThreadData {
-    ThreadID id;
-    std::string name;
-};
-
 struct Tab {
     virtual ~Tab() = default;
 
@@ -198,35 +133,22 @@ struct Tab {
     virtual ThreadID threadId() const { return NOT_A_THREAD; }
 };
 
-
 struct GlobalData {
     Runtime *runtime;
     ListData<spdlog::details::log_msg_buffer> log_entries;
-    ListData<ThreadSummary> thread_summaries;
+    ListData<std::string> threads;
 
-    std::function<void(ThreadSummary const &)> onOpenThread;
+    std::function<void(ThreadID)> onOpenThread;
 
     GlobalData()
         : log_entries(MAX_VISIBLE_LOGS,
               [](spdlog::details::log_msg const &msg) {
                   return renderLogEntry(msg);
               }),
-          thread_summaries(MAX_VISIBLE_THREADS,
-              [](ThreadSummary const &summary) {
-                  Element element;
-
-                  if (summary.name.empty()) {
-                      element = text(std::format("{}", summary.id));
-                  }
-                  else {
-                      element = text(std::format("{}: {}", summary.id, summary.name));
-                  }
-
-                  return element;
-              }) {}
-
-    void syncThreads () {
-        runtime->updateThreadSummaries(&thread_summaries);
+          threads(MAX_VISIBLE_THREADS,
+              [](std::string const &s) {
+                  return text(s);
+              }) {
     }
 };
 
@@ -248,14 +170,11 @@ struct GlobalTab : Tab {
     GlobalTab(GlobalData *d): data(d) {
         ListOption thread_list_option;
         thread_list_option.on_open_selection = [this] {
-            if (!data->thread_summaries.contains(thread_selected)) {
-                return;
-            }
-            if (data->onOpenThread) {
-                data->onOpenThread(data->thread_summaries.at(thread_selected));
+            if (thread_selected >= 0 && data->onOpenThread) {
+                data->onOpenThread(static_cast<ThreadID>(thread_selected));
             }
         };
-        thread_list = List(&data->thread_summaries,
+        thread_list = List(&data->threads,
                            &thread_selected,
                            &thread_follow_tail,
                            std::move(thread_list_option));
@@ -264,7 +183,6 @@ struct GlobalTab : Tab {
                         &log_follow_tail);
 
         left_renderer = Renderer(thread_list, [&] {
-            data->syncThreads();
             return vbox({
                 text("threads") | bold,
                 thread_list->Render() | flex,
@@ -310,11 +228,13 @@ struct GlobalTab : Tab {
 };
 
 struct ThreadTab : Tab {
-    ThreadData *thread;
+    Runtime *runtime;
+    Observer::Thread *data;
 
     int nav_mode = 0;
     int nav_selected = 0;
     int trace_selected = 0;
+    bool trace_follow_tail = true;
 
     std::vector<std::string> nav_modes = {
         "tree", "stack", "members",
@@ -345,15 +265,6 @@ struct ThreadTab : Tab {
         "domain:ui",
     };
 
-    std::vector<std::string> trace_entries = {
-        "000 user     -> planner   call",
-        "001 planner  -> writer    call",
-        "002 writer   -> compiler  call",
-        "003 compiler -> writer    return",
-        "004 writer   -> planner   return",
-        "005 planner  -> user      pause",
-    };
-
     std::string editor_content;
 
     Component nav_mode_menu;
@@ -369,8 +280,22 @@ struct ThreadTab : Tab {
     Component root;
     Component renderer;
 
-    explicit ThreadTab(ThreadData *thread_)
-        : thread(thread_)
+    Element renderMessage (AccessID id) {
+        Message msg = runtime->readMessage(id);
+        // below is a placeholder to be replaced
+        return vbox({
+                        text("selected message") | bold,
+                        text("From: compiler"),
+                        text("To: writer"),
+                        text("Type: return"),
+                        text(""),
+                        paragraph("Compilation finished successfully. "
+                                  "No diagnostics were produced."),
+                    });
+    }
+
+    explicit ThreadTab(Runtime *runtime_, Observer::Thread *data_)
+        : runtime(runtime_), data(data_)
     {
         nav_mode_menu = Menu(
             &nav_modes,
@@ -386,7 +311,9 @@ struct ThreadTab : Tab {
             member_list,
         }, &nav_mode);
 
-        trace_list = Menu(&trace_entries, &trace_selected);
+        trace_list = List(&data->trace,
+                           &trace_selected,
+                           &trace_follow_tail);
 
         editor = Input(&editor_content, "message");
 
@@ -397,17 +324,17 @@ struct ThreadTab : Tab {
             }),
             [&] {
                 Element thread_name = text("");
-                if (!thread->name.empty()) {
+                if (!data->name.empty()) {
                     thread_name = hbox({
                         text(" "),
-                        text(thread->name),
+                        text(data->name),
                     });
                 }
 
                 return vbox({
                     hbox({
                         text("thread ") | bold,
-                        text(std::format("{}", thread->id)) | color(Color::Yellow),
+                        text(std::format("{}", data->id)) | color(Color::Yellow),
                         thread_name,
                     }),
                     separator(),
@@ -426,16 +353,8 @@ struct ThreadTab : Tab {
                 Element selected_message = text("");
 
                 if (trace_selected >= 0 &&
-                    trace_selected < int(trace_entries.size())) {
-                    selected_message = vbox({
-                        text("selected message") | bold,
-                        text("From: compiler"),
-                        text("To: writer"),
-                        text("Type: return"),
-                        text(""),
-                        paragraph("Compilation finished successfully. "
-                                  "No diagnostics were produced."),
-                    });
+                    trace_selected < int(data->trace.size())) {
+                    selected_message = renderMessage(data->trace.at(trace_selected).id);
                 }
 
                 return vbox({
@@ -481,7 +400,7 @@ struct ThreadTab : Tab {
     }
 
     std::string label() const override {
-        return "T" + std::to_string(thread->id);
+        return "T" + std::to_string(data->id);
     }
 
     Component component() override {
@@ -489,16 +408,14 @@ struct ThreadTab : Tab {
     }
 
     ThreadID threadId() const override {
-        return thread->id;
+        return data->id;
     }
 };
 
-class TUI: public UI {
+class TUI: public UI, public Observer {
     GlobalData global;
     std::mutex pending_log_mutex;
     std::vector<spdlog::details::log_msg_buffer> pending_logs;
-
-    std::vector<std::unique_ptr<ThreadData>> threads;
 
     std::vector<std::unique_ptr<Tab>> tabs;
 
@@ -538,21 +455,18 @@ class TUI: public UI {
         }
     }
 
-    void openThreadTab(ThreadSummary const &summary) {
+    void openThreadTab(ThreadID id) {
+        CHECK(id >= 0);
+        CHECK(id < Observer::threads.size());
+
         for (size_t i = 0; i < tabs.size(); ++i) {
-            if (tabs[i]->threadId() == summary.id) {
+            if (tabs[i]->threadId() == id) {
                 tab_index = int(i);
                 return;
             }
         }
 
-        auto thread = std::make_unique<ThreadData>();
-        thread->id = summary.id;
-        thread->name = summary.name;
-
-        ThreadData *thread_ptr = thread.get();
-        threads.push_back(std::move(thread));
-        addTab(std::make_unique<ThreadTab>(thread_ptr));
+        addTab(std::make_unique<ThreadTab>(global.runtime, Observer::threads[id].get()));
 
         tab_index = int(tabs.size()) - 1;
         if (main_renderer) {
@@ -560,20 +474,18 @@ class TUI: public UI {
         }
     }
 
-    bool selectThreadTabShortcut(Event event) {
-        std::optional<int> thread_id = parseAltDigit(std::move(event));
-        if (!thread_id) {
-            return false;
-        }
-
-        for (size_t i = 0; i < tabs.size(); ++i) {
-            if (tabs[i]->threadId() == *thread_id) {
-                tab_index = int(i);
-                return true;
+    void syncObserver() {
+        for (unsigned i = global.threads.size(); i < Observer::threads.size(); ++i) {
+            Observer::Thread *th = Observer::threads[i].get();
+            std::string name;
+            if (th->name.empty()) {
+                name = std::format("{}", th->id);
             }
+            else {
+                name = std::format("{}: {}", th->id, th->name);
+            }
+            global.threads.push_back(std::move(name));
         }
-
-        return false;
     }
 
 protected:
@@ -589,14 +501,13 @@ protected:
 public:
     TUI() : screen(ScreenInteractive::Fullscreen()) {
         global.runtime = nullptr;
-        global.onOpenThread = [this](ThreadSummary const &summary) {
-            openThreadTab(summary);
+        global.onOpenThread = [this](int thread) {
+            openThreadTab(thread);
         };
 
         // create tabs
         addTab(std::make_unique<GlobalTab>(&global));
 
-        openThreadTab(ThreadSummary{.id = 0, .name = ""});
 
         tab_selection = Menu(
             &tab_labels,
@@ -627,16 +538,12 @@ public:
         };
         exit_button = Button(std::move(exit_option));
 
-        main_container = CatchEvent(
-            Container::Vertical({
+        main_container = Container::Vertical({
                 Container::Horizontal({
                     tab_selection,
                     exit_button,
                 }),
                 tab_content,
-            }),
-            [this](Event event) {
-                return selectThreadTabShortcut(std::move(event));
             });
 
         main_renderer = Renderer(main_container, [&] {
@@ -668,11 +575,20 @@ public:
         screen.PostEvent(ftxui::Event::Custom);
     }
 
+    std::function<void(Message&&)> consume () override {
+        return [this](Message &&m) {
+            Observer::consume(std::move(m));
+            screen.PostEvent(ftxui::Event::Custom);
+        };
+    }
+
     void run() override {
 
         Loop loop(&screen, main_renderer);
 
         while (!loop.HasQuitted()) {
+            Observer::process();
+            syncObserver();
             screen.RequestAnimationFrame();
 
             loop.RunOnce();

@@ -175,9 +175,7 @@ int main(int argc, char** argv) {
     log::info("constructing runtime");
 
     auto ui = ui::make_ui(ui_choice);
-    config.listener = [&ui](Message const &msg) {
-            ui->listen(msg);
-            };
+    config.consume = ui->consume();
     Runtime runtime(config, ui.get());
     ui->setRuntime(&runtime);
     std::thread runtime_thread([&runtime]() {

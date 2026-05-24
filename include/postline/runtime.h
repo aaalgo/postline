@@ -243,12 +243,6 @@ struct Thread {
 
 class Runtime;
 
-struct ThreadSummary {
-  ThreadID id;
-  std::string name;
-};
-
-
 struct Program: immobile {
     std::mutex mutex;
     std::vector<std::unique_ptr<Domain>> domains;
@@ -292,16 +286,6 @@ struct Program: immobile {
         std::lock_guard<std::mutex> lock(mutex);
         threads.emplace_back(std::make_unique<Thread>(threads.size(), root));
         return threads.back().get();
-    }
-
-    template <typename T>
-    void updateThreadSummaries (T *summaries) {
-        std::lock_guard<std::mutex> lock(mutex);
-        size_t off = summaries->size();
-        for (size_t i = off; i < threads.size(); ++i) {
-            auto const &from = *threads[i];
-            summaries->push_back(ThreadSummary{.id=from.id, .name=from.name});
-        }
     }
 
     Agent *createAgent (AgentParams const &params, Domain *domain) {
@@ -386,7 +370,7 @@ struct Program: immobile {
 
 class Runtime: public Program, public Service {
 
-    std::function<void(Message const &)> listener;
+    std::function<void(Message &&)> consume;
     Journal journal;
     Poller poller;
     Accounting accounting;
@@ -408,30 +392,33 @@ class Runtime: public Program, public Service {
     int cmd_create_domain (Message const &, json *resp);
 
     void updateMemory (Agent *, AccessID end);
+    /*
     AccessID append (Message &msg) {
         AccessID access_id = journal.append(msg);
-        if (listener) listener(msg);
+        for (auto &l: listeners) {l(msg);}
         return access_id;
     }
+    */
 
 public:
     struct Config {
         std::string journal_path;
         std::string resume_path;
-        std::function<void(Message const &)> listener;
+        //std::vector<std::function<void(Message &)> listeners;
+        std::function<void(Message &&)> consume;
     };
 
     Runtime(Config const &config, Service *user_service)
-        : listener(config.listener),
+        : consume(config.consume),
           journal(config.journal_path, config.resume_path,
                   [this](Message &&msg) { 
-                      if (listener) listener(msg);
                       if (msg.type() == "runtime:commit") {
                           protocol::runtime::Commit c(msg);
                           __commit(c.op);
                       } else {
                           apply(msg);
                       }
+                      if (consume) consume(std::move(msg));
                   }),
           stop_requested(false) {
         log::info("Initializing runtime");
@@ -458,6 +445,10 @@ public:
     }
 
     void run ();
+
+    Message readMessage (AccessID access_id) const {
+        return journal.read(access_id);
+    }
 };
 
 } // namespace postline
