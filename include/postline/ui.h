@@ -15,8 +15,14 @@ namespace postline { namespace ui {
         };
         std::vector<std::unique_ptr<State>> threads;
         std::mutex mutex;
-    protected:
 
+        void ensure_threads (ThreadID id) {
+            CHECK(id >= 0);
+            while (id >= threads.size()) {
+                threads.push_back(std::make_unique<State>());
+            }
+        }
+    protected:
         Runtime *rt;
 
         Message syscall(ThreadID thread_id, Message &&msg) {
@@ -26,9 +32,7 @@ namespace postline { namespace ui {
 
             {
                 std::lock_guard lock(mutex);
-
-                CHECK(thread_id < (int)threads.size());
-                CHECK(threads[thread_id]);
+                ensure_threads(thread_id);
 
                 auto &thread = *threads[thread_id];
 
@@ -52,9 +56,7 @@ namespace postline { namespace ui {
 
             {
                 std::lock_guard lock(mutex);
-
-                CHECK(thread_id < (int)threads.size());
-                CHECK(threads[thread_id]);
+                ensure_threads(thread_id);
 
                 auto &thread = *threads[thread_id];
 
@@ -113,9 +115,13 @@ namespace postline { namespace ui {
 
     public:
 
-        UI (Runtime *rt_): rt(rt_) {
-            threads.emplace_back(std::make_unique<State>());
+        UI () {
         }
+
+        virtual void setRuntime (Runtime *rt_) {
+            rt = rt_;
+        }
+
 
         virtual ~UI ();
 
@@ -124,10 +130,14 @@ namespace postline { namespace ui {
         virtual void appendLog (spdlog::details::log_msg const&) {
         }
 
+        virtual void listen (Message const &) {
+        }
+
+
         virtual void run () = 0;
     };
 
-    std::unique_ptr<UI> make_ui (std::string const &name, Runtime *runtime);
+    std::unique_ptr<UI> make_ui (std::string const &name);
 
 }
 }

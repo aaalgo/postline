@@ -126,7 +126,7 @@ protected:
         ready.count_down();
     }
 public:
-    Null (Runtime *rt_): UI(rt_), ready(1) {
+    Null (): ready(1) {
     }
 
     void run () override {
@@ -137,23 +137,23 @@ public:
 };
 
 
-std::unique_ptr<UI> make_auto (Runtime *) {
+std::unique_ptr<UI> make_auto () {
     CHECK(0);
     return nullptr;
 }
 
-std::unique_ptr<UI> make_tui (Runtime *);
-std::unique_ptr<UI> make_cli (Runtime *);
-std::unique_ptr<UI> make_web (Runtime *);
+std::unique_ptr<UI> make_tui ();
+std::unique_ptr<UI> make_cli ();
+std::unique_ptr<UI> make_web ();
 
 
-std::unique_ptr<UI> make_ui (std::string const &name, Runtime *runtime) {
+std::unique_ptr<UI> make_ui (std::string const &name) {
     std::unique_ptr<UI> ui;
-    if (name == "null") ui = std::make_unique<Null>(runtime);
-    else if (name == "cli") ui =  make_cli(runtime);
-    else if (name == "tui") ui = make_tui(runtime);
-    else if (name == "web") ui = make_web(runtime);
-    else if (name == "auto") ui = make_auto(runtime);
+    if (name == "null") ui = std::make_unique<Null>();
+    else if (name == "cli") ui =  make_cli();
+    else if (name == "tui") ui = make_tui();
+    else if (name == "web") ui = make_web();
+    else if (name == "auto") ui = make_auto();
     else CHECK(0, "UI {} not supported.", name);
     sink->attachUI(ui.get());
     return ui;

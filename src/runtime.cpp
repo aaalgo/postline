@@ -123,7 +123,7 @@ int Runtime::cmd_create_domain (Message const &msg, json *resp) {
 
 Runtime::SyscallResult Runtime::syscall (json const &op) {
     Message entry = protocol::runtime::Commit::make(op);
-    journal.append(entry);
+    append(entry);
     return __commit(op);
 }
 
@@ -349,7 +349,7 @@ void Runtime::run() {
                 std::cerr << std::endl;
             }
 #endif
-            journal.append(msg);
+            append(msg);
             accounting.update(msg);
             Agent *agent = apply(msg);
             if (!agent->driver) {
@@ -378,7 +378,7 @@ void Runtime::run() {
         json op{{"op", "begin_shutdown"}};
         ops.push_back(op);
         Message msg = protocol::runtime::Commit::make(ops);
-        journal.append(msg);
+        append(msg);
     }
 
     size_t trailing = 0;
@@ -392,7 +392,7 @@ void Runtime::run() {
             agent->driver->recv(tmp);
             for (auto &msg: tmp) {
                 --agent->obligation_count;
-                journal.append(msg);
+                append(msg);
             }
             trailing += tmp.size();
         }
@@ -409,7 +409,7 @@ void Runtime::run() {
         json op{{"op", "end_shutdown"}};
         ops.push_back(op);
         Message msg = protocol::runtime::Commit::make(ops);
-        journal.append(msg);
+        append(msg);
         log::info("runtime shutdown.");
     }
 }

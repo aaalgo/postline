@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -385,6 +386,7 @@ struct Program: immobile {
 
 class Runtime: public Program, public Service {
 
+    std::function<void(Message const &)> listener;
     Journal journal;
     Poller poller;
     Accounting accounting;
@@ -406,27 +408,35 @@ class Runtime: public Program, public Service {
     int cmd_create_domain (Message const &, json *resp);
 
     void updateMemory (Agent *, AccessID end);
+    AccessID append (Message &msg) {
+        AccessID access_id = journal.append(msg);
+        if (listener) listener(msg);
+        return access_id;
+    }
 
 public:
     struct Config {
         std::string journal_path;
         std::string resume_path;
+        std::function<void(Message const &)> listener;
     };
 
-    Runtime(Config const &config)
-        : journal(config.journal_path, config.resume_path,
+    Runtime(Config const &config, Service *user_service)
+        : listener(config.listener),
+          journal(config.journal_path, config.resume_path,
                   [this](Message &&msg) { 
+                      if (listener) listener(msg);
                       if (msg.type() == "runtime:commit") {
                           protocol::runtime::Commit c(msg);
                           __commit(c.op);
                       } else {
                           apply(msg);
                       }
-                }),
+                  }),
           stop_requested(false) {
         log::info("Initializing runtime");
         runtime->driver = std::make_unique<LoopDriver>(this);
-        //user->driver = std::make_unique<LoopDriver>(this);
+        user->driver = std::make_unique<LoopDriver>(user_service);
     }
 
     ~Runtime() = default;
@@ -435,10 +445,6 @@ public:
         auto *driver = dynamic_cast<LoopDriver*>(user->driver.get());
         CHECK(driver);
         return driver->enqueue(std::move(msg));
-    }
-
-    void attachUser (Service *user_service) {
-        user->driver = std::make_unique<LoopDriver>(user_service);
     }
 
     void call (Message &&msg, Response &) override;

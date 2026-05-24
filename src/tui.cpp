@@ -2,8 +2,10 @@
 #include <ctime>
 #include <format>
 #include <iomanip>
+#include <optional>
 #include <memory>
 #include <mutex>
+#include <charconv>
 #include <sstream>
 #include <string>
 #include <thread>
@@ -12,6 +14,7 @@
 #include <ftxui/component/component.hpp>
 #include <ftxui/component/component_base.hpp>
 #include <ftxui/component/component_options.hpp>
+#include <ftxui/component/event.hpp>
 #include <ftxui/component/loop.hpp>
 #include <ftxui/dom/elements.hpp>
 #include <ftxui/component/screen_interactive.hpp>
@@ -75,6 +78,71 @@ static std::string formatLogTime(spdlog::log_clock::time_point time) {
     out << std::put_time(&tm, "%H:%M:%S")
         << "." << std::setfill('0') << std::setw(3) << millis;
     return out.str();
+}
+
+static std::optional<int> parseNumber(std::string_view text) {
+    int value = 0;
+    auto result = std::from_chars(text.data(), text.data() + text.size(), value);
+    if (result.ec != std::errc() || result.ptr != text.data() + text.size()) {
+        return std::nullopt;
+    }
+
+    return value;
+}
+
+static std::optional<int> parseAltDigit(Event event) {
+    std::string const& input = event.input();
+
+    if (input.size() == 2 && input[0] == '\x1b' &&
+        input[1] >= '1' && input[1] <= '9') {
+        return input[1] - '0';
+    }
+
+    if (input.size() < 5 || input[0] != '\x1b' || input[1] != '[') {
+        return std::nullopt;
+    }
+
+    char const terminator = input.back();
+    if (terminator != 'u' && terminator != '~') {
+        return std::nullopt;
+    }
+
+    std::vector<int> numbers;
+    std::string_view body(input.data() + 2, input.size() - 3);
+    while (!body.empty()) {
+        size_t const separator = body.find(';');
+        std::string_view token = body.substr(0, separator);
+        std::optional<int> number = parseNumber(token);
+        if (!number) {
+            return std::nullopt;
+        }
+        numbers.push_back(*number);
+
+        if (separator == std::string_view::npos) {
+            break;
+        }
+        body.remove_prefix(separator + 1);
+    }
+
+    int codepoint = 0;
+    int modifier = 0;
+    if (terminator == 'u' && numbers.size() == 2) {
+        codepoint = numbers[0];
+        modifier = numbers[1];
+    }
+    else if (terminator == '~' && numbers.size() == 3 && numbers[0] == 27) {
+        modifier = numbers[1];
+        codepoint = numbers[2];
+    }
+    else {
+        return std::nullopt;
+    }
+
+    if (modifier != 3 || codepoint < '1' || codepoint > '9') {
+        return std::nullopt;
+    }
+
+    return codepoint - '0';
 }
 
 static Element renderLogDetail(spdlog::details::log_msg const& msg) {
@@ -178,8 +246,6 @@ struct GlobalTab : Tab {
     Component renderer;
 
     GlobalTab(GlobalData *d): data(d) {
-        data->syncThreads();
-
         ListOption thread_list_option;
         thread_list_option.on_open_selection = [this] {
             if (!data->thread_summaries.contains(thread_selected)) {
@@ -291,7 +357,10 @@ struct ThreadTab : Tab {
     std::string editor_content;
 
     Component nav_mode_menu;
-    Component nav_list;
+    Component tree_list;
+    Component stack_list;
+    Component member_list;
+    Component nav_content;
     Component trace_list;
     Component editor;
 
@@ -308,7 +377,14 @@ struct ThreadTab : Tab {
             &nav_mode,
             MenuOption::Horizontal());
 
-        nav_list = Menu(&tree_entries, &nav_selected);
+        tree_list = Menu(&tree_entries, &nav_selected);
+        stack_list = Menu(&stack_entries, &nav_selected);
+        member_list = Menu(&member_entries, &nav_selected);
+        nav_content = Container::Tab({
+            tree_list,
+            stack_list,
+            member_list,
+        }, &nav_mode);
 
         trace_list = Menu(&trace_entries, &trace_selected);
 
@@ -317,23 +393,27 @@ struct ThreadTab : Tab {
         left_renderer = Renderer(
             Container::Vertical({
                 nav_mode_menu,
-                nav_list,
+                nav_content,
             }),
             [&] {
-                std::vector<std::string> *entries = &tree_entries;
-
-                if (nav_mode == 1)
-                    entries = &stack_entries;
-                else if (nav_mode == 2)
-                    entries = &member_entries;
-
-                // Rebind list source when mode changes.
-                nav_list = Menu(entries, &nav_selected);
+                Element thread_name = text("");
+                if (!thread->name.empty()) {
+                    thread_name = hbox({
+                        text(" "),
+                        text(thread->name),
+                    });
+                }
 
                 return vbox({
+                    hbox({
+                        text("thread ") | bold,
+                        text(std::format("{}", thread->id)) | color(Color::Yellow),
+                        thread_name,
+                    }),
+                    separator(),
                     nav_mode_menu->Render(),
                     separator(),
-                    nav_list->Render() | flex,
+                    nav_content->Render() | flex,
                 });
             });
 
@@ -435,100 +515,17 @@ class TUI: public UI {
     Component main_renderer;
     ScreenInteractive screen;
 
-protected:
-    void on_exit () override {
-        screen.Exit();
-    }
+    void addTab(std::unique_ptr<Tab> tab) {
+        tab_labels.push_back(tab->label());
+        tab_components.push_back(tab->component());
 
-    virtual std::vector<Message> on_message (Message &&msg) override {
-        screen.PostEvent(ftxui::Event::Custom);
-        return UI::on_message(std::move(msg));
-    }
-
-public:
-    TUI(Runtime *runtime)
-        : UI(runtime),
-        screen(ScreenInteractive::Fullscreen()) {
-        global.runtime = runtime;
-        global.onOpenThread = [this](ThreadSummary const &summary) {
-            openThreadTab(summary);
-        };
-
-        // create tabs
-        tabs.push_back(
-            std::make_unique<GlobalTab>(&global));
-
-        openThreadTab(ThreadSummary{.id = 0, .name = ""});
-
-        rebuild_tabs();
-
-        ButtonOption exit_option;
-        exit_option.label = "Exit";
-        exit_option.on_click = [this] {
-            this->send(0, Message(json{{"To", "runtime"},
-                         {"Subject", "exit"}}));
-        };
-        exit_option.transform = [this](EntryState const& state) {
-            Element element = text(state.label);
-            /*
-            if (!can_send_) {
-                element |= dim;
-            }
-            */
-            if (state.focused) {
-                element |= inverted;
-            }
-            return element;
-        };
-        exit_button = Button(std::move(exit_option));
-
-        main_container = Container::Vertical({
-            Container::Horizontal({
-                tab_selection,
-                exit_button,
-            }),
-            tab_content,
-        });
-
-        main_renderer = Renderer(main_container, [&] {
-            drainLogs();
-            return vbox({
-                hbox({
-                    text("Postline") | bold,
-                    text(" | "),
-                    tab_selection->Render(),
-                    filler(),
-                    exit_button->Render(),
-                }),
-                separator(),
-                tab_content->Render() | flex,
-            });
-        });
-    }
-
-    void appendLog (spdlog::details::log_msg const& msg) override {
-        {
-            std::lock_guard<std::mutex> lock(pending_log_mutex);
-            pending_logs.emplace_back(msg);
+        if (tab_content) {
+            tab_content->Add(tab_components.back());
         }
-        screen.PostEvent(ftxui::Event::Custom);
+
+        tabs.push_back(std::move(tab));
     }
 
-    void run() override {
-
-        Loop loop(&screen, main_renderer);
-
-        while (!loop.HasQuitted()) {
-            screen.RequestAnimationFrame();
-
-            loop.RunOnce();
-
-            std::this_thread::sleep_for(
-                std::chrono::milliseconds(1000 / 60));
-        }
-    }
-
-private:
     void drainLogs() {
         std::vector<spdlog::details::log_msg_buffer> logs;
         {
@@ -555,20 +552,51 @@ private:
 
         ThreadData *thread_ptr = thread.get();
         threads.push_back(std::move(thread));
-        tabs.push_back(std::make_unique<ThreadTab>(thread_ptr));
+        addTab(std::make_unique<ThreadTab>(thread_ptr));
 
         tab_index = int(tabs.size()) - 1;
-        rebuild_tabs();
+        if (main_renderer) {
+            screen.PostEvent(ftxui::Event::Custom);
+        }
     }
 
-    void rebuild_tabs() {
-        tab_labels.clear();
-        tab_components.clear();
-
-        for (auto &t : tabs) {
-            tab_labels.push_back(t->label());
-            tab_components.push_back(t->component());
+    bool selectThreadTabShortcut(Event event) {
+        std::optional<int> thread_id = parseAltDigit(std::move(event));
+        if (!thread_id) {
+            return false;
         }
+
+        for (size_t i = 0; i < tabs.size(); ++i) {
+            if (tabs[i]->threadId() == *thread_id) {
+                tab_index = int(i);
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+protected:
+    void on_exit () override {
+        screen.Exit();
+    }
+
+    virtual std::vector<Message> on_message (Message &&msg) override {
+        screen.PostEvent(ftxui::Event::Custom);
+        return UI::on_message(std::move(msg));
+    }
+
+public:
+    TUI() : screen(ScreenInteractive::Fullscreen()) {
+        global.runtime = nullptr;
+        global.onOpenThread = [this](ThreadSummary const &summary) {
+            openThreadTab(summary);
+        };
+
+        // create tabs
+        addTab(std::make_unique<GlobalTab>(&global));
+
+        openThreadTab(ThreadSummary{.id = 0, .name = ""});
 
         tab_selection = Menu(
             &tab_labels,
@@ -578,11 +606,85 @@ private:
         tab_content = Container::Tab(
             tab_components,
             &tab_index);
+
+        ButtonOption exit_option;
+        exit_option.label = "Exit";
+        exit_option.on_click = [this] {
+            this->send(0, Message(json{{"To", "runtime"},
+                         {"Subject", "exit"}}));
+        };
+        exit_option.transform = [this](EntryState const& state) {
+            Element element = text(state.label);
+            /*
+            if (!can_send_) {
+                element |= dim;
+            }
+            */
+            if (state.focused) {
+                element |= inverted;
+            }
+            return element;
+        };
+        exit_button = Button(std::move(exit_option));
+
+        main_container = CatchEvent(
+            Container::Vertical({
+                Container::Horizontal({
+                    tab_selection,
+                    exit_button,
+                }),
+                tab_content,
+            }),
+            [this](Event event) {
+                return selectThreadTabShortcut(std::move(event));
+            });
+
+        main_renderer = Renderer(main_container, [&] {
+            drainLogs();
+            return vbox({
+                hbox({
+                    text("Postline") | bold,
+                    text(" | "),
+                    tab_selection->Render(),
+                    filler(),
+                    exit_button->Render(),
+                }),
+                separator(),
+                tab_content->Render() | flex,
+            });
+        });
+    }
+
+    void setRuntime (Runtime *rt) override {
+        UI::setRuntime(rt);
+        global.runtime = rt;
+    }
+
+    void appendLog (spdlog::details::log_msg const& msg) override {
+        {
+            std::lock_guard<std::mutex> lock(pending_log_mutex);
+            pending_logs.emplace_back(msg);
+        }
+        screen.PostEvent(ftxui::Event::Custom);
+    }
+
+    void run() override {
+
+        Loop loop(&screen, main_renderer);
+
+        while (!loop.HasQuitted()) {
+            screen.RequestAnimationFrame();
+
+            loop.RunOnce();
+
+            std::this_thread::sleep_for(
+                std::chrono::milliseconds(1000 / 60));
+        }
     }
 };
 
-std::unique_ptr<UI> make_tui (Runtime *runtime) {
-    return std::make_unique<TUI>(runtime);
+std::unique_ptr<UI> make_tui () {
+    return std::make_unique<TUI>();
 }
 
 
