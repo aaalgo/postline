@@ -124,6 +124,7 @@ target_include_directories(postline
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:include>
     PRIVATE
+        ${CMAKE_BINARY_DIR}/generated
         ${CRCpp_SOURCE_DIR}/inc
 )
 

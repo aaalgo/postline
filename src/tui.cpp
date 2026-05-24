@@ -22,7 +22,10 @@
 #include <ftxui/dom/elements.hpp>
 #include <ftxui/component/screen_interactive.hpp>
 #include <postline/ui.h>
+#include "build_info.hpp"
 #include "ftx_list.hpp"
+
+extern char const *banner;
 
 namespace postline { namespace ui {
 
@@ -34,6 +37,7 @@ using postline::ThreadID;
 static constexpr size_t MAX_VISIBLE_THREADS = 4096;
 static constexpr size_t MAX_VISIBLE_LOGS = 16384;
 static constexpr size_t MAX_VISIBLE_MESSAGES = 16384;
+static constexpr char POSTLINE_WEB_URL[] = "https://github.com/aaalgo/postline";
 
 #include "observer.h"
 
@@ -216,6 +220,71 @@ static void appendMessageHeaders(Elements &lines, json const &header) {
         }
         appendHeaderLine(lines, key, value, false);
     }
+}
+
+static void appendBannerLines(Elements &lines) {
+    std::string_view text_art(banner);
+
+    while (!text_art.empty() && text_art.front() == '\n') {
+        text_art.remove_prefix(1);
+    }
+
+    for (;;) {
+        auto off = text_art.find('\n');
+        std::string_view line = text_art.substr(0, off);
+        if (!line.empty()) {
+            lines.push_back(text(std::string(line)) |
+                            color(Color::GreenLight) |
+                            bold);
+        }
+
+        if (off == std::string_view::npos) {
+            return;
+        }
+        text_art.remove_prefix(off + 1);
+    }
+}
+
+static Element renderAboutBox(Element close_button) {
+    Elements lines;
+    appendBannerLines(lines);
+
+    lines.push_back(separator());
+    lines.push_back(text("Postline Agent Runtime") |
+                    color(Color::Cyan) |
+                    bold |
+                    hcenter);
+    lines.push_back(text("By Ann Arbor Algorithms") |
+                    color(Color::CyanLight) |
+                    hcenter);
+    lines.push_back(text(POSTLINE_WEB_URL) |
+                    color(Color::RedLight) |
+                    hcenter);
+    lines.push_back(separator());
+    lines.push_back(hbox({
+        text("Version:    ") | color(Color::Yellow) | bold,
+        text(postline::build::VERSION),
+    }));
+    lines.push_back(hbox({
+        text("Commit:     ") | color(Color::Yellow) | bold,
+        text(postline::build::GIT_COMMIT),
+    }));
+    lines.push_back(hbox({
+        text("Build Type: ") | color(Color::Yellow) | bold,
+        text(postline::build::BUILD_TYPE),
+    }));
+    lines.push_back(hbox({
+        text("Build Time: ") | color(Color::Yellow) | bold,
+        text(postline::build::BUILD_TIME),
+    }));
+    lines.push_back(separator());
+    lines.push_back(std::move(close_button) | hcenter);
+
+    return window(text(" About Postline ") | color(Color::Cyan) | bold,
+                  vbox(std::move(lines)) | borderEmpty)
+        | borderEmpty
+        | size(WIDTH, LESS_THAN, 60)
+        | clear_under;
 }
 
 struct Tab {
@@ -500,10 +569,7 @@ struct ThreadTab : Tab {
         middle_renderer = Renderer(
             trace_list,
             [&] {
-                return vbox({
-                    text("trace") | bold,
-                    trace_list->Render() | flex,
-                });
+                return trace_list->Render();
             });
 
         right_renderer = Renderer(
@@ -580,6 +646,9 @@ class TUI: public UI, public Observer {
     Component tab_selection;
     Component tab_content;
 
+    bool about_shown = false;
+    Component about_button;
+    Component about_modal;
     Component exit_button;
     Component main_container;
     Component main_renderer;
@@ -665,6 +734,48 @@ public:
             tab_components,
             &tab_index);
 
+        ButtonOption about_option;
+        about_option.label = "About";
+        about_option.on_click = [this] {
+            about_shown = true;
+        };
+        about_option.transform = [](EntryState const& state) {
+            Element element = text(state.label) |
+                              color(Color::GreenLight) |
+                              bold;
+            if (state.focused) {
+                element |= inverted;
+            }
+            return element;
+        };
+        about_button = Button(std::move(about_option));
+
+        ButtonOption about_close_option;
+        about_close_option.label = "Close";
+        about_close_option.on_click = [this] {
+            about_shown = false;
+        };
+        about_close_option.transform = [](EntryState const& state) {
+            Element element = text(" " + state.label + " ") |
+                              color(Color::Cyan) |
+                              bold;
+            if (state.focused) {
+                element |= inverted;
+            }
+            return element;
+        };
+        auto about_close_button = Button(std::move(about_close_option));
+        about_modal = Renderer(about_close_button, [about_close_button] {
+            return renderAboutBox(about_close_button->Render());
+        });
+        about_modal |= CatchEvent([this](Event event) {
+            if (event == Event::Escape) {
+                about_shown = false;
+                return true;
+            }
+            return false;
+        });
+
         ButtonOption exit_option;
         exit_option.label = "Exit";
         exit_option.on_click = [this] {
@@ -672,7 +783,9 @@ public:
                          {"Subject", "exit"}}));
         };
         exit_option.transform = [this](EntryState const& state) {
-            Element element = text(state.label);
+            Element element = text(state.label) |
+                              color(Color::Red) |
+                              bold;
             /*
             if (!can_send_) {
                 element |= dim;
@@ -688,6 +801,7 @@ public:
         main_container = Container::Vertical({
                 Container::Horizontal({
                     tab_selection,
+                    about_button,
                     exit_button,
                 }),
                 tab_content,
@@ -701,12 +815,15 @@ public:
                     text(" | "),
                     tab_selection->Render(),
                     filler(),
+                    about_button->Render(),
+                    text(" "),
                     exit_button->Render(),
                 }),
                 separator(),
                 tab_content->Render() | flex,
             });
         });
+        main_renderer |= Modal(about_modal, &about_shown);
     }
 
     void setRuntime (Runtime *rt) override {
