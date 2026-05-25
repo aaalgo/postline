@@ -1,0 +1,260 @@
+#include <algorithm>
+#include <chrono>
+#include <format>
+#include <memory>
+#include <mutex>
+#include <thread>
+#include <vector>
+
+#include <ftxui/component/component.hpp>
+#include <ftxui/component/component_options.hpp>
+#include <ftxui/component/event.hpp>
+#include <ftxui/component/loop.hpp>
+#include <ftxui/component/screen_interactive.hpp>
+#include <ftxui/dom/elements.hpp>
+#include <postline/ui.h>
+#include <spdlog/details/log_msg_buffer.h>
+
+#include "observer.h"
+#include "render.h"
+#include "tabs.h"
+
+namespace postline { namespace ui {
+
+using namespace ftxui;
+
+class TUI: public UI, public Observer {
+    GlobalData global;
+    std::mutex pending_log_mutex;
+    std::vector<spdlog::details::log_msg_buffer> pending_logs;
+
+    std::vector<std::unique_ptr<Tab>> tabs;
+
+    std::vector<std::string> tab_labels;
+    std::vector<Component> tab_components;
+
+    int tab_index = 0;
+
+    Component tab_selection;
+    Component tab_content;
+
+    bool about_shown = false;
+    Component about_button;
+    Component about_modal;
+    Component exit_button;
+    Component main_container;
+    Component main_renderer;
+    ScreenInteractive screen;
+
+    void addTab(std::unique_ptr<Tab> tab) {
+        tab_labels.push_back(tab->label());
+        tab_components.push_back(tab->component());
+
+        if (tab_content) {
+            tab_content->Add(tab_components.back());
+        }
+
+        tabs.push_back(std::move(tab));
+    }
+
+    void drainLogs() {
+        std::vector<spdlog::details::log_msg_buffer> logs;
+        {
+            std::lock_guard<std::mutex> lock(pending_log_mutex);
+            logs.swap(pending_logs);
+        }
+
+        for (auto &msg: logs) {
+            global.log_entries.push_back(std::move(msg));
+        }
+    }
+
+    void openThreadTab(ThreadID id) {
+        CHECK(id >= 0);
+        CHECK(id < int(Observer::threads.size()));
+
+        for (size_t i = 0; i < tabs.size(); ++i) {
+            if (tabs[i]->threadId() == id) {
+                tab_index = int(i);
+                return;
+            }
+        }
+        CHECK(0);
+    }
+
+    void syncObserver() {
+        for (unsigned i = global.threads.size(); i < Observer::threads.size(); ++i) {
+            auto *th = Observer::threads[i].get();
+            std::string name;
+            if (th->name.empty()) {
+                name = std::format("{}", th->id);
+            }
+            else {
+                name = std::format("{}: {}", th->id, th->name);
+            }
+            global.threads.push_back(std::move(name));
+            addTab(std::make_unique<ThreadTab>(global.runtime, th));
+        }
+    }
+
+protected:
+    void on_exit() override {
+        screen.Exit();
+    }
+
+    std::vector<Message> on_message(Message &&msg) override {
+        screen.PostEvent(ftxui::Event::Custom);
+        return UI::on_message(std::move(msg));
+    }
+
+public:
+    TUI() : screen(ScreenInteractive::Fullscreen()) {
+        global.runtime = nullptr;
+        global.onOpenThread = [this](int thread) {
+            openThreadTab(thread);
+        };
+
+        addTab(std::make_unique<GlobalTab>(&global));
+
+        tab_selection = Menu(
+            &tab_labels,
+            &tab_index,
+            MenuOption::Horizontal());
+
+        tab_content = Container::Tab(
+            tab_components,
+            &tab_index);
+
+        ButtonOption about_option;
+        about_option.label = "About";
+        about_option.on_click = [this] {
+            about_shown = true;
+        };
+        about_option.transform = [](EntryState const& state) {
+            Element element = text(state.label) |
+                              color(Color::GreenLight) |
+                              bold;
+            if (state.focused) {
+                element |= inverted;
+            }
+            return element;
+        };
+        about_button = Button(std::move(about_option));
+
+        ButtonOption about_close_option;
+        about_close_option.label = "Close";
+        about_close_option.on_click = [this] {
+            about_shown = false;
+        };
+        about_close_option.transform = [](EntryState const& state) {
+            Element element = text(" " + state.label + " ") |
+                              color(Color::Cyan) |
+                              bold;
+            if (state.focused) {
+                element |= inverted;
+            }
+            return element;
+        };
+        auto about_close_button = Button(std::move(about_close_option));
+        about_modal = Renderer(about_close_button, [about_close_button] {
+            return renderAboutBox(about_close_button->Render());
+        });
+        about_modal |= CatchEvent([this](Event event) {
+            if (event == Event::Escape) {
+                about_shown = false;
+                return true;
+            }
+            return false;
+        });
+
+        ButtonOption exit_option;
+        exit_option.label = "Exit";
+        exit_option.on_click = [this] {
+            this->send(0, Message(json{{"To", "runtime"},
+                         {"Subject", "exit"}}));
+        };
+        exit_option.transform = [this](EntryState const& state) {
+            Element element = text(state.label) |
+                              color(Color::Red) |
+                              bold;
+            /*
+            if (!can_send_) {
+                element |= dim;
+            }
+            */
+            if (state.focused) {
+                element |= inverted;
+            }
+            return element;
+        };
+        exit_button = Button(std::move(exit_option));
+
+        main_container = Container::Vertical({
+                Container::Horizontal({
+                    tab_selection,
+                    about_button,
+                    exit_button,
+                }),
+                tab_content,
+            });
+
+        main_renderer = Renderer(main_container, [&] {
+            drainLogs();
+            return vbox({
+                hbox({
+                    text("Postline") | bold,
+                    text(" | "),
+                    tab_selection->Render(),
+                    filler(),
+                    about_button->Render(),
+                    text(" "),
+                    exit_button->Render(),
+                }),
+                separator(),
+                tab_content->Render() | flex,
+            });
+        });
+        main_renderer |= Modal(about_modal, &about_shown);
+    }
+
+    void setRuntime(Runtime *rt) override {
+        UI::setRuntime(rt);
+        global.runtime = rt;
+    }
+
+    void appendLog(spdlog::details::log_msg const& msg) override {
+        {
+            std::lock_guard<std::mutex> lock(pending_log_mutex);
+            pending_logs.emplace_back(msg);
+        }
+        screen.PostEvent(ftxui::Event::Custom);
+    }
+
+    std::function<void(Message&&)> consume() override {
+        return [this](Message &&m) {
+            Observer::consume(std::move(m));
+            screen.PostEvent(ftxui::Event::Custom);
+        };
+    }
+
+    void run() override {
+        Loop loop(&screen, main_renderer);
+
+        while (!loop.HasQuitted()) {
+            Observer::process();
+            syncObserver();
+            screen.RequestAnimationFrame();
+
+            loop.RunOnce();
+
+            std::this_thread::sleep_for(
+                std::chrono::milliseconds(1000 / 60));
+        }
+    }
+};
+
+std::unique_ptr<UI> make_tui() {
+    return std::make_unique<TUI>();
+}
+
+}}

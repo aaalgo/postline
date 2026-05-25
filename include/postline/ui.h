@@ -5,7 +5,6 @@
 
 namespace postline { namespace ui {
 
-
     class UI: public Service {
         struct State {
             bool pending = false;
@@ -121,7 +120,6 @@ namespace postline { namespace ui {
             rt = rt_;
         }
 
-
         virtual ~UI ();
 
         void initArena ();
@@ -132,10 +130,6 @@ namespace postline { namespace ui {
 
         virtual void appendLog (spdlog::details::log_msg const&) {
         }
-
-        virtual void listen (Message const &) {
-        }
-
 
         virtual void run () = 0;
     };
