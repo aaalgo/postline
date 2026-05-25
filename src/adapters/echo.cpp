@@ -5,7 +5,7 @@
 
 namespace postline {
 
-class Echo : public Service {
+class Echo : public LinearService {
     json memory;
 public:
     Echo (bool memory_) {

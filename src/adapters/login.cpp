@@ -88,7 +88,7 @@ static std::string last_n_lines(std::string const& s, size_t n)
     return s.substr(pos);
 }
 
-class Login : public Service {
+class Login : public LinearService {
 public:
     void configure(CLI::App& app)
     {

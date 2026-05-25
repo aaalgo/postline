@@ -61,14 +61,14 @@ json py2json(py::handle obj)
     return nullptr;
 }
 
-class PyService: public Service {
+class PyService: public LinearService {
     Server::Config config;
     Server server;
 public:
     PyService (): server(config) {
     }
 
-    virtual void on_memory (Message && msg) {
+    void on_memory (Message && msg) override {
         py::gil_scoped_acquire gil;
         py::cast(this, py::return_value_policy::reference)
         .attr("on_memory")(std::make_unique<Message>(std::move(msg)));
@@ -94,7 +94,7 @@ public:
     }
 #endif
 
-    virtual void call (Message &&msg, Response &resp) override {
+    void call (Message &&msg, Response &resp) override {
         py::gil_scoped_acquire gil;
         py::object self = py::cast(
             this,

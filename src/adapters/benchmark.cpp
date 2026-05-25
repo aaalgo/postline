@@ -9,7 +9,7 @@
 
 namespace postline {
 
-class Benchmark : public Service {
+class Benchmark : public LinearService {
     static constexpr char const* TARGET = "echo";
     static constexpr size_t BODY_SIZE = 4096;
 

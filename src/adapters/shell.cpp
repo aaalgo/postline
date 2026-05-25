@@ -141,7 +141,7 @@ static CommandResult run_command(char const* cmd, std::string const &body)
     return result;
 }
 
-class Shell : public Service {
+class Shell : public LinearService {
 protected:
     void call (Message&& message, Response &resp) override
     {

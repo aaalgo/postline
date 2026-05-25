@@ -113,7 +113,11 @@ add_library(postline
     src/runtime.cpp
     src/program.cpp
     src/ui.cpp
-    src/tui.cpp
+    src/tui/global_tab.cpp
+    src/tui/observer.cpp
+    src/tui/render.cpp
+    src/tui/thread_tab.cpp
+    src/tui/tui.cpp
     src/cli.cpp
     src/web.cpp
 )

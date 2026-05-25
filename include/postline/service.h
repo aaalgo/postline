@@ -8,6 +8,27 @@
 
 namespace postline {
 
+class Service {
+public:
+    Service () {}
+
+    ~Service () {}
+
+    virtual void on_memory (Message &&) {
+    }
+
+    virtual void on_exit () {
+    }
+
+    virtual std::vector<Message> on_connect () {
+        return {};
+    }
+
+    virtual std::vector<Message> on_message (Message &&msg) {
+        return {};
+    }
+};
+
 class Response: noncopyable {
     std::vector<Message> messages;
 public:
@@ -19,7 +40,8 @@ public:
     }
 };
 
-class Service {
+
+class LinearService: public Service {
 protected:
     struct Entry {
         std::string thread_id;
@@ -30,19 +52,6 @@ protected:
     };
     std::vector<Entry> stack;
 public:
-    Service () {
-    }
-
-    virtual void on_memory (Message &&) {
-    }
-
-    virtual void on_exit () {
-    }
-
-    virtual std::vector<Message> on_connect () {
-        return std::vector<Message>();
-    }
-
     virtual std::vector<Message> on_message (Message &&msg) {
         {   // before call, setup logic
             std::string const &to = msg.to();

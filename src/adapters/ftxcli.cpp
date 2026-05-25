@@ -48,7 +48,7 @@ public:
 };
 
 
-class FTXCli : public Service {
+class FTXCli : public LinearService {
 public:
     FTXCli (Server::Config const &config)
         : server_(config),
@@ -68,7 +68,7 @@ public:
     }
 #endif
 
-    void call (Message &&msg, Response &resp) {
+    void call (Message &&msg, Response &resp) override {
         cli_.recv(std::move(msg));
         resp.append(outgoing_.get());
     }
@@ -102,5 +102,4 @@ int main(int argc, char **argv)
     std::cerr << "ftxcli exit" << std::endl;
     return 0;
 }
-
 

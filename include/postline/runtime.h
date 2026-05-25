@@ -368,7 +368,7 @@ struct Program: immobile {
     Agent *apply (Message const &msg);
 };
 
-class Runtime: public Program, public Service {
+class Runtime: public Program, public LinearService {
 
     std::function<void(Message &&)> consume;
     Journal journal;
