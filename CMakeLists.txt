@@ -116,6 +116,7 @@ add_library(postline
     src/tui/global_tab.cpp
     src/tui/observer.cpp
     src/tui/render.cpp
+    src/tui/stat_tab.cpp
     src/tui/thread_tab.cpp
     src/tui/tui.cpp
     src/cli.cpp

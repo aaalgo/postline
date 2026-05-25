@@ -75,17 +75,17 @@ thread and clears it when the runtime responds.
 
 ## Event Loop
 
-`TUI::run()` constructs an FTXUI `Loop` over the top-level renderer and runs a
-manual 60 Hz loop:
+`TUI::run()` constructs an FTXUI `Loop` over the top-level renderer and runs
+FTXUI's default blocking loop.
 
-1. drain pending observer messages with `Observer::process()`;
-2. synchronize observer thread state into visible tabs with `syncObserver()`;
-3. request an animation frame;
-4. run one FTXUI loop iteration;
-5. sleep for `1000 / 60` ms.
+The renderer drains pending observer messages with `Observer::process()`,
+synchronizes observer thread state into visible tabs with `syncObserver()`, and
+drains pending logs before drawing.
 
 Incoming messages and log entries also call `screen.PostEvent(Event::Custom)`.
-This wakes FTXUI promptly instead of waiting for keyboard or mouse input.
+This wakes FTXUI promptly instead of waiting for keyboard or mouse input. In
+the absence of input or posted events, the UI remains blocked and does not
+redraw.
 
 ## Concurrency Model
 

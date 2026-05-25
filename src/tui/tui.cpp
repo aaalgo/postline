@@ -1,9 +1,7 @@
 #include <algorithm>
-#include <chrono>
 #include <format>
 #include <memory>
 #include <mutex>
-#include <thread>
 #include <vector>
 
 #include <ftxui/component/component.hpp>
@@ -123,6 +121,7 @@ public:
         };
 
         addTab(std::make_unique<GlobalTab>(&global));
+        addTab(std::make_unique<StatTab>());
 
         tab_selection = Menu(
             &tab_labels,
@@ -207,6 +206,8 @@ public:
             });
 
         main_renderer = Renderer(main_container, [&] {
+            Observer::process();
+            syncObserver();
             drainLogs();
             return vbox({
                 hbox({
@@ -247,17 +248,7 @@ public:
 
     void run() override {
         Loop loop(&screen, main_renderer);
-
-        while (!loop.HasQuitted()) {
-            Observer::process();
-            syncObserver();
-            screen.RequestAnimationFrame();
-
-            loop.RunOnce();
-
-            std::this_thread::sleep_for(
-                std::chrono::milliseconds(1000 / 60));
-        }
+        loop.Run();
     }
 };
 
