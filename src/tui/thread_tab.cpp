@@ -84,17 +84,123 @@ Component MessageReader::component() {
     return renderer;
 }
 
-MessageEditor::MessageEditor() {
-    editor = Input(&editor_content, "message");
-    renderer = Renderer(editor, [&] {
-        return vbox({
-            text("new message") | bold,
-            hbox({
-                text("To: "),
-                editor->Render() | flex,
-            }),
+MessageEditor::MessageEditor(Observer::Thread const *thread_,
+                             SendCallback on_send_)
+    : thread(thread_),
+      on_send(std::move(on_send_)) {
+    DropdownOption address_option;
+    address_option.radiobox.entries = &addresses;
+    address_option.radiobox.selected = &address_selected;
+    address_option.checkbox.transform = [](EntryState const &state) {
+        Element element = hbox({
+            text(state.state ? "v " : "> ") | color(Color::GrayLight),
+            text(state.label),
         });
+        if (state.focused) {
+            element |= inverted;
+        }
+        return element;
+    };
+    address_option.radiobox.transform = [](EntryState const &state) {
+        Element element = text((state.active ? "> " : "  ") + state.label);
+        if (state.focused) {
+            element |= inverted;
+        }
+        if (state.active) {
+            element |= bold;
+        }
+        return element;
+    };
+    address_option.transform = [](bool is_open,
+                                  Element checkbox_element,
+                                  Element radiobox_element) {
+        if (is_open) {
+            return vbox({
+                std::move(checkbox_element),
+                std::move(radiobox_element) |
+                    size(HEIGHT, LESS_THAN, 6),
+            });
+        }
+        return std::move(checkbox_element);
+    };
+    address_choice = Dropdown(std::move(address_option));
+
+    ButtonOption send_option;
+    send_option.label = "Send";
+    send_option.on_click = [this] {
+        CHECK(!thread->pending);
+        CHECK(address_selected >= 0);
+        CHECK(address_selected < int(addresses.size()));
+
+        on_send(addresses[address_selected], subject_content, body_content);
+        subject_content.clear();
+        body_content.clear();
+    };
+    send_option.transform = [this](EntryState const &state) {
+        Element element = text(state.label);
+        if (thread->pending) {
+            return element | color(Color::GrayDark) | dim;
+        }
+
+        element |= color(Color::GreenLight) | bold;
+        if (state.focused) {
+            element |= inverted;
+        }
+        return element;
+    };
+    send_button = Button(std::move(send_option));
+    send_button |= CatchEvent([this](Event event) {
+        if (!thread->pending) {
+            return false;
+        }
+        if (event == Event::Return || event.is_mouse()) {
+            return true;
+        }
+        return false;
     });
+
+    auto subject_option = InputOption::Default();
+    subject_option.multiline = false;
+    subject_option.transform = [](InputState state) {
+        if (state.is_placeholder) {
+            state.element |= dim;
+        }
+        return state.element;
+    };
+    subject_editor = Input(&subject_content, "subject", subject_option);
+
+    auto body_option = InputOption::Default();
+    body_option.multiline = true;
+    body_option.transform = [](InputState state) {
+        if (state.is_placeholder) {
+            state.element |= dim;
+        }
+        return state.element;
+    };
+    body_editor = Input(&body_content, body_option);
+
+    renderer = Renderer(
+        Container::Vertical({
+            address_choice,
+            send_button,
+            subject_editor,
+            body_editor,
+        }),
+        [&] {
+            return vbox({
+                hbox({
+                    text("To: ") | color(Color::Cyan) | bold,
+                    address_choice->Render() | flex,
+                    filler(),
+                    send_button->Render(),
+                }),
+                hbox({
+                    text("Subject: ") | color(Color::Magenta) | bold,
+                    subject_editor->Render() | flex,
+                }),
+                body_editor->Render() | flex,
+            }) | flex;
+        });
 }
 
 Component MessageEditor::component() {
@@ -118,7 +224,7 @@ void ThreadTab::reloadCurrentMessage() {
         std::swap(current_message, next);
     }
     else {
-        Message next = runtime->readMessage(next_id);
+        Message next = read_message(next_id);
         std::swap(current_message, next);
     }
 
@@ -126,10 +232,21 @@ void ThreadTab::reloadCurrentMessage() {
     message_reader.resetScroll();
 }
 
-ThreadTab::ThreadTab(Runtime *runtime_, Observer::Thread *data_)
-    : runtime(runtime_),
-      data(data_),
-      message_reader(&current_message) {
+ThreadTab::ThreadTab(Observer::Thread *data_,
+                     ReadMessageCallback read_message_,
+                     SendCallback on_send_)
+    : data(data_),
+      read_message(std::move(read_message_)),
+      on_send(std::move(on_send_)),
+      message_reader(&current_message),
+      message_editor(data_, [this](std::string to,
+                                   std::string subject,
+                                   std::string body) {
+          on_send(data->id,
+                  Message(json{{"To", std::move(to)},
+                               {"Subject", std::move(subject)}},
+                          std::move(body)));
+      }) {
     nav_mode_menu = Menu(
         &nav_modes,
         &nav_mode,

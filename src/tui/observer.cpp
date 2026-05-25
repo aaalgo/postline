@@ -15,7 +15,8 @@ Observer::MessageHeader::MessageHeader(Message const &msg)
 }
 
 Observer::Thread::Thread()
-    : trace(MAX_VISIBLE_MESSAGES,
+    : pending(false),
+    trace(MAX_VISIBLE_MESSAGES,
           [](MessageHeader const &m) {
               return text(std::format("{} -> {}: {}", m.from, m.to, m.subject));
           }) {
@@ -101,7 +102,18 @@ void Observer::apply(Message &&msg) {
     else {
         MessageHeader header(msg);
         if (header.thread_id >= 0 && header.thread_id < int(threads.size())) {
-            threads[header.thread_id]->trace.push_back(std::move(header));
+            Thread *ptr = threads[header.thread_id].get();
+            ptr->trace.push_back(std::move(header));
+            auto const &ctx = msg.header().at(CONTEXT_HEADER_NAME);
+            AgentID from_id = ctx.at("from_agent_id").get<AgentID>();
+            AgentID to_id = ctx.at("to_agent_id").get<AgentID>();
+            static constexpr AgentID USER_ID = 2;
+            if (to_id == USER_ID) {
+                ptr->pending = false;
+            }
+            else if (from_id == USER_ID) {
+                ptr->pending = true;
+            }
         }
     }
 }

@@ -42,9 +42,11 @@ protected:
         MessageHeader(Message const &msg);
     };
 
+public:
     struct Thread {
         ThreadID id;
         std::string name;
+        bool pending;
         ftxui::ListData<MessageHeader> trace;
 
         Thread();

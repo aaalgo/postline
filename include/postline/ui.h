@@ -113,7 +113,7 @@ namespace postline { namespace ui {
 
     public:
 
-        UI () {
+        UI (): rt(nullptr) {
         }
 
         virtual void setRuntime (Runtime *rt_) {
@@ -136,5 +136,5 @@ namespace postline { namespace ui {
 
     std::unique_ptr<UI> make_ui (std::string const &name);
 
-}
-}
+}}
+

@@ -73,20 +73,51 @@ public:
 };
 
 class MessageEditor {
-    std::string editor_content;
+    using SendCallback = std::function<void(std::string,
+                                            std::string,
+                                            std::string)>;
 
-    ftxui::Component editor;
+    Observer::Thread const *thread;
+    SendCallback on_send;
+
+    std::vector<std::string> addresses = {
+        "runtime",
+        "echo",
+        "ai1",
+        "ai2",
+        "ai3",
+        "shell",
+        "mcp",
+        "memory",
+        "login",
+        "benchmark",
+    };
+    int address_selected = 0;
+    std::string subject_content;
+    std::string body_content;
+
+    ftxui::Component address_choice;
+    ftxui::Component send_button;
+    ftxui::Component subject_editor;
+    ftxui::Component body_editor;
     ftxui::Component renderer;
 
 public:
-    MessageEditor();
+    explicit MessageEditor(Observer::Thread const *thread_,
+                           SendCallback on_send_);
 
     ftxui::Component component();
 };
 
 class ThreadTab : public Tab {
-    Runtime *runtime;
+public:
+    using ReadMessageCallback = std::function<Message(AccessID)>;
+    using SendCallback = std::function<void(ThreadID, Message&&)>;
+
+private:
     Observer::Thread *data;
+    ReadMessageCallback read_message;
+    SendCallback on_send;
 
     Message current_message;
     AccessID current_message_id = NO_ACCESS_ID;
@@ -143,7 +174,9 @@ class ThreadTab : public Tab {
     void reloadCurrentMessage();
 
 public:
-    explicit ThreadTab(Runtime *runtime_, Observer::Thread *data_);
+    explicit ThreadTab(Observer::Thread *data_,
+                       ReadMessageCallback read_message_,
+                       SendCallback on_send_);
 
     std::string label() const override;
     ftxui::Component component() override;
