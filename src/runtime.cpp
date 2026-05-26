@@ -121,59 +121,12 @@ int Runtime::cmd_create_domain (Message const &msg, json *resp) {
     return 0;
 }
 
-Runtime::SyscallResult Runtime::syscall (json const &op) {
+Runtime::ApplyResult Runtime::syscall (json const &op) {
     Message entry = protocol::runtime::Commit::make(op);
     journal.append(entry);
+    auto r = apply(entry);
     if (consume) consume(std::move(entry));
-    return __commit(op);
-}
-
-Runtime::SyscallResult Runtime::__commit (json const &m) {
-    Runtime::SyscallResult result;
-    CHECK(m.is_object());
-    std::string const &op = m.at("op").get_ref<std::string const &>();
-    if (op == "create_agent") {
-        AgentParams params(m);
-        DomainID domain_id = m.at("domain_id").get<DomainID>();
-        CHECK(domain_id >= 0 && domain_id < domains.size());
-        Domain *domain = domains[domain_id].get();
-        result.agent = createAgent(params, domain);
-        log::info("create agent {}: {}", result.agent->id, result.agent->name);
-    } 
-    else if (op == "create_domain") {
-        std::string name = m.at("name").get<std::string>();
-        DomainID parent_id = m.at("parent_id").get<DomainID>();
-        CHECK(parent_id >= 0 && parent_id < domains.size());
-        Domain *parent = domains[parent_id].get();
-        result.domain = createDomain(name, parent);
-        log::info("create domain {}: {}", result.domain->id, result.domain->name);
-    }
-    else if (op == "create_domain_snapshot") {
-        DomainID parent_id = m.at("parent_id").get<DomainID>();
-        CHECK(parent_id >= 0 && parent_id < domains.size());
-        Domain *parent = domains[parent_id].get();
-        std::string snapshot = m.at("snapshot").get<std::string>();
-        auto it = snapshots.find(snapshot);
-        CHECK(it != snapshots.end());
-        result.domain = createDomain(it->second, parent);
-        log::info("create domain {}: {}", result.domain->id, result.domain->name);
-    }
-    else if (op == "create_thread") {
-        DomainID domain_id = m.at("domain_id").get<DomainID>();
-        CHECK(domain_id >= 0 && domain_id < domains.size());
-        Domain *domain = domains[domain_id].get();
-        CHECK(!domain->detached);
-        result.thread = createThread(domain);
-        // We haven't handled entry.from/to yet
-        log::info("create thread {} from domain {}", result.thread->id, domain->id);
-    }
-    else if (op == "begin_shutdown") {
-    }
-    else if (op == "end_shutdown") {
-    } else {
-        CHECK(0, "UNKNOWN OP");
-    }
-    return result;
+    return r;
 }
 
 void Runtime::call (Message &&msg, Response &resp) {
@@ -352,7 +305,9 @@ void Runtime::run() {
 #endif
             journal.append(msg);
             accounting.update(msg);
-            Agent *agent = apply(msg);
+            ApplyResult r = apply(msg);
+            Agent *agent = r.agent;
+            CHECK(agent != nullptr);
             if (!agent->driver) {
                 if (agent->dead) {
                     log::error("Agent is in error status.");

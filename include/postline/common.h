@@ -46,6 +46,12 @@ namespace postline {
     using AccessID = int64_t;
     static constexpr AccessID NO_ACCESS_ID = -1;
 
+    AccessID make_access_id(uint32_t segment, uint64_t offset);
+    void split_access_id(AccessID access_id, uint32_t *segment, uint64_t *offset);
+    AccessID mark_receiving (AccessID);
+    AccessID unmark_receiving (AccessID);
+    bool is_receiving (AccessID);
+
     int64_t parse_i64(std::string const&);
 
     int64_t constexpr MESSAGE_QUIET = 0x00000001;

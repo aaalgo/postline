@@ -18,7 +18,10 @@ using namespace ftxui;
 
 Element MessageReader::renderMessage() {
     Elements lines;
-    json const &header = message->header();
+    if (!(*message)->header().contains(CONTEXT_HEADER_NAME)) {
+        return vbox(std::move(lines));
+    }
+    json const &header = (*message)->header();
 
     /*
     if (header.contains(CONTEXT_HEADER_NAME)) {
@@ -28,7 +31,7 @@ Element MessageReader::renderMessage() {
 
     appendMessageHeaders(lines, header);
     lines.push_back(text(""));
-    appendTextLines(lines, message->body());
+    appendTextLines(lines, (*message)->body());
     message_line_count = int(lines.size());
     message_scroll = std::clamp(message_scroll, 0,
                                 std::max(0, message_line_count - 1));
@@ -66,7 +69,7 @@ bool MessageReader::onMessageViewerEvent(Event event) {
     return false;
 }
 
-MessageReader::MessageReader(Message const *message_)
+MessageReader::MessageReader(Message const **message_)
     : message(message_) {
     renderer = Renderer([&](bool) {
         return renderMessage() | focusPosition(0, message_scroll) | yframe;
@@ -84,7 +87,7 @@ Component MessageReader::component() {
     return renderer;
 }
 
-MessageEditor::MessageEditor(Observer::Thread const *thread_,
+MessageEditor::MessageEditor(Thread const *thread_,
                              SendCallback on_send_)
     : thread(thread_),
       on_send(std::move(on_send_)) {
@@ -212,30 +215,23 @@ void ThreadTab::reloadCurrentMessage() {
 
     if (trace_selected >= 0 &&
         trace_selected < int(data->trace.size())) {
-        next_id = data->trace.at(trace_selected).id;
+        next_id = data->trace.at(trace_selected);
     }
 
     if (next_id == current_message_id) {
         return;
     }
 
-    if (next_id == NO_ACCESS_ID) {
-        Message next;
-        std::swap(current_message, next);
-    }
-    else {
-        Message next = read_message(next_id);
-        std::swap(current_message, next);
-    }
-
+    current_message = read_message(next_id);
     current_message_id = next_id;
     message_reader.resetScroll();
 }
 
-ThreadTab::ThreadTab(Observer::Thread *data_,
+ThreadTab::ThreadTab(Observer *observer, Thread *data_,
                      ReadMessageCallback read_message_,
                      SendCallback on_send_)
     : data(data_),
+      trace(observer, &data_->trace),
       read_message(std::move(read_message_)),
       on_send(std::move(on_send_)),
       message_reader(&current_message),
@@ -261,7 +257,7 @@ ThreadTab::ThreadTab(Observer::Thread *data_,
         member_list,
     }, &nav_mode);
 
-    trace_list = List(&data->trace,
+    trace_list = List(&trace,
                        &trace_selected,
                        &trace_follow_tail);
 

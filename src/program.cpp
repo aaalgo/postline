@@ -450,8 +450,11 @@ void Program::preprocess (Agent *from, Message &msg, Runtime *runtime) {
 }
 
 // same as journal apply
-Agent *Program::apply (Message const &msg) {
+Program::ApplyResult Program::apply (Message const &msg) {
     // now msg has an id
+    if (msg.type() == "runtime:commit") {
+        return commit(msg);
+    }
     Context ctx;
     Agent *to = nullptr;
     loadContext(msg, ctx);
@@ -487,9 +490,66 @@ Agent *Program::apply (Message const &msg) {
     CHECK(to);
     AccessID message_id = msg.access_id();
     ctx.thread->trace.push_back(message_id);
+    if (ctx.from.agent == user && to != user) {
+        ctx.thread->pending = true;
+    }
+    else if (to == user) {
+        ctx.thread->pending = false;
+    }
     ctx.from.agent->memory.push_back(message_id);
     to->memory.push_back(mark_receiving(message_id));
-    return to;
+    ApplyResult r;
+    r.agent = to;
+    return r;
+}
+
+Program::ApplyResult Program::commit (Message const &msg) {
+    json m = json::parse(msg.body());
+    Runtime::ApplyResult result;
+    CHECK(m.is_object());
+    std::string const &op = m.at("op").get_ref<std::string const &>();
+    if (op == "create_agent") {
+        AgentParams params(m);
+        DomainID domain_id = m.at("domain_id").get<DomainID>();
+        CHECK(domain_id >= 0 && domain_id < domains.size());
+        Domain *domain = domains[domain_id].get();
+        result.agent = createAgent(params, domain);
+        log::info("create agent {}: {}", result.agent->id, result.agent->name);
+    } 
+    else if (op == "create_domain") {
+        std::string name = m.at("name").get<std::string>();
+        DomainID parent_id = m.at("parent_id").get<DomainID>();
+        CHECK(parent_id >= 0 && parent_id < domains.size());
+        Domain *parent = domains[parent_id].get();
+        result.domain = createDomain(name, parent);
+        log::info("create domain {}: {}", result.domain->id, result.domain->name);
+    }
+    else if (op == "create_domain_snapshot") {
+        DomainID parent_id = m.at("parent_id").get<DomainID>();
+        CHECK(parent_id >= 0 && parent_id < domains.size());
+        Domain *parent = domains[parent_id].get();
+        std::string snapshot = m.at("snapshot").get<std::string>();
+        auto it = snapshots.find(snapshot);
+        CHECK(it != snapshots.end());
+        result.domain = createDomain(it->second, parent);
+        log::info("create domain {}: {}", result.domain->id, result.domain->name);
+    }
+    else if (op == "create_thread") {
+        DomainID domain_id = m.at("domain_id").get<DomainID>();
+        CHECK(domain_id >= 0 && domain_id < domains.size());
+        Domain *domain = domains[domain_id].get();
+        CHECK(!domain->detached);
+        result.thread = createThread(domain);
+        // We haven't handled entry.from/to yet
+        log::info("create thread {} from domain {}", result.thread->id, domain->id);
+    }
+    else if (op == "begin_shutdown") {
+    }
+    else if (op == "end_shutdown") {
+    } else {
+        CHECK(0, "UNKNOWN OP");
+    }
+    return result;
 }
 
 

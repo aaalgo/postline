@@ -212,13 +212,14 @@ struct Thread {
     ThreadID id;
     std::string name;
     Domain *root;
+    bool pending;       // whether user must wait for reply
     // let's try this logic for now;
     // if stack is empty, pending is always (user, root)
     // later we might want to relax this to a user role rather than just user
     std::vector<Frame> stack;
     std::vector<AccessID> trace;
 
-    Thread (ThreadID id_, Domain *root_): id(id_), root(root_) {
+    Thread (ThreadID id_, Domain *root_): id(id_), root(root_), pending(false) {
         CHECK(!root->detached);
         root->thread = this;
         root->detached = true;
@@ -365,7 +366,18 @@ struct Program: immobile {
     Message makeRewindMessage (Agent *fromAgent, Domain *fromDomain = nullptr, char const *error = "") const;
 
     void preprocess (Agent *from, Message &msg, Runtime *runtime);
-    Agent *apply (Message const &msg);
+
+    struct ApplyResult {
+        union {
+        Agent *agent;
+        Domain *domain;
+        Thread *thread;
+        };
+    };
+
+    ApplyResult apply (Message const &msg);
+private:
+    ApplyResult commit (Message const &);
 };
 
 class Runtime: public Program, public LinearService {
@@ -376,15 +388,6 @@ class Runtime: public Program, public LinearService {
     Accounting accounting;
     bool stop_requested;
 
-    struct SyscallResult {
-        union {
-        Agent *agent;
-        Domain *domain;
-        Thread *thread;
-        };
-    };
-
-    SyscallResult __commit (json const &op);
 
     void regularizeAgentParams (json &m, Domain *domain);
 
@@ -412,12 +415,7 @@ public:
         : consume(config.consume),
           journal(config.journal_path, config.resume_path,
                   [this](Message &&msg) { 
-                      if (msg.type() == "runtime:commit") {
-                          protocol::runtime::Commit c(msg);
-                          __commit(c.op);
-                      } else {
-                          apply(msg);
-                      }
+                      apply(msg);
                       if (consume) consume(std::move(msg));
                   }),
           stop_requested(false) {
@@ -436,7 +434,7 @@ public:
 
     void call (Message &&msg, Response &) override;
 
-    SyscallResult syscall (json const &op);
+    ApplyResult syscall (json const &op);
 
     void syscalls (json const &ops) {
         for (json const &j: ops.get_ref<json::array_t const &>()) {

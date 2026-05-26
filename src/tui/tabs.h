@@ -81,7 +81,7 @@ public:
 };
 
 class MessageReader {
-    Message const *message;
+    Message const **message;
 
     int message_scroll = 0;
     int message_line_count = 0;
@@ -92,7 +92,7 @@ class MessageReader {
     bool onMessageViewerEvent(ftxui::Event event);
 
 public:
-    explicit MessageReader(Message const *message_);
+    explicit MessageReader(Message const **message_);
 
     void resetScroll();
     ftxui::Component component();
@@ -103,7 +103,7 @@ class MessageEditor {
                                             std::string,
                                             std::string)>;
 
-    Observer::Thread const *thread;
+    Thread const *thread;
     SendCallback on_send;
 
     std::vector<std::string> addresses = {
@@ -129,23 +129,60 @@ class MessageEditor {
     ftxui::Component renderer;
 
 public:
-    explicit MessageEditor(Observer::Thread const *thread_,
+    explicit MessageEditor(Thread const *thread_,
                            SendCallback on_send_);
 
     ftxui::Component component();
 };
 
+class MessageListDataRef: public ftxui::ListDataRef {
+  Observer *observer;
+  std::vector<AccessID> *data;
+public:
+  MessageListDataRef (Observer *observer_, std::vector<AccessID> *data_)
+      :observer(observer_),
+      data(data_)
+  {
+  }
+
+  virtual int firstValid() const {
+      return 0;
+  }
+  virtual int end() const {
+      return data->size();
+  }
+  virtual ftxui::Element Render(int index) const {
+      try {
+      Message const &msg = *observer->getMessage(data->at(index));
+      if (!msg.header().contains(CONTEXT_HEADER_NAME)) {
+          return ftxui::text("cannot load message");
+      }
+      json const &ctx = msg.header().at(CONTEXT_HEADER_NAME);
+      AgentID from_agent_id = ctx.at("from_agent_id").get<AgentID>();
+      AgentID to_agent_id = ctx.at("to_agent_id").get<AgentID>();
+      Agent *from = observer->agents[from_agent_id].get();
+      Agent *to = observer->agents[to_agent_id].get();
+      return ftxui::text(std::format("{} -> {}: {}", from->name, to->name, msg.subject()));
+      }
+      catch (...) {
+          return ftxui::text("no context");
+      }
+  }
+};
+
+
 class ThreadTab : public Tab {
 public:
-    using ReadMessageCallback = std::function<Message(AccessID)>;
+    using ReadMessageCallback = std::function<Message const *(AccessID)>;
     using SendCallback = std::function<void(ThreadID, Message&&)>;
 
 private:
-    Observer::Thread *data;
+    Thread *data;
+    MessageListDataRef trace;
     ReadMessageCallback read_message;
     SendCallback on_send;
 
-    Message current_message;
+    Message const *current_message;
     AccessID current_message_id = NO_ACCESS_ID;
     MessageReader message_reader;
     MessageEditor message_editor;
@@ -200,7 +237,7 @@ private:
     void reloadCurrentMessage();
 
 public:
-    explicit ThreadTab(Observer::Thread *data_,
+    explicit ThreadTab(Observer *observer, Thread *data_,
                        ReadMessageCallback read_message_,
                        SendCallback on_send_);
 

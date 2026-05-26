@@ -18,12 +18,10 @@ namespace postline { namespace ui {
 
 class ThreadTab;
 
-class Observer {
+class Observer: public Program {
     std::mutex mutex;
     std::deque<Message> pendings;
 
-    void commit(json const &m);
-    void apply(Message &&msg);
     friend class ThreadTab;
 
 protected:
@@ -42,17 +40,10 @@ protected:
         MessageHeader(Message const &msg);
     };
 
+
+    std::unordered_map<AccessID, Message> cache;
 public:
-    struct Thread {
-        ThreadID id;
-        std::string name;
-        bool pending;
-        ftxui::ListData<MessageHeader> trace;
-
-        Thread();
-    };
-
-    std::vector<std::unique_ptr<Thread>> threads;
+    Message const *getMessage (AccessID);
 };
 
 }}

@@ -152,6 +152,10 @@ AccessID mark_receiving (AccessID id) {
     return id | RECEIVING_MASK;
 }
 
+AccessID unmark_receiving (AccessID id) {
+    return id & ~RECEIVING_MASK;
+}
+
 bool is_receiving (AccessID id) {
     return (id & RECEIVING_MASK) != 0;
 }

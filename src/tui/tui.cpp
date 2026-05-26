@@ -92,10 +92,9 @@ class TUI: public UI, public Observer {
             }
             global.threads.push_back(std::move(name));
             addTab(std::make_unique<ThreadTab>(
-                th,
+                this, th,
                 [this](AccessID access_id) {
-                    CHECK(global.runtime);
-                    return global.runtime->readMessage(access_id);
+                    return getMessage(access_id);
                 },
                 [this](ThreadID thread_id, Message &&msg) {
                     send(thread_id, std::move(msg));
