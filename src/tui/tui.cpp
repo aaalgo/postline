@@ -13,7 +13,7 @@
 #include <postline/ui.h>
 #include <spdlog/details/log_msg_buffer.h>
 
-#include "observer.h"
+#include <postline/observer.h>
 #include "render.h"
 #include "tabs.h"
 

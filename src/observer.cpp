@@ -1,10 +1,8 @@
-#include "observer.h"
+#include <postline/observer.h>
 
 #include <postline/common.h>
 
 namespace postline { namespace ui {
-
-using namespace ftxui;
 
 Observer::MessageHeader::MessageHeader(Message const &msg)
     : id(msg.access_id()),

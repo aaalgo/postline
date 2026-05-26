@@ -12,7 +12,7 @@
 
 #include "../ftx_list.hpp"
 #include "limits.h"
-#include "observer.h"
+#include <postline/observer.h>
 
 namespace postline { namespace ui {
 

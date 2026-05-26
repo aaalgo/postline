@@ -90,6 +90,13 @@ FetchContent_Declare(
     GIT_SHALLOW TRUE
 )
 
+FetchContent_Declare(
+    cpp_httplib
+    GIT_REPOSITORY https://github.com/yhirose/cpp-httplib.git
+    GIT_TAG v0.28.0
+    GIT_SHALLOW TRUE
+)
+
 set(BUILD_DOC OFF CACHE BOOL "Disable CRCpp documentation" FORCE)
 set(BUILD_TEST OFF CACHE BOOL "Disable CRCpp tests" FORCE)
 set(FTXUI_BUILD_DOCS OFF CACHE BOOL "Disable FTXUI documentation" FORCE)
@@ -98,7 +105,7 @@ set(FTXUI_BUILD_TESTS OFF CACHE BOOL "Disable FTXUI tests" FORCE)
 set(FTXUI_BUILD_TESTS_FUZZER OFF CACHE BOOL "Disable FTXUI fuzz tests" FORCE)
 set(FTXUI_ENABLE_INSTALL OFF CACHE BOOL "Disable FTXUI install rules" FORCE)
 
-FetchContent_MakeAvailable(nlohmann_json spdlog CRCpp CLI11 pybind11 ftxui)
+FetchContent_MakeAvailable(nlohmann_json spdlog CRCpp CLI11 pybind11 ftxui cpp_httplib)
 
 configure_file(
     ${CMAKE_CURRENT_SOURCE_DIR}/include/postline/build_info.hpp.in
@@ -114,7 +121,7 @@ add_library(postline
     src/program.cpp
     src/ui.cpp
     src/tui/global_tab.cpp
-    src/tui/observer.cpp
+    src/observer.cpp
     src/tui/render.cpp
     src/tui/stat_tab.cpp
     src/tui/thread_tab.cpp
@@ -136,6 +143,7 @@ target_include_directories(postline
 target_link_libraries(postline
     PUBLIC
         CLI11::CLI11
+        httplib::httplib
         nlohmann_json::nlohmann_json
         spdlog::spdlog_header_only
     PRIVATE

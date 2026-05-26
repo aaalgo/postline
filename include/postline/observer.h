@@ -1,18 +1,12 @@
 #pragma once
 
 #include <deque>
-#include <format>
-#include <memory>
 #include <mutex>
 #include <string>
-#include <vector>
+#include <unordered_map>
 
-#include <ftxui/dom/elements.hpp>
 #include <postline/common.h>
-#include <postline/runtime.h>
-
-#include "../ftx_list.hpp"
-#include "limits.h"
+#include <postline/program.h>
 
 namespace postline { namespace ui {
 

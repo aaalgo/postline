@@ -43,7 +43,6 @@ json AgentParams::dump () const {
         {"service", service},
         {"flags", dump_agent_flags(flags)},
     };
-    return json();
 }
 
 AgentParams::AgentParams (json const &j)
@@ -59,6 +58,7 @@ AgentParams::AgentParams (json const &j)
 }
 
 json Agent::dump () const {
+    CHECK(domain);
     return json{
         {"link", {{"parent", link.parent},
                   {"anchor", link.anchor}
@@ -69,13 +69,13 @@ json Agent::dump () const {
         {"flags", dump_agent_flags(flags)},
         {"id", id},
         {"domain_id", domain->id},
+        {"domain_name", domain->name},
         {"dead", dead},
-        {"oblication_count", obligation_count},
+        {"obligation_count", obligation_count},
+        {"driver", driver ? json{{"read_fd", driver->read_fd()}} : json(nullptr)},
         {"memory", memory}
     };
-    return json();
 }
-
 
 json Snapshot::dump () const {
     json jmembers = json::array();
@@ -96,13 +96,15 @@ json Domain::dump () const {
     json jmembers = json::object();
     for (auto const &[name, agent]: members) {
         CHECK(agent);
-        jmembers[name] = agent->id;
+        jmembers[name] = json{{"id", agent->id},
+                              {"name", agent->name}};
     }
 
     json jchildren = json::object();
     for (auto const &[name, domain]: children) {
         CHECK(domain);
-        jchildren[name] = domain->id;
+        jchildren[name] = json{{"id", domain->id},
+                               {"name", domain->name}};
     }
 
     CHECK(thread);
@@ -113,15 +115,53 @@ json Domain::dump () const {
         {"parent_id", parent ? json(parent->id) : json(nullptr)},
         {"thread_id", json(thread->id)},
         {"detached", detached},
-        {"entry", {{"from", entry.from ? json(entry.from->id) : json(nullptr)},
-                   {"to", entry.to ? json(entry.to->id) : json(nullptr)}
-                   }},
+        {"entry", {{"from", entry.from ? json(entry.from->name) : json(nullptr)},
+                   {"to", entry.to ? json(entry.to->name) : json(nullptr)}}},
         {"members", jmembers},
         {"children", jchildren}
     };
 }
 
+json Frame::dump () const {
+    CHECK(from.agent);
+    CHECK(from.domain);
+    CHECK(to.agent);
+    CHECK(to.domain);
+
+    return json{{"message_id", message_id},
+                {"from_agent_id", from.agent->id},
+                {"from_agent_name", from.agent->name},
+                {"from_domain_id", from.domain->id},
+                {"from_domain_name", from.domain->name},
+                {"to_agent_id", to.agent->id},
+                {"to_agent_name", to.agent->name},
+                {"to_domain_id", to.domain->id},
+                {"to_domain_name", to.domain->name}};
+}
+
+json Thread::dump () const {
+    CHECK(root);
+
+    json jstack = json::array();
+    for (auto const &f: stack) {
+        jstack.push_back(f.dump());
+    }
+
+    return json{{"id", id},
+                {"name", name},
+                {"root", root->id},
+                {"root_name", root->name},
+                {"pending", pending},
+                {"stack", jstack},
+                {"trace", trace}};
+}
+
 json Program::dump () const {
+    CHECK(global);
+    CHECK(zero);
+    CHECK(runtime);
+    CHECK(user);
+
     json jdomains = json::array();
     for (auto const &domain: domains) {
         CHECK(domain);
@@ -150,10 +190,14 @@ json Program::dump () const {
         {"agents", jagents},
         {"snapshots", jsnapshots},
         {"threads", jthreads},
+        {"global_id", global->id},
+        {"zero_id", zero->id},
+        {"runtime_id", runtime->id},
+        {"user_id", user->id},
     };
 }
 
-Program::ResolvedAddress Program::resolve (std::string_view address, Domain *domain) {
+Program::ResolvedAddress Program::resolve (std::string_view address, Domain *domain) const {
     // we might want to expand address to a more generic form
     Program::ResolvedAddress r;
     r.tag = ResolvedAddress::Tag::NONE;
@@ -263,7 +307,7 @@ void Program::saveContext (Message &msg, Context const &ctx) const {
     });
 }
 
-void Program::loadContext (Message const &msg, Context &ctx) {
+void Program::loadContext (Message const &msg, Context &ctx) const {
     json j = msg.header()[CONTEXT_HEADER_NAME];
     ThreadID thread_id = j.at("thread_id").get<ThreadID>();
     CHECK(thread_id >= 0 && thread_id < threads.size());
@@ -371,7 +415,8 @@ void Program::preprocess (Agent *from, Message &msg, Runtime *runtime) {
                 break;
             }
             // CHECK matching of TO
-            ctx.to = f.from;
+            ctx.to.domain = nullptr;
+            ctx.to.agent = nullptr;
             ctx.action = Action::RETURN;
         }
         else {
@@ -459,9 +504,10 @@ Program::ApplyResult Program::apply (Message const &msg) {
     Agent *to = nullptr;
     loadContext(msg, ctx);
     if (ctx.action == Action::RETURN) {
+        auto const &f = ctx.thread->stack.back();
+        to = f.from.agent;
         ctx.thread->stack.pop_back();
         --ctx.from.agent->obligation_count;
-        to = ctx.to.agent;
     }
     else if (ctx.action == Action::CALL) {
         ctx.thread->stack.emplace_back();
@@ -543,6 +589,7 @@ Program::ApplyResult Program::commit (Message const &msg) {
         // We haven't handled entry.from/to yet
         log::info("create thread {} from domain {}", result.thread->id, domain->id);
     }
+    // the two below have to go to runtime
     else if (op == "begin_shutdown") {
     }
     else if (op == "end_shutdown") {
