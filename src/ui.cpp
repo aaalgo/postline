@@ -106,6 +106,7 @@ static char const *LOCAL_AGENTS_2 = R"(
 {"from": "zero", "name": "memory", "service": "pipe:echo -m", "flags": ["history"]},
 {"from": "zero", "name": "login", "service": "pipe:login", "flags": ["clone"]},
 {"from": "zero", "name": "benchmark", "service": "pipe:benchmark", "flags": []}
+{"from": "zero", "name": "web_search", "service": "pipe:web_search.py", "flags": []}
 ]
 )";
         syscall(2, Message(std::move(h),std::string(LOCAL_AGENTS_2)));
