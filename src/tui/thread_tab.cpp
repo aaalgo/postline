@@ -7,6 +7,7 @@
 #include <ftxui/component/component.hpp>
 #include <ftxui/component/component_options.hpp>
 #include <ftxui/component/event.hpp>
+#include <ftxui/component/mouse.hpp>
 #include <ftxui/dom/elements.hpp>
 #include <postline/common.h>
 
@@ -40,6 +41,10 @@ Element MessageReader::renderMessage() {
 }
 
 bool MessageReader::onMessageViewerEvent(Event event) {
+    if (event.is_mouse()) {
+        return onMessageViewerMouseEvent(event);
+    }
+
     if (event == Event::ArrowUp || event == Event::Character('k')) {
         message_scroll = std::max(0, message_scroll - 1);
         return true;
@@ -69,10 +74,34 @@ bool MessageReader::onMessageViewerEvent(Event event) {
     return false;
 }
 
+bool MessageReader::onMessageViewerMouseEvent(Event event) {
+    if (event.mouse().button != Mouse::WheelUp &&
+        event.mouse().button != Mouse::WheelDown) {
+        return false;
+    }
+
+    if (!message_viewport_box.Contain(event.mouse().x, event.mouse().y)) {
+        return false;
+    }
+
+    if (event.mouse().button == Mouse::WheelUp) {
+        message_scroll = std::max(0, message_scroll - 1);
+        return true;
+    }
+
+    message_scroll = std::min(std::max(0, message_line_count - 1),
+                              message_scroll + 1);
+    return true;
+}
+
 MessageReader::MessageReader(Message const **message_)
     : message(message_) {
     renderer = Renderer([&](bool) {
-        return renderMessage() | focusPosition(0, message_scroll) | yframe;
+        return renderMessage() |
+            focusPosition(0, message_scroll) |
+            vscroll_indicator |
+            yframe |
+            reflect(message_viewport_box);
     });
     renderer |= CatchEvent([&](Event event) {
         return onMessageViewerEvent(event);
@@ -342,11 +371,11 @@ ThreadTab::ThreadTab(Observer *observer, Thread *data_,
             });
         });
 
-    root = Container::Horizontal({
-        left_renderer,
-        middle_renderer,
-        right_renderer,
-    });
+    auto middle_right_split =
+        ResizableSplitLeft(middle_renderer, right_renderer,
+                           &middle_column_width);
+    root = ResizableSplitLeft(left_renderer, middle_right_split,
+                              &left_column_width);
 
     renderer = Renderer(root, [&] {
         if (right_pane_mode == RightPaneMode::Message) {
@@ -357,21 +386,7 @@ ThreadTab::ThreadTab(Observer *observer, Thread *data_,
             return message_editor.component()->Render() | flex;
         }
 
-        return vbox({
-            /*
-            hbox({
-                text("T" + std::to_string(thread->id)) | bold,
-                text(" "),
-                text(thread->name),
-            }),*/
-            hbox({
-                left_renderer->Render() | size(WIDTH, LESS_THAN, 24),
-                separator(),
-                middle_renderer->Render() | size(WIDTH, LESS_THAN, 40) | flex,
-                separator(),
-                right_renderer->Render() | flex,
-            }) | flex,
-        });
+        return root->Render() | flex;
     });
 }
 

@@ -7,6 +7,7 @@
 #include <vector>
 
 #include <ftxui/component/component.hpp>
+#include <ftxui/screen/box.hpp>
 #include <postline/runtime.h>
 #include <spdlog/details/log_msg_buffer.h>
 
@@ -86,11 +87,13 @@ class MessageReader {
 
     int message_scroll = 0;
     int message_line_count = 0;
+    ftxui::Box message_viewport_box;
 
     ftxui::Component renderer;
 
     ftxui::Element renderMessage();
     bool onMessageViewerEvent(ftxui::Event event);
+    bool onMessageViewerMouseEvent(ftxui::Event event);
 
 public:
     explicit MessageReader(Message const **message_);
@@ -200,6 +203,8 @@ private:
     int nav_selected = 0;
     int trace_selected = 0;
     bool trace_follow_tail = true;
+    int left_column_width = 24;
+    int middle_column_width = 40;
 
     std::vector<std::string> nav_modes = {
         "tree", "stack", "members",
