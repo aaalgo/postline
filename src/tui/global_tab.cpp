@@ -4,6 +4,7 @@
 
 #include <ftxui/component/component.hpp>
 #include <ftxui/component/component_options.hpp>
+#include <ftxui/component/event.hpp>
 #include <ftxui/dom/elements.hpp>
 
 #include "render.h"
@@ -14,6 +15,10 @@ using namespace ftxui;
 
 ThreadID Tab::threadId() const {
     return NOT_A_THREAD;
+}
+
+bool Tab::onShortcut(Event const &) {
+    return false;
 }
 
 GlobalData::GlobalData()

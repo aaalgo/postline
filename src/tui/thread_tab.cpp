@@ -206,6 +206,23 @@ MessageEditor::MessageEditor(Thread const *thread_,
         });
 }
 
+bool MessageEditor::sendCurrentMessage() {
+    if (thread->pending) {
+        return false;
+    }
+    if (subject_content.empty() && body_content.empty()) {
+        return false;
+    }
+
+    CHECK(address_selected >= 0);
+    CHECK(address_selected < int(addresses.size()));
+
+    on_send(addresses[address_selected], subject_content, body_content);
+    subject_content.clear();
+    body_content.clear();
+    return true;
+}
+
 Component MessageEditor::component() {
     return renderer;
 }
@@ -225,6 +242,22 @@ void ThreadTab::reloadCurrentMessage() {
     current_message = read_message(next_id);
     current_message_id = next_id;
     message_reader.resetScroll();
+}
+
+void ThreadTab::toggleMaximizeRightPane() {
+    if (right_pane_mode != RightPaneMode::Normal) {
+        right_pane_mode = RightPaneMode::Normal;
+        return;
+    }
+
+    if (message_editor.component()->Focused()) {
+        right_pane_mode = RightPaneMode::Editor;
+        message_editor.component()->TakeFocus();
+        return;
+    }
+
+    right_pane_mode = RightPaneMode::Message;
+    message_reader.component()->TakeFocus();
 }
 
 ThreadTab::ThreadTab(Observer *observer, Thread *data_,
@@ -316,6 +349,14 @@ ThreadTab::ThreadTab(Observer *observer, Thread *data_,
     });
 
     renderer = Renderer(root, [&] {
+        if (right_pane_mode == RightPaneMode::Message) {
+            reloadCurrentMessage();
+            return message_reader.component()->Render() | flex;
+        }
+        if (right_pane_mode == RightPaneMode::Editor) {
+            return message_editor.component()->Render() | flex;
+        }
+
         return vbox({
             /*
             hbox({
@@ -340,6 +381,17 @@ std::string ThreadTab::label() const {
 
 Component ThreadTab::component() {
     return renderer;
+}
+
+bool ThreadTab::onShortcut(Event const &event) {
+    if (event == Event::F12) {
+        return message_editor.sendCurrentMessage();
+    }
+    if (event == Event::F10) {
+        toggleMaximizeRightPane();
+        return true;
+    }
+    return false;
 }
 
 ThreadID ThreadTab::threadId() const {

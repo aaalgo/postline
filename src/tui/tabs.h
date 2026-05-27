@@ -21,6 +21,7 @@ struct Tab {
 
     virtual std::string label() const = 0;
     virtual ftxui::Component component() = 0;
+    virtual bool onShortcut(ftxui::Event const &event);
     virtual ThreadID threadId() const;
 };
 
@@ -132,6 +133,7 @@ public:
     explicit MessageEditor(Thread const *thread_,
                            SendCallback on_send_);
 
+    bool sendCurrentMessage();
     ftxui::Component component();
 };
 
@@ -187,6 +189,13 @@ private:
     MessageReader message_reader;
     MessageEditor message_editor;
 
+    enum class RightPaneMode {
+        Normal,
+        Message,
+        Editor,
+    };
+    RightPaneMode right_pane_mode = RightPaneMode::Normal;
+
     int nav_mode = 0;
     int nav_selected = 0;
     int trace_selected = 0;
@@ -235,6 +244,7 @@ private:
     ftxui::Component renderer;
 
     void reloadCurrentMessage();
+    void toggleMaximizeRightPane();
 
 public:
     explicit ThreadTab(Observer *observer, Thread *data_,
@@ -243,6 +253,7 @@ public:
 
     std::string label() const override;
     ftxui::Component component() override;
+    bool onShortcut(ftxui::Event const &event) override;
     ThreadID threadId() const override;
 };
 

@@ -44,6 +44,16 @@ class TUI: public UI, public Observer {
     Component main_renderer;
     ScreenInteractive screen;
 
+    bool handleShortcut(Event const &event) {
+        if (event != Event::F10 && event != Event::F12) {
+            return false;
+        }
+        if (tab_index < 0 || tab_index >= int(tabs.size())) {
+            return true;
+        }
+        return tabs[tab_index]->onShortcut(event);
+    }
+
     void addTab(std::unique_ptr<Tab> tab) {
         tab_labels.push_back(tab->label());
         tab_components.push_back(tab->component());
@@ -221,6 +231,9 @@ public:
                 separator(),
                 tab_content->Render() | flex,
             });
+        });
+        main_renderer |= CatchEvent([this](Event event) {
+            return handleShortcut(event);
         });
         main_renderer |= Modal(about_modal, &about_shown);
     }
