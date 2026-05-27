@@ -5,7 +5,8 @@
 
 namespace postline { namespace ui {
 
-static constexpr int POSTLINE_PORT = 7799;
+std::string web_listen_host = "0.0.0.0";
+int web_listen_port = 6677;
 
 class WebUI: public UI, public Observer {
     httplib::Server server;
@@ -36,7 +37,8 @@ public:
             res.set_content(json{{"ok", true}}.dump(), "application/json");
         });
 
-        CHECK(server.listen("0.0.0.0", POSTLINE_PORT));
+        log::info("Web UI listening on http://{}:{}/", web_listen_host, web_listen_port);
+        CHECK(server.listen(web_listen_host, web_listen_port));
     }
 };
 

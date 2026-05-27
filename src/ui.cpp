@@ -98,7 +98,7 @@ void UI::initArena () {
 static char const *LOCAL_AGENTS_2 = R"(
 [
 {"from": "zero", "name": "echo", "service": "pipe:echo", "flags": []},
-{"from": "zero", "name": "ai1", "comment": "openai", "service": "pipe:openai", "flags": ["history"]},
+{"from": "zero", "name": "ai1", "comment": "openai", "service": "pipe:openai-tool.py", "flags": ["history"]},
 {"from": "zero", "name": "ai2", "comment": "anthropic", "service": "pipe:claude", "flags": ["history"]},
 {"from": "zero", "name": "ai3", "comment": "openrouter", "service": "pipe:v1", "flags": ["history"]},
 {"from": "zero", "name": "shell", "service": "pipe:shell", "flags": []},
