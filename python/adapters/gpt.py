@@ -3,6 +3,7 @@ import argparse
 import importlib
 import os
 import sys
+import openai
 
 from postline import LLMAgent
 
@@ -104,25 +105,6 @@ TOOL_CHOICE = {
     "name": TOOL_NAME,
 }
 
-
-def import_openai():
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    removed = []
-
-    for i in range(len(sys.path) - 1, -1, -1):
-        path = sys.path[i]
-        if path == "":
-            path = os.getcwd()
-        if os.path.abspath(path) == script_dir:
-            removed.append((i, sys.path.pop(i)))
-
-    try:
-        return importlib.import_module("openai").OpenAI
-    finally:
-        for i, path in reversed(removed):
-            sys.path.insert(i, path)
-
-
 class Agent (LLMAgent):
 
     def __init__ (self, model=DEFAULT_MODEL):
@@ -130,8 +112,7 @@ class Agent (LLMAgent):
         self.pending_call = None
         self.generated_tool_call = None
 
-        OpenAI = import_openai()
-        super().__init__(OpenAI(), model, PROVIDER, PROMPT)
+        super().__init__(openai.OpenAI(), model, PROVIDER, PROMPT)
         self.close_pending_delivery()
 
     def next_call_id(self):
@@ -246,7 +227,6 @@ class Agent (LLMAgent):
 
         self.generated_tool_call = tool_call
         return tool_call["input"]
-
 
 def parse_args():
     parser = argparse.ArgumentParser()

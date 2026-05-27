@@ -1,12 +1,11 @@
-#!/usr/bin/env python3
+import json
 import sys
-from anthropic import Anthropic
-from postline import Message, Service, updateAccounting
 
-DEFAULT_MODEL = "claude-sonnet-4-5"
-PROVIDER = "anthropic"
+from ._postline import Message, Service
+from .accounting import updateAccounting
 
-PROMPT = [
+
+DEFAULT_PROMPT = [
 """From: user
 To: ai
 Subject: Hello
@@ -71,23 +70,40 @@ The file is created.
 """
 ]
 
-class Agent (Service):
 
-    def __init__ (self, model=DEFAULT_MODEL):
+class LLMAgent (Service):
+
+    def __init__ (self, client, model, provider, prompt=DEFAULT_PROMPT):
         super().__init__()
-        self.client = Anthropic()
-
+        self.client = client
+        self.model = model
+        self.provider = provider
         self.models = []
         self.model_ids = set()
-        for m in self.client.models.list():
-            self.model_ids.add(m.id)
-            self.models.append(dict(m))
-        #assert model in self.model_ids
-        self.model = model
         self.history = []
-        for txt in PROMPT:
+
+        self.load_models()
+        for txt in prompt:
             self.append(Message.parse(txt))
-        pass
+
+    def object_to_dict(self, obj):
+        if hasattr(obj, "to_dict"):
+            return obj.to_dict()
+        if hasattr(obj, "model_dump"):
+            return obj.model_dump()
+        if isinstance(obj, dict):
+            return obj
+        return dict(obj)
+
+    def load_models(self):
+        for model in self.client.models.list():
+            model_id = getattr(model, "id", None)
+            model_dict = self.object_to_dict(model)
+            if model_id is None:
+                model_id = model_dict.get("id")
+            if model_id is not None:
+                self.model_ids.add(model_id)
+            self.models.append(model_dict)
 
     def append(self, msg):
         if msg.isReceiving():
@@ -95,31 +111,36 @@ class Agent (Service):
         else:
             role = "assistant"
 
-        content = msg.format(True)
         self.history.append({
             "role": role,
-            "content": content,
+            "content": msg.format(True),
         })
 
+    def before_generate(self):
+        pass
+
+    def create_response(self):
+        raise NotImplementedError()
+
+    def extract_message_text(self, response):
+        raise NotImplementedError()
+
     def generate (self):
+        self.before_generate()
+
         print(self.history, file=sys.stderr)
         sys.stderr.flush()
 
-        response = self.client.messages.create(
-            model=self.model,
-            max_tokens=4096,
-            messages=self.history,
-        )
+        response = self.create_response()
+        text = self.extract_message_text(response)
 
-        text = response.content[0].text
-
-        print("=" * 20, file=sys.stderr)
-        print(text, file=sys.stderr)
-        print("=" * 20, file=sys.stderr)
-        sys.stderr.flush()
+        #print("=" * 20, file=sys.stderr)
+        #print(text, file=sys.stderr)
+        #print("=" * 20, file=sys.stderr)
+        #sys.stderr.flush()
 
         msg = Message.parse(text)
-        updateAccounting(response, msg, PROVIDER)
+        updateAccounting(response, msg, self.provider)
         return msg
 
     def on_init (self, resp):
@@ -132,6 +153,7 @@ class Agent (Service):
         if msg.get('Subject') == '/list_models':
             resp.append(Message({}, json.dumps(self.models, indent=2)))
             return
+
         self.append(msg)
         model = msg.get("Model-Requested")
         if model in self.model_ids:
@@ -139,7 +161,3 @@ class Agent (Service):
         reply = self.generate()
         self.append(reply)
         resp.append(reply)
-
-if __name__ == "__main__":
-    agent = Agent()
-    agent.run()
