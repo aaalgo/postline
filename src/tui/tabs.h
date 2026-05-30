@@ -11,7 +11,7 @@
 #include <postline/runtime.h>
 #include <spdlog/details/log_msg_buffer.h>
 
-#include "../ftx_list.hpp"
+#include "ftx_list.hpp"
 #include "limits.h"
 #include <postline/observer.h>
 
