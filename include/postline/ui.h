@@ -42,6 +42,7 @@ namespace postline { namespace ui {
                 thread.promise = std::promise<Message>{};
                 future = thread.promise.get_future();
             }
+            log::info("thread {} set pending", thread_id);
             msg.updateHeader([thread_id](json &h) {
                     h["Thread-ID"] = std::format("{}", thread_id);
                     });
@@ -65,6 +66,7 @@ namespace postline { namespace ui {
 
                 thread.promise = std::promise<Message>{};
             }
+            log::info("thread {} set pending", thread_id);
             msg.updateHeader([thread_id](json &h) {
                     h["Thread-ID"] = std::format("{}", thread_id);
                     });
@@ -102,6 +104,7 @@ namespace postline { namespace ui {
 
                 thread.pending = false;
                 thread.wants_result = false;
+                log::info("thread {} clear pending", thread_id);
             }
 
             if (wants_result) {

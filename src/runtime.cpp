@@ -109,6 +109,7 @@ int Runtime::cmd_create_domain (Message const &msg, json *resp) {
             {"name", name},
             {"parent_id", domain->id}};
     auto r = syscall(op);
+    CHECK(r.tag == EntityRef::Tag::DOMAIN);
     *resp = json{{"domain_id", r.domain->id}};
 
     if (detach) {
@@ -121,7 +122,7 @@ int Runtime::cmd_create_domain (Message const &msg, json *resp) {
     return 0;
 }
 
-Runtime::ApplyResult Runtime::syscall (json const &op) {
+EntityRef Runtime::syscall (json const &op) {
     Message entry = protocol::runtime::Commit::make(op);
     journal.append(entry);
     auto r = apply(entry);
@@ -210,7 +211,7 @@ void Runtime::call (Message &&msg, Response &resp) {
 }
 
 void Runtime::updateMemory (Agent *agent, AccessID end) {
-    if (agent->flags & AGENT_FLAG_HISTORY == 0) return;
+    if (agent->flags & AGENT_FLAG_MEMORY == 0) return;
     std::vector<AgentLink> links;
     links.emplace_back(agent->id, agent->anchor());
     Agent *cur = agent;
@@ -305,7 +306,7 @@ void Runtime::run() {
 #endif
             journal.append(msg);
             accounting.update(msg);
-            ApplyResult r = apply(msg);
+            EntityRef r = apply(msg);
             Agent *agent = r.agent;
             CHECK(agent != nullptr);
             if (!agent->driver) {

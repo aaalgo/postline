@@ -495,7 +495,7 @@ void Program::preprocess (Agent *from, Message &msg, Runtime *runtime) {
 }
 
 // same as journal apply
-Program::ApplyResult Program::apply (Message const &msg) {
+EntityRef Program::apply (Message const &msg) {
     // now msg has an id
     if (msg.type() == "runtime:commit") {
         return commit(msg);
@@ -544,14 +544,15 @@ Program::ApplyResult Program::apply (Message const &msg) {
     }
     ctx.from.agent->memory.push_back(message_id);
     to->memory.push_back(mark_receiving(message_id));
-    ApplyResult r;
+    EntityRef r;
+    r.tag = EntityRef::Tag::AGENT;
     r.agent = to;
     return r;
 }
 
-Program::ApplyResult Program::commit (Message const &msg) {
+EntityRef Program::commit (Message const &msg) {
     json m = json::parse(msg.body());
-    Runtime::ApplyResult result;
+    EntityRef result;
     CHECK(m.is_object());
     std::string const &op = m.at("op").get_ref<std::string const &>();
     if (op == "create_agent") {
@@ -559,6 +560,7 @@ Program::ApplyResult Program::commit (Message const &msg) {
         DomainID domain_id = m.at("domain_id").get<DomainID>();
         CHECK(domain_id >= 0 && domain_id < domains.size());
         Domain *domain = domains[domain_id].get();
+        result.tag = EntityRef::Tag::AGENT;
         result.agent = createAgent(params, domain);
         log::info("create agent {}: {}", result.agent->id, result.agent->name);
     } 
@@ -567,6 +569,7 @@ Program::ApplyResult Program::commit (Message const &msg) {
         DomainID parent_id = m.at("parent_id").get<DomainID>();
         CHECK(parent_id >= 0 && parent_id < domains.size());
         Domain *parent = domains[parent_id].get();
+        result.tag = EntityRef::Tag::DOMAIN;
         result.domain = createDomain(name, parent);
         log::info("create domain {}: {}", result.domain->id, result.domain->name);
     }
@@ -585,6 +588,7 @@ Program::ApplyResult Program::commit (Message const &msg) {
         CHECK(domain_id >= 0 && domain_id < domains.size());
         Domain *domain = domains[domain_id].get();
         CHECK(!domain->detached);
+        result.tag = EntityRef::Tag::THREAD;
         result.thread = createThread(domain);
         // We haven't handled entry.from/to yet
         log::info("create thread {} from domain {}", result.thread->id, domain->id);

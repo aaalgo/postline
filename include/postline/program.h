@@ -43,15 +43,13 @@ struct AgentLink {
 
 using AgentFlags = std::uint64_t;
 
-
-
 #define AGENT_FLAG_LIST(X)  \
-    X(HISTORY,  0x00000001) \
+    X(MEMORY,  0x00000001) \
     X(CATCH,    0x00000002) \
     X(THREAD,   0x00000004) \
     X(CLONE,    0x00000008)
 
-// HISTORY: send message history to adapter upon agent start, for agents with memory
+// MEMORY: send message history to adapter upon agent start, for agents with memory
 // CATCH:   agents who can catch frame rollback
 // THREAD:  permission to create detatched domain
 // CLONE:   agent cloned upon message
@@ -62,7 +60,7 @@ AgentFlags constexpr AGENT_FLAG_NONE = 0;
     AGENT_FLAG_LIST(X)
 #undef X
 
-// bitmap to json list, e.g. ["HISTORY", "CATCH", ...]
+// bitmap to json list, e.g. ["MEMORY", "CATCH", ...]
 json dump_agent_flags (AgentFlags flags);
 
 struct AgentParams {
@@ -230,6 +228,22 @@ struct Thread {
 
 class Runtime;
 
+struct EntityRef {
+    enum class Tag: uint8_t {
+        NONE = 0,       // only for rewind, or it is an error
+        AGENT,          // resolved in the order below
+        DOMAIN,
+        SNAPSHOT,
+        THREAD
+    } tag;
+    union {
+        Agent *agent;
+        Domain *domain;
+        Snapshot const *snapshot;
+        Thread *thread;
+    };
+};
+
 struct Program: immobile {
     std::vector<std::unique_ptr<Domain>> domains;
     std::vector<std::unique_ptr<Agent>> agents;
@@ -310,15 +324,7 @@ struct Program: immobile {
 
     Message makeRewindMessage (Agent *fromAgent, Domain *fromDomain = nullptr, char const *error = "") const;
 
-    struct ApplyResult {
-        union {
-        Agent *agent;
-        Domain *domain;
-        Thread *thread;
-        };
-    };
-
-    ApplyResult apply (Message const &msg);
+    EntityRef apply (Message const &msg);
 
 private:
 
@@ -361,7 +367,7 @@ private:
     }
 
 private:
-    ApplyResult commit (Message const &);
+    EntityRef commit (Message const &);
 };
 
 } // namespace postline

@@ -189,6 +189,15 @@ set_target_properties(echo_actor PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/install/bin/adapters"
 )
 
+add_executable(error_actor
+    src/adapters/error.cpp
+)
+target_link_libraries(error_actor PRIVATE postline::postline CLI11::CLI11)
+set_target_properties(error_actor PROPERTIES
+    OUTPUT_NAME error
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/install/bin/adapters"
+)
+
 add_executable(shell_actor
     src/adapters/shell.cpp
 )

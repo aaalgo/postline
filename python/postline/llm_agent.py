@@ -1,4 +1,6 @@
+import pickle
 import json
+import os
 import sys
 
 from ._postline import Message, Service
@@ -81,10 +83,21 @@ class LLMAgent (Service):
         self.models = []
         self.model_ids = set()
         self.history = []
+        self.ai_debug_file = open(self.ai_debug_filename(), "wb")
 
         self.load_models()
         for txt in prompt:
             self.append(Message.parse(txt))
+
+    def ai_debug_filename(self):
+        program = os.path.splitext(os.path.basename(sys.argv[0]))[0]
+        if not program:
+            program = "python"
+        return f"ai_{program}_{os.getpid()}.pkl"
+
+    def dump_ai_debug(self, step, obj):
+        pickle.dump((step, obj), self.ai_debug_file)
+        self.ai_debug_file.flush()
 
     def object_to_dict(self, obj):
         if hasattr(obj, "to_dict"):
@@ -131,15 +144,23 @@ class LLMAgent (Service):
         print(self.history, file=sys.stderr)
         sys.stderr.flush()
 
+        self.dump_ai_debug(0, self.history)
         response = self.create_response()
+        self.dump_ai_debug(1, response)
         text = self.extract_message_text(response)
+        self.dump_ai_debug(2, text)
+
 
         #print("=" * 20, file=sys.stderr)
         #print(text, file=sys.stderr)
         #print("=" * 20, file=sys.stderr)
         #sys.stderr.flush()
 
-        msg = Message.parse(text)
+        try:
+            msg = Message.parse(text)
+        except:
+            msg = Message({"Subject": "error"}, text)
+            pass
         updateAccounting(response, msg, self.provider)
         return msg
 

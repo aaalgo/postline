@@ -19,7 +19,6 @@ namespace postline { namespace ui {
 
 struct Tab {
     virtual ~Tab() = default;
-
     virtual std::string label() const = 0;
     virtual ftxui::Component component() = 0;
     virtual bool onShortcut(ftxui::Event const &event);
@@ -45,6 +44,7 @@ class GlobalTab : public Tab {
 
     ftxui::Component thread_list;
     ftxui::Component log_list;
+
     ftxui::Component left_renderer;
     ftxui::Component right_renderer;
     ftxui::Component root;
@@ -91,6 +91,9 @@ class MessageReader {
 
     ftxui::Component renderer;
 
+    int messageViewportHeight() const;
+    int maxMessageScroll() const;
+    void scrollMessageBy(int delta);
     ftxui::Element renderMessage();
     bool onMessageViewerEvent(ftxui::Event event);
     bool onMessageViewerMouseEvent(ftxui::Event event);

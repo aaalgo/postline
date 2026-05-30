@@ -49,7 +49,7 @@ public:
 
     void call (Message &&msg, Response &) override; // runtime as a service
 
-    ApplyResult syscall (json const &op);
+    EntityRef syscall (json const &op);
 
     void syscalls (json const &ops) {
         for (json const &j: ops.get_ref<json::array_t const &>()) {

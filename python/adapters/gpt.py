@@ -7,7 +7,6 @@ import openai
 
 from postline import LLMAgent
 
-
 DEFAULT_MODEL = "gpt-5.4-mini"
 PROVIDER = "openai"
 TOOL_NAME = "postline_send"
