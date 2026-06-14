@@ -62,12 +62,6 @@ static std::shared_ptr<Sink> sink;
 
 void UI::initArena () {
     {
-        std::lock_guard lock(mutex);
-        threads.emplace_back(std::make_unique<State>());
-        threads.emplace_back(std::make_unique<State>());
-        threads.emplace_back(std::make_unique<State>());
-    }
-    {
 // TODO: don't do this when resume
         json h{{"To", "runtime"},
                {"Subject", "create_domain"},

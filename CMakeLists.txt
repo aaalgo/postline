@@ -189,12 +189,12 @@ set_target_properties(echo_actor PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/install/bin/adapters"
 )
 
-add_executable(error_actor
-    src/adapters/error.cpp
+add_executable(chaos_actor
+    src/adapters/chaos.cpp
 )
-target_link_libraries(error_actor PRIVATE postline::postline CLI11::CLI11)
-set_target_properties(error_actor PROPERTIES
-    OUTPUT_NAME error
+target_link_libraries(chaos_actor PRIVATE postline::postline CLI11::CLI11)
+set_target_properties(chaos_actor PROPERTIES
+    OUTPUT_NAME chaos
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/install/bin/adapters"
 )
 
