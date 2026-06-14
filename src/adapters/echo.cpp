@@ -57,3 +57,4 @@ int main(int argc, char** argv)
     Server server(config);
     return server.run(&echo);
 }
+

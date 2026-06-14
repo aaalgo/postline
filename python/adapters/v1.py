@@ -28,6 +28,9 @@ class Agent (LLMAgent):
         )
         super().__init__(client, model, provider)
 
+    def load_models(self):
+        self.models = {}
+
     def create_response(self):
         return self.client.chat.completions.create(
             model=self.model,

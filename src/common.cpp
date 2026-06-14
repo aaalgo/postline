@@ -104,7 +104,7 @@ void read_all(int fd, void* buf, std::size_t n)
             CHECK(0);
         }
         if (r == 0) {   // EOF  // TODO. adapter crash causes this
-            throw eof_error("");
+            throw eof("");
         }
         off += static_cast<std::size_t>(r);
     }

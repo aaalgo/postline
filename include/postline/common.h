@@ -34,6 +34,10 @@ namespace postline {
             : std::runtime_error(std::format(fmt, std::forward<Args>(args)...)) {}
     };
 
+    class eof: public std::runtime_error {
+        using std::runtime_error::runtime_error;
+    };
+
     void write_all(int fd, void const* buf, std::size_t n);
     void read_all(int fd, void* buf, std::size_t n);
 
@@ -45,12 +49,17 @@ namespace postline {
 
     using AccessID = int64_t;
     static constexpr AccessID NO_ACCESS_ID = -1;
-
-    AccessID make_access_id(uint32_t segment, uint64_t offset);
-    void split_access_id(AccessID access_id, uint32_t *segment, uint64_t *offset);
+    // NOTE the access ID one sees might have a "receiving bit" set
     AccessID mark_receiving (AccessID);
     AccessID unmark_receiving (AccessID);
     bool is_receiving (AccessID);
+    // The receiving bit is for book-keeping on the user's end
+    // it doens't affect message reading
+    // Be careful do not compare AccessID for message identity as
+    // the receiving bit doesn't change identity.
+
+    AccessID make_access_id(uint32_t segment, uint64_t offset);
+    void split_access_id(AccessID access_id, uint32_t *segment, uint64_t *offset);
 
     int64_t parse_i64(std::string const&);
 
@@ -80,15 +89,10 @@ namespace postline {
         immobile& operator=(immobile&&) = delete;
     };
 
-    class eof_error: public std::runtime_error {
-        using std::runtime_error::runtime_error;
-    };
-
     constexpr char const *CONTEXT_HEADER_NAME = "__context";
 
     // High-level message abstraction
     class Message: noncopyable {
-        //std::string header_raw_;
         std::string body_raw_;
         AccessID access_id_;
         json header_;
@@ -233,7 +237,6 @@ namespace postline {
         }
 
         size_t write(int fd) const;     // returns number of bytes written
-                                        //
         static Message read(int fd);    // stream version
         static Message read(int fd, uint64_t offset, unsigned segment, size_t *read_size = nullptr); // pread version
 
@@ -248,7 +251,6 @@ namespace postline {
         }
 
         json const& header() const { return header_; }
-
         std::string const &body () const { return body_raw_;}
     };
 

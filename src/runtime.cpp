@@ -274,7 +274,7 @@ void Runtime::run() {
                     todos.emplace_back(Todo{.message = std::move(msg), .agent = agent});
                 }
             }
-            catch (eof_error const &) {
+            catch (eof const &) {
                 // driver has crashed
                 agent->dead = true;
                 // TODO: record agent died
