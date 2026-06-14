@@ -345,6 +345,7 @@ private:
         CHECK(parent->getChild(name) == nullptr);
         domains.emplace_back(std::make_unique<Domain>(domains.size(), name, parent));
         Domain *domain = domains.back().get();
+        parent->children[name] = domain;
         // TODO: we need to improve this
         domain->entry.from = user;
         domain->entry.to = runtime;
@@ -354,7 +355,6 @@ private:
     Domain *createDomain (Snapshot const &snapshot, Domain *parent) {
         std::string name = std::format("domain-{}", domains.size());
         Domain *domain = createDomain(name, parent);
-        parent->children[name] = domain;
         // now setup the children
         for (auto const &params: snapshot.members) {
             createAgent(params, domain);

@@ -456,8 +456,9 @@ void Program::preprocess (Agent *from, Message &msg, Runtime *runtime) {
                         break;
                     }
                     AgentParams params = to.agent->snapshot(name);
+                    params.flags &= ~AGENT_FLAG_CLONE;
                     json op = params.dump();
-                    op["op"] = "create_againt";
+                    op["op"] = "create_agent";
                     op["domain_id"] = ctx.from.domain->id;
                     ctx.to.domain = ctx.from.domain;
                     ctx.to.agent = runtime->syscall(op).agent;
@@ -580,6 +581,7 @@ EntityRef Program::commit (Message const &msg) {
         std::string snapshot = m.at("snapshot").get<std::string>();
         auto it = snapshots.find(snapshot);
         CHECK(it != snapshots.end());
+        result.tag = EntityRef::Tag::DOMAIN;
         result.domain = createDomain(it->second, parent);
         log::info("create domain {}: {}", result.domain->id, result.domain->name);
     }

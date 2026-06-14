@@ -66,7 +66,7 @@ int Runtime::cmd_create_agents (Message const &msg, json *resp) {
             throw Error("bad params");
         }
 
-        if (domain->getChild(params.name)) {
+        if (domain->getMember(params.name)) {
             throw Error("{} already exists in domain {}", params.name, domain->name);
         }
         if (seen.contains(params.name)) {
@@ -211,7 +211,7 @@ void Runtime::call (Message &&msg, Response &resp) {
 }
 
 void Runtime::updateMemory (Agent *agent, AccessID end) {
-    if (agent->flags & AGENT_FLAG_MEMORY == 0) return;
+    if ((agent->flags & AGENT_FLAG_MEMORY) == 0) return;
     std::vector<AgentLink> links;
     links.emplace_back(agent->id, agent->anchor());
     Agent *cur = agent;
@@ -334,10 +334,8 @@ void Runtime::run() {
     // from this point on we don't call consume anymore
     // as we are in shutdown process
     {
-        json ops = json::array();
         json op{{"op", "begin_shutdown"}};
-        ops.push_back(op);
-        Message msg = protocol::runtime::Commit::make(ops);
+        Message msg = protocol::runtime::Commit::make(op);
         journal.append(msg);
     }
 
@@ -365,10 +363,8 @@ void Runtime::run() {
 
     log::info("{} messages unprocessed.", trailing);
     {
-        json ops = json::array();
         json op{{"op", "end_shutdown"}};
-        ops.push_back(op);
-        Message msg = protocol::runtime::Commit::make(ops);
+        Message msg = protocol::runtime::Commit::make(op);
         journal.append(msg);
         log::info("runtime shutdown.");
     }

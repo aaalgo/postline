@@ -172,6 +172,10 @@ uint32_t crc (std::string_view header_raw_,
 size_t Message::write(int fd) const
 {
     std::string header_raw_(header_.dump());
+    CHECK(header_raw_.size() <= MAX_HEADER_SIZE);
+    CHECK(body_raw_.size() <= MAX_BODY_SIZE);
+    CHECK(body_raw_.size() <= std::numeric_limits<uint32_t>::max());
+
     RecordHeader rh{};
     rh.magic = RECORD_MAGIC;
     rh.header_size = header_raw_.size();
@@ -190,6 +194,8 @@ Message Message::read(int fd)
     read_all(fd, &rh, sizeof(rh));
 
     CHECK(rh.magic == RECORD_MAGIC);
+    CHECK(rh.header_size <= MAX_HEADER_SIZE);
+    CHECK(rh.body_size <= MAX_BODY_SIZE);
 
     std::string header_raw;
     header_raw.resize(rh.header_size);
@@ -213,6 +219,8 @@ Message Message::read(int fd, uint64_t offset, unsigned segment, size_t *read_si
     offset += sizeof(rh);
 
     CHECK(rh.magic == RECORD_MAGIC);
+    CHECK(rh.header_size <= MAX_HEADER_SIZE);
+    CHECK(rh.body_size <= MAX_BODY_SIZE);
 
     std::string header_raw;
     header_raw.resize(rh.header_size);
