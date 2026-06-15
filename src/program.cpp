@@ -70,7 +70,9 @@ json Agent::dump () const {
         {"id", id},
         {"domain_id", domain->id},
         {"domain_name", domain->name},
-        {"memory", memory}
+        {"memory", memory},
+        {"dead", dead},
+        {"obligation_count", obligation_count}
     };
 }
 

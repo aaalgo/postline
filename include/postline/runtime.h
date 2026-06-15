@@ -10,9 +10,7 @@ namespace postline {
 
 class Runtime: public Program, public LinearService {
     struct AgentState {
-        bool dead = false;
         std::unique_ptr<Driver> driver;
-        int obligation_count = 0;
     };
 
     std::vector<AgentState> agent_states;

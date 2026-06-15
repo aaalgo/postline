@@ -24,12 +24,12 @@ Runtime::AgentState const &Runtime::agentState (Agent const *agent) const {
 
 void Runtime::syncAgentStates () {
     agent_states.resize(agents.size());
-    for (auto &state: agent_states) {
-        state.obligation_count = 0;
+    for (auto const &agent: agents) {
+        agent->obligation_count = 0;
     }
     for (auto const &thread: threads) {
         for (auto const &frame: thread->stack) {
-            ++agentState(frame.to.agent).obligation_count;
+            ++frame.to.agent->obligation_count;
         }
     }
 }
@@ -37,8 +37,6 @@ void Runtime::syncAgentStates () {
 json Runtime::dumpAgent (Agent const *agent) const {
     json ret = agent->dump();
     auto const &state = agentState(agent);
-    ret["dead"] = state.dead;
-    ret["obligation_count"] = state.obligation_count;
     ret["driver"] = state.driver
         ? json{{"read_fd", state.driver->read_fd()}}
         : json(nullptr);
@@ -362,7 +360,7 @@ void Runtime::run() {
             }
             catch (eof const &) {
                 // driver has crashed
-                state.dead = true;
+                agent->dead = true;
                 // TODO: record agent died
                 state.driver.reset();
                 // construct response messages to waiting parties
@@ -397,7 +395,7 @@ void Runtime::run() {
             CHECK(agent != nullptr);
             auto &state = agentState(agent);
             if (!state.driver) {
-                if (state.dead) {
+                if (agent->dead) {
                     log::error("Agent is in error status.");
                 }
                 if (agent->service.empty()) {
@@ -430,14 +428,14 @@ void Runtime::run() {
     for (std::size_t i = 0; i < agents.size(); ++i) {
         Agent *agent = agents[i].get();
         auto &state = agentState(agent);
-        while (state.obligation_count > 0) {
+        while (agent->obligation_count > 0) {
             CHECK(state.driver);
-            log::info("Waiting for agent {} (oc: {}) to respond...", i, state.obligation_count);
+            log::info("Waiting for agent {} (oc: {}) to respond...", i, agent->obligation_count);
 
             std::vector<Message> tmp;
             state.driver->recv(tmp);
             for (auto &msg: tmp) {
-                --state.obligation_count;
+                --agent->obligation_count;
                 journal.append(msg);
             }
             trailing += tmp.size();

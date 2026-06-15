@@ -79,11 +79,15 @@ struct Agent: immobile, AgentParams {
     AgentID id;
     Domain *domain;
     std::vector<AccessID> memory;
+    bool dead;
+    int obligation_count;
 
     explicit Agent(AgentParams const &params, AgentID id_, Domain *domain_)
         : AgentParams(params),
         id(id_),
-        domain(domain_)
+        domain(domain_),
+        dead(false),
+        obligation_count(0)
     {}
 
     AccessID anchor () const {
