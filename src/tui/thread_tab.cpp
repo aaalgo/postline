@@ -133,6 +133,8 @@ MessageEditor::MessageEditor(Thread const *thread_,
                              SendCallback on_send_)
     : thread(thread_),
       on_send(std::move(on_send_)) {
+    syncAddresses();
+
     DropdownOption address_option;
     address_option.radiobox.entries = &addresses;
     address_option.radiobox.selected = &address_selected;
@@ -163,6 +165,8 @@ MessageEditor::MessageEditor(Thread const *thread_,
             return vbox({
                 std::move(checkbox_element),
                 std::move(radiobox_element) |
+                    vscroll_indicator |
+                    frame |
                     size(HEIGHT, LESS_THAN, 6),
             });
         }
@@ -174,6 +178,7 @@ MessageEditor::MessageEditor(Thread const *thread_,
     send_option.label = "Send";
     send_option.on_click = [this] {
         CHECK(!thread->pending);
+        CHECK(!addresses.empty());
         CHECK(address_selected >= 0);
         CHECK(address_selected < int(addresses.size()));
 
@@ -183,7 +188,7 @@ MessageEditor::MessageEditor(Thread const *thread_,
     };
     send_option.transform = [this](EntryState const &state) {
         Element element = text(state.label);
-        if (thread->pending) {
+        if (thread->pending || addresses.empty()) {
             return element | color(Color::GrayDark) | dim;
         }
 
@@ -195,7 +200,7 @@ MessageEditor::MessageEditor(Thread const *thread_,
     };
     send_button = Button(std::move(send_option));
     send_button |= CatchEvent([this](Event event) {
-        if (!thread->pending) {
+        if (!thread->pending && !addresses.empty()) {
             return false;
         }
         if (event == Event::Return || event.is_mouse()) {
@@ -232,6 +237,8 @@ MessageEditor::MessageEditor(Thread const *thread_,
             body_editor,
         }),
         [&] {
+            syncAddresses();
+
             return vbox({
                 hbox({
                     text("To: ") | color(Color::Cyan) | bold,
@@ -248,8 +255,50 @@ MessageEditor::MessageEditor(Thread const *thread_,
         });
 }
 
+void MessageEditor::syncAddresses() {
+    CHECK(thread->root);
+    Domain const *domain = thread->root;
+    if (!thread->stack.empty()) {
+        domain = thread->stack.back().to.domain;
+    }
+    CHECK(domain);
+
+    std::string selected_address;
+    if (address_selected >= 0 &&
+        address_selected < int(addresses.size())) {
+        selected_address = addresses[address_selected];
+    }
+
+    addresses.clear();
+    addresses.reserve(domain->members.size());
+    for (auto const &[name, agent]: domain->members) {
+        CHECK(agent);
+        CHECK(name == agent->name);
+        addresses.push_back(agent->name);
+    }
+    std::sort(addresses.begin(), addresses.end());
+
+    if (addresses.empty()) {
+        address_selected = 0;
+        return;
+    }
+
+    auto selected = std::find(
+        addresses.begin(), addresses.end(), selected_address);
+    if (selected != addresses.end()) {
+        address_selected = int(selected - addresses.begin());
+        return;
+    }
+
+    address_selected = std::clamp(
+        address_selected, 0, int(addresses.size()) - 1);
+}
+
 bool MessageEditor::sendCurrentMessage() {
     if (thread->pending) {
+        return false;
+    }
+    if (addresses.empty()) {
         return false;
     }
     if (subject_content.empty() && body_content.empty()) {
@@ -267,6 +316,114 @@ bool MessageEditor::sendCurrentMessage() {
 
 Component MessageEditor::component() {
     return renderer;
+}
+
+void ThreadTab::appendTreeEntries(Domain const *domain, size_t depth) {
+    CHECK(domain);
+    tree_entries.push_back(
+        std::string(depth * 2, ' ') + domain->name);
+
+    std::vector<Domain const *> children;
+    children.reserve(domain->children.size());
+    for (auto const &[name, child]: domain->children) {
+        CHECK(child);
+        CHECK(name == child->name);
+        children.push_back(child);
+    }
+    std::sort(
+        children.begin(),
+        children.end(),
+        [](Domain const *lhs, Domain const *rhs) {
+            return lhs->name < rhs->name;
+        });
+
+    for (Domain const *child: children) {
+        appendTreeEntries(child, depth + 1);
+    }
+}
+
+void ThreadTab::syncTreeEntries() {
+    CHECK(data->root);
+    tree_entries.clear();
+    appendTreeEntries(data->root, 0);
+
+    if (nav_mode != 0) {
+        return;
+    }
+    nav_selected = std::clamp(
+        nav_selected, 0, int(tree_entries.size()) - 1);
+}
+
+void ThreadTab::syncStackEntries() {
+    stack_entries.clear();
+    stack_entries.reserve(data->stack.size());
+
+    for (Frame const &frame: data->stack) {
+        CHECK(frame.from.agent);
+        CHECK(frame.from.domain);
+        CHECK(frame.to.agent);
+        CHECK(frame.to.domain);
+
+        stack_entries.push_back(std::format(
+            "{}@{} -> {}@{}",
+            frame.from.agent->name,
+            frame.from.domain->name,
+            frame.to.agent->name,
+            frame.to.domain->name));
+    }
+
+    if (nav_mode != 1) {
+        return;
+    }
+    if (stack_entries.empty()) {
+        nav_selected = 0;
+        return;
+    }
+    nav_selected = std::clamp(
+        nav_selected, 0, int(stack_entries.size()) - 1);
+}
+
+void ThreadTab::syncMemberEntries() {
+    CHECK(data->root);
+    Domain const *domain = data->root;
+    if (!data->stack.empty()) {
+        domain = data->stack.back().to.domain;
+        CHECK(domain);
+    }
+
+    member_entries.clear();
+    member_entries.reserve(
+        domain->members.size() + domain->children.size());
+
+    for (auto const &[name, agent]: domain->members) {
+        CHECK(agent);
+        CHECK(name == agent->name);
+        member_entries.push_back(agent->name);
+    }
+    std::sort(member_entries.begin(), member_entries.end());
+
+    std::vector<std::string> child_entries;
+    child_entries.reserve(domain->children.size());
+    for (auto const &[name, child]: domain->children) {
+        CHECK(child);
+        CHECK(name == child->name);
+        child_entries.push_back("@" + child->name);
+    }
+    std::sort(child_entries.begin(), child_entries.end());
+    member_entries.insert(
+        member_entries.end(),
+        child_entries.begin(),
+        child_entries.end());
+
+    if (nav_mode != 2) {
+        return;
+    }
+    if (member_entries.empty()) {
+        nav_selected = 0;
+        return;
+    }
+    nav_selected = std::clamp(
+        nav_selected, 0, int(member_entries.size()) - 1);
 }
 
 void ThreadTab::reloadCurrentMessage() {
@@ -313,10 +470,20 @@ ThreadTab::ThreadTab(Observer *observer, Thread *data_,
       message_editor(data_, [this](std::string to,
                                    std::string subject,
                                    std::string body) {
+          json header{{"To", to},
+                      {"Subject", std::move(subject)}};
+          if (!data->stack.empty()) {
+              Frame const &frame = data->stack.back();
+              CHECK(frame.to.agent);
+              CHECK(frame.from.agent);
+              if (frame.to.agent->name == "user" &&
+                  frame.from.agent->name == to) {
+                  header["In-Reply-To"] =
+                      std::format("{}", frame.message_id);
+              }
+          }
           on_send(data->id,
-                  Message(json{{"To", std::move(to)},
-                               {"Subject", std::move(subject)}},
-                          std::move(body)));
+                  Message(std::move(header), std::move(body)));
       }) {
     nav_mode_menu = Menu(
         &nav_modes,
@@ -342,6 +509,10 @@ ThreadTab::ThreadTab(Observer *observer, Thread *data_,
             nav_content,
         }),
         [&] {
+            syncTreeEntries();
+            syncStackEntries();
+            syncMemberEntries();
+
             Element thread_name = text("");
             if (!data->name.empty()) {
                 thread_name = hbox({

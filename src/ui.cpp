@@ -60,52 +60,27 @@ protected:
 static std::shared_ptr<Sink> sink;
 
 
-void UI::initArena () {
-    {
-// TODO: don't do this when resume
+void UI::initArena (json const &spec) {
+    CHECK(spec.is_array());
+
+    for (std::size_t i = 0; i < spec.size(); ++i) {
+        auto const &agents = spec[i];
+        CHECK(agents.is_array(), "arena domain {} must be a list of agents", i);
+        for (auto const &agent: agents) {
+            CHECK(agent.is_object(), "arena domain {} contains a non-object agent", i);
+        }
+
+        if (i > 0) {
+            json h{{"To", "runtime"},
+                   {"Subject", "create_domain"}};
+            json op{{"detach", true}};
+            syscall(0, Message(std::move(h), op.dump()));
+        }
+
         json h{{"To", "runtime"},
-               {"Subject", "create_domain"},
-               {"Thread-ID", "0"}
-            };
-        json op{{"detach", true}};
-        syscall(0, Message(std::move(h),op.dump()));
+               {"Subject", "create_agents"}};
+        syscall(i, Message(std::move(h), agents.dump()));
     }
-    {
-        json h{{"To", "runtime"},
-               {"Subject", "create_agents"},
-            };
-        syscall(1, Message(std::move(h),std::string(LOCAL_AGENTS)));
-    }
-    // DEBUG BEGIN:  adding the following two messages triggers segmentation fault
-    {
-        json h{{"To", "runtime"},
-               {"Subject", "create_domain"},
-            };
-        json op{{"detach", true}};
-        syscall(0, Message(std::move(h),op.dump()));
-    }
-    {
-        json h{{"To", "runtime"},
-               {"Subject", "create_agents"},
-               {"Thread-ID", "2"},
-            };
-static char const *LOCAL_AGENTS_2 = R"(
-[
-{"from": "zero", "name": "echo", "service": "pipe:echo", "flags": []},
-{"from": "zero", "name": "ai1", "comment": "openai", "service": "pipe:gpt.py", "flags": ["history"]},
-{"from": "zero", "name": "ai2", "comment": "anthropic", "service": "pipe:claude.py", "flags": ["history"]},
-{"from": "zero", "name": "ai3", "comment": "openrouter", "service": "pipe:v1.py", "flags": ["history"]},
-{"from": "zero", "name": "shell", "service": "pipe:shell", "flags": []},
-{"from": "zero", "name": "mcp", "service": "pipe:mcp_bridge", "flags": []},
-{"from": "zero", "name": "memory", "service": "pipe:echo -m", "flags": ["history"]},
-{"from": "zero", "name": "login", "service": "pipe:login", "flags": ["clone"]},
-{"from": "zero", "name": "benchmark", "service": "pipe:benchmark", "flags": []},
-{"from": "zero", "name": "web_search", "service": "pipe:web_search.py", "flags": []}
-]
-)";
-        syscall(2, Message(std::move(h),std::string(LOCAL_AGENTS_2)));
-    }
-    // DEBUG END
 }
 
 UI::~UI () {

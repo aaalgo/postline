@@ -1,6 +1,7 @@
 #include <cstdlib> // atexit
 #include <string>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <algorithm>
 #include <atomic>
@@ -81,6 +82,7 @@ int main(int argc, char** argv) {
     Runtime::Config config;
     config.journal_path = make_journal_name();
     std::string ui_choice = "tui";
+    fs::path arena_path;
     std::unique_ptr<Service> autopilot;
     std::unique_ptr<Driver> user_driver;
     bool detach = false;
@@ -91,7 +93,9 @@ int main(int argc, char** argv) {
         CLI::App app{"Postline driver tester"};
         argv = app.ensure_utf8(argv);
         app.add_option("-j,--journal", config.journal_path, "");
-        app.add_option("-r,--resume", config.resume_path, "");
+        auto resume_option = app.add_option("-r,--resume", config.resume_path, "");
+        auto arena_option = app.add_option("--arena", arena_path, "Arena JSON path");
+        arena_option->excludes(resume_option);
         app.add_option("--ui", ui_choice, "UI: null, cli, tui, web, auto");
         app.add_option("--host", ui::web_listen_host, "Web UI listen host");
         app.add_option("--port", ui::web_listen_port, "Web UI listen port");
@@ -99,6 +103,7 @@ int main(int argc, char** argv) {
     }
 
     setup_environ();
+
     welcome();
 
     init_logging();
@@ -114,7 +119,17 @@ int main(int argc, char** argv) {
             log::info("Starting runtime.");
             runtime.run();
             });
-    ui->initArena();    // create starting threads
+    if (config.resume_path.empty()) {
+        json arena_spec;
+        if (arena_path.empty()) {
+            arena_path = POSTLINE_HOME / "arena.json";
+            log::info("Using default arena {}", arena_path.native());
+        }
+        std::ifstream arena_file(arena_path);
+        CHECK(arena_file, "Cannot open arena file {}", arena_path.string());
+        arena_spec = json::parse(arena_file);
+        ui->initArena(arena_spec);
+    }
     ui->run();
     log::info("UI has been gracefully shutdown.");
     runtime_thread.join();

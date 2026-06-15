@@ -125,7 +125,7 @@ namespace postline { namespace ui {
 
         virtual ~UI ();
 
-        void initArena ();
+        void initArena (json const &spec);
 
         virtual std::function<void(Message &&)> consume () {
             return {};
@@ -140,4 +140,3 @@ namespace postline { namespace ui {
     std::unique_ptr<UI> make_ui (std::string const &name);
 
 }}
-

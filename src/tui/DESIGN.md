@@ -164,9 +164,12 @@ columns:
 - middle: message trace for the thread;
 - right: selected message detail plus a placeholder new-message editor.
 
-The left navigation currently contains static placeholder data for three modes:
-`tree`, `stack`, and `members`.  These lists do not yet reflect runtime domain,
-stack, or membership state.
+The left navigation has three modes: `tree`, `stack`, and `members`.  The
+`tree` list displays the domain hierarchy rooted at the thread's root domain.
+The `stack` list reflects the current thread call stack and renders each frame
+as `from-agent@from-domain -> to-agent@to-domain`.  The `members` list shows
+the agents and child domains in the current domain; agents use their names and
+child domains render as `@domain-name`.
 
 The middle trace is a bounded list of message summaries rendered as:
 
@@ -190,8 +193,10 @@ into paragraph lines.  Changing the selected message resets the message scroll
 position to the top.  The reader supports Arrow Up/Down, `j`/`k`, Page Up/Down,
 Home, and End.
 
-The "new message" area is currently only an input field labeled `To:`.  It does
-not construct or send messages yet.
+The message editor's `To:` dropdown lists the agents in the current domain by
+`Agent::name`.  The current domain is the thread root when the stack is empty,
+or the top frame's destination domain when the stack is non-empty.  The list
+is refreshed during rendering so stack and membership changes are reflected.
 
 ## Rendering Rules
 

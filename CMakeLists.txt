@@ -112,6 +112,11 @@ configure_file(
     ${CMAKE_BINARY_DIR}/generated/build_info.hpp
     @ONLY
 )
+configure_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/arena.json
+    ${CMAKE_BINARY_DIR}/install/arena.json
+    COPYONLY
+)
 
 add_library(postline
     src/common.cpp
@@ -351,6 +356,10 @@ endif()
 
 install(TARGETS postline_bin
     RUNTIME DESTINATION bin
+)
+
+install(FILES arena.json
+    DESTINATION .
 )
 
 install(TARGETS _postline

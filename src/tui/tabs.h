@@ -113,18 +113,7 @@ class MessageEditor {
     Thread const *thread;
     SendCallback on_send;
 
-    std::vector<std::string> addresses = {
-        "runtime",
-        "echo",
-        "ai1",
-        "ai2",
-        "ai3",
-        "shell",
-        "mcp",
-        "memory",
-        "login",
-        "benchmark",
-    };
+    std::vector<std::string> addresses;
     int address_selected = 0;
     std::string subject_content;
     std::string body_content;
@@ -134,6 +123,8 @@ class MessageEditor {
     ftxui::Component subject_editor;
     ftxui::Component body_editor;
     ftxui::Component renderer;
+
+    void syncAddresses();
 
 public:
     explicit MessageEditor(Thread const *thread_,
@@ -213,30 +204,11 @@ private:
         "tree", "stack", "members",
     };
 
-    std::vector<std::string> tree_entries = {
-        "/",
-        "/build",
-        "/build/compiler",
-        "/build/test",
-        "/ui",
-    };
+    std::vector<std::string> tree_entries;
 
-    std::vector<std::string> stack_entries = {
-        "user",
-        "planner",
-        "writer",
-        "compiler",
-    };
+    std::vector<std::string> stack_entries;
 
-    std::vector<std::string> member_entries = {
-        "@user",
-        "@runtime",
-        "@planner",
-        "@writer",
-        "@compiler",
-        "domain:build",
-        "domain:ui",
-    };
+    std::vector<std::string> member_entries;
 
     ftxui::Component nav_mode_menu;
     ftxui::Component tree_list;
@@ -251,6 +223,10 @@ private:
     ftxui::Component root;
     ftxui::Component renderer;
 
+    void appendTreeEntries(Domain const *domain, size_t depth);
+    void syncTreeEntries();
+    void syncStackEntries();
+    void syncMemberEntries();
     void reloadCurrentMessage();
     void toggleMaximizeRightPane();
 
