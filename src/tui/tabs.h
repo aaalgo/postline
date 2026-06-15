@@ -106,14 +106,15 @@ public:
 };
 
 class MessageEditor {
-    using SendCallback = std::function<void(std::string,
+    using SendCallback = std::function<void(Agent *,
                                             std::string,
                                             std::string)>;
 
     Thread const *thread;
     SendCallback on_send;
 
-    std::vector<std::string> addresses;
+    std::vector<Agent *> address_agents;
+    std::vector<std::string> address_labels;
     int address_selected = 0;
     std::string subject_content;
     std::string body_content;
@@ -177,6 +178,7 @@ public:
 
 private:
     Thread *data;
+    Agent *user;
     MessageListDataRef trace;
     ReadMessageCallback read_message;
     SendCallback on_send;

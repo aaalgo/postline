@@ -136,7 +136,7 @@ MessageEditor::MessageEditor(Thread const *thread_,
     syncAddresses();
 
     DropdownOption address_option;
-    address_option.radiobox.entries = &addresses;
+    address_option.radiobox.entries = &address_labels;
     address_option.radiobox.selected = &address_selected;
     address_option.checkbox.transform = [](EntryState const &state) {
         Element element = hbox({
@@ -178,17 +178,20 @@ MessageEditor::MessageEditor(Thread const *thread_,
     send_option.label = "Send";
     send_option.on_click = [this] {
         CHECK(!thread->pending);
-        CHECK(!addresses.empty());
+        CHECK(!address_agents.empty());
+        CHECK(address_agents.size() == address_labels.size());
         CHECK(address_selected >= 0);
-        CHECK(address_selected < int(addresses.size()));
+        CHECK(address_selected < int(address_agents.size()));
 
-        on_send(addresses[address_selected], subject_content, body_content);
+        on_send(address_agents[address_selected],
+                subject_content,
+                body_content);
         subject_content.clear();
         body_content.clear();
     };
     send_option.transform = [this](EntryState const &state) {
         Element element = text(state.label);
-        if (thread->pending || addresses.empty()) {
+        if (thread->pending || address_agents.empty()) {
             return element | color(Color::GrayDark) | dim;
         }
 
@@ -200,7 +203,7 @@ MessageEditor::MessageEditor(Thread const *thread_,
     };
     send_button = Button(std::move(send_option));
     send_button |= CatchEvent([this](Event event) {
-        if (!thread->pending && !addresses.empty()) {
+        if (!thread->pending && !address_agents.empty()) {
             return false;
         }
         if (event == Event::Return || event.is_mouse()) {
@@ -263,52 +266,67 @@ void MessageEditor::syncAddresses() {
     }
     CHECK(domain);
 
-    std::string selected_address;
+    Agent *selected_agent = nullptr;
     if (address_selected >= 0 &&
-        address_selected < int(addresses.size())) {
-        selected_address = addresses[address_selected];
+        address_selected < int(address_agents.size())) {
+        selected_agent = address_agents[address_selected];
     }
 
-    addresses.clear();
-    addresses.reserve(domain->members.size());
+    address_agents.clear();
+    address_agents.reserve(domain->members.size());
     for (auto const &[name, agent]: domain->members) {
         CHECK(agent);
         CHECK(name == agent->name);
-        addresses.push_back(agent->name);
+        address_agents.push_back(agent);
     }
-    std::sort(addresses.begin(), addresses.end());
+    std::sort(
+        address_agents.begin(),
+        address_agents.end(),
+        [](Agent const *lhs, Agent const *rhs) {
+            return lhs->name < rhs->name;
+        });
 
-    if (addresses.empty()) {
+    address_labels.clear();
+    address_labels.reserve(address_agents.size());
+    for (Agent const *agent: address_agents) {
+        CHECK(agent);
+        address_labels.push_back(agent->name);
+    }
+
+    if (address_agents.empty()) {
         address_selected = 0;
         return;
     }
 
     auto selected = std::find(
-        addresses.begin(), addresses.end(), selected_address);
-    if (selected != addresses.end()) {
-        address_selected = int(selected - addresses.begin());
+        address_agents.begin(), address_agents.end(), selected_agent);
+    if (selected != address_agents.end()) {
+        address_selected = int(selected - address_agents.begin());
         return;
     }
 
     address_selected = std::clamp(
-        address_selected, 0, int(addresses.size()) - 1);
+        address_selected, 0, int(address_agents.size()) - 1);
 }
 
 bool MessageEditor::sendCurrentMessage() {
     if (thread->pending) {
         return false;
     }
-    if (addresses.empty()) {
+    if (address_agents.empty()) {
         return false;
     }
     if (subject_content.empty() && body_content.empty()) {
         return false;
     }
 
+    CHECK(address_agents.size() == address_labels.size());
     CHECK(address_selected >= 0);
-    CHECK(address_selected < int(addresses.size()));
+    CHECK(address_selected < int(address_agents.size()));
 
-    on_send(addresses[address_selected], subject_content, body_content);
+    on_send(address_agents[address_selected],
+            subject_content,
+            body_content);
     subject_content.clear();
     body_content.clear();
     return true;
@@ -463,21 +481,23 @@ ThreadTab::ThreadTab(Observer *observer, Thread *data_,
                      ReadMessageCallback read_message_,
                      SendCallback on_send_)
     : data(data_),
+      user(observer->user),
       trace(observer, &data_->trace),
       read_message(std::move(read_message_)),
       on_send(std::move(on_send_)),
       message_reader(&current_message),
-      message_editor(data_, [this](std::string to,
+      message_editor(data_, [this](Agent *to,
                                    std::string subject,
                                    std::string body) {
-          json header{{"To", to},
+          CHECK(to);
+          json header{{"To", to->name},
                       {"Subject", std::move(subject)}};
           if (!data->stack.empty()) {
               Frame const &frame = data->stack.back();
               CHECK(frame.to.agent);
               CHECK(frame.from.agent);
-              if (frame.to.agent->name == "user" &&
-                  frame.from.agent->name == to) {
+              if (frame.to.agent == user &&
+                  frame.from.agent == to) {
                   header["In-Reply-To"] =
                       std::format("{}", frame.message_id);
               }
@@ -485,6 +505,8 @@ ThreadTab::ThreadTab(Observer *observer, Thread *data_,
           on_send(data->id,
                   Message(std::move(header), std::move(body)));
       }) {
+    CHECK(user);
+
     nav_mode_menu = Menu(
         &nav_modes,
         &nav_mode,
