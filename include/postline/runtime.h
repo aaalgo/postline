@@ -16,6 +16,7 @@ class Runtime: public Program, public LinearService {
 
     int cmd_create_agents (Message const &, json *resp);
     int cmd_create_domain (Message const &, json *resp);
+    int cmd_create_snapshot (Message const &, json *resp);
 
     void updateMemory (Agent *, AccessID end);
 

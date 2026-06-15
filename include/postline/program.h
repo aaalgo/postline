@@ -366,6 +366,12 @@ private:
         return domain;
     }
 
+    Snapshot *createSnapshot (std::string const &name, Domain *domain) {
+        // TODO
+        // create a snapshot from domain
+        // register under `name` (we already made sure name is not yet used)
+    }
+
 private:
     EntityRef commit (Message const &);
 };

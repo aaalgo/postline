@@ -399,6 +399,12 @@ void Program::preprocess (Agent *from, Message &msg, Runtime *runtime) {
             // want all non-global agent to send from their own domains
             CHECK(from->domain == ctx.from.domain);
         }
+        msg.updateHeader([&ctx](json &header) {
+            if (header["From"] != ctx.from.agent->name) {
+                header["Original-From"] = header["From"];
+                header["From"] = ctx.from.agent->name;
+            }
+        });
         // do all error checking and add additional field to msg
         // determine op
         AccessID in_reply_to = msg.in_reply_to();
@@ -584,6 +590,17 @@ EntityRef Program::commit (Message const &msg) {
         result.tag = EntityRef::Tag::DOMAIN;
         result.domain = createDomain(it->second, parent);
         log::info("create domain {}: {}", result.domain->id, result.domain->name);
+    }
+    else if (op == "create_snapshot") {
+        DomainID domain_id = m.at("domain_id").get<DomainID>();
+        CHECK(domain_id >= 0 && domain_id < domains.size());
+        Domain *domain = domains[domain_id].get();
+        std::string name = m.at("name").get<std::string>();
+        auto it = snapshots.find(snapshot);
+        CHECK(it == snapshots.end());
+        result.tag = EntityRef::Tag::SNAPSHOT;
+        result.snapshot = createSnapshot(name, domain);
+        log::info("create snapshot {} from domain {}", name, domain->name);
     }
     else if (op == "create_thread") {
         DomainID domain_id = m.at("domain_id").get<DomainID>();

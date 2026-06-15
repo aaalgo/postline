@@ -122,6 +122,32 @@ int Runtime::cmd_create_domain (Message const &msg, json *resp) {
     return 0;
 }
 
+int Runtime::cmd_create_snapshot (Message const &msg, json *resp) {
+    Context ctx;
+    loadContext(msg, ctx);
+
+    json params = json::parse(msg.body());
+    Domain *domain = ctx.from.domain;
+    std::string name = params.at("name").get_ref<std::string const &>();
+    if (snapshots.find(name) != snapshots.end()) {
+        throw Error("snapshot {} already exists.", name);
+    }
+    std::string domain_name = params.at("domain").get_ref<std::string const &>();
+    Domain *parent_domain = ctx.from.domain;
+    Domain *domain = parent_domain->getChild(domain_name);
+    if (!domain) {
+        throw Error("Domain {} not found.", domain_name);
+    }
+    json op{{"op", "create_snapshot"},
+            {"name", name},
+            {"domain_id", domain->id}};
+    auto r = syscall(op);
+    CHECK(r.tag == EntityRef::Tag::SNAPSHOT);
+    *resp = json{{"snapshot_id", r.snapshot->id}};
+
+    return 0;
+}
+
 EntityRef Runtime::syscall (json const &op) {
     Message entry = protocol::runtime::Commit::make(op);
     journal.append(entry);
@@ -180,6 +206,11 @@ void Runtime::call (Message &&msg, Response &resp) {
     app.add_subcommand("create_domain")
         ->callback([&] {
             status = cmd_create_domain(msg, &respBody);
+        });
+
+    app.add_subcommand("create_snapshot")
+        ->callback([&] {
+            status = cmd_create_snapshot(msg, &respBody);
         });
 
     std::string dump_path;
