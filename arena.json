@@ -1,0 +1,69 @@
+[
+  {
+      "To": "runtime",
+      "Subject": "create_agents",
+      "Thread-ID": "0",
+      "body": [
+        {"from": "zero", "name": "echo", "service": "pipe:echo", "flags": []},
+        {"from": "zero", "name": "ai1", "comment": "openai", "service": "pipe:gpt.py", "flags": ["history"]},
+        {"from": "zero", "name": "ai2", "comment": "anthropic", "service": "pipe:claude.py", "flags": ["history"]},
+        {"from": "zero", "name": "ai3", "comment": "openrouter", "service": "pipe:v1.py", "flags": ["history"]},
+        {"from": "zero", "name": "shell", "service": "pipe:shell", "flags": []},
+        {"from": "zero", "name": "mcp", "service": "pipe:mcp_bridge", "flags": []},
+        {"from": "zero", "name": "memory", "service": "pipe:echo -m", "flags": ["history"]},
+        {"from": "zero", "name": "login", "service": "pipe:login", "flags": ["clone"]},
+        {"from": "zero", "name": "benchmark", "service": "pipe:benchmark", "flags": []},
+        {"from": "zero", "name": "chaos", "service": "pipe:chaos", "flags": []},
+        {"from": "zero", "name": "delegate", "service": "pipe:delegate.py", "flags": []},
+        {"from": "zero", "name": "delegate2", "service": "pipe:delegate.py", "flags": []}
+      ]
+  },
+  {
+      "To": "runtime",
+      "Subject": "create_domain",
+      "Thread-ID": "0",
+      "body": {
+          "detach": true
+      }
+  },
+  {
+      "To": "runtime",
+      "Subject": "create_agents",
+      "Thread-ID": "1",
+      "body": [
+            {"from": "zero", "name": "echo", "service": "pipe:echo", "flags": []},
+            {"from": "zero", "name": "ai1", "comment": "openai", "service": "pipe:gpt.py", "flags": ["history"]},
+            {"from": "zero", "name": "ai2", "comment": "anthropic", "service": "pipe:claude.py", "flags": ["history"]},
+            {"from": "zero", "name": "ai3", "comment": "openrouter", "service": "pipe:v1.py", "flags": ["history"]},
+            {"from": "zero", "name": "shell", "service": "pipe:shell", "flags": []},
+            {"from": "zero", "name": "mcp", "service": "pipe:mcp_bridge", "flags": []},
+            {"from": "zero", "name": "memory", "service": "pipe:echo -m", "flags": ["history"]},
+            {"from": "zero", "name": "login", "service": "pipe:login", "flags": ["clone"]},
+            {"from": "zero", "name": "benchmark", "service": "pipe:benchmark", "flags": []},
+            {"from": "zero", "name": "web_search", "service": "pipe:web_search.py", "flags": []},
+            {"from": "zero", "name": "chaos", "service": "pipe:chaos", "flags": []},
+            {"from": "zero", "name": "delegate", "service": "pipe:delegate.py", "flags": []},
+            {"from": "zero", "name": "delegate2", "service": "pipe:delegate.py", "flags": []}
+          ]
+  },
+  {
+      "To": "runtime",
+      "Subject": "create_domain",
+      "Thread-ID": "0",
+      "body": {
+          "detach": true
+      }
+  },
+  {
+      "To": "runtime",
+      "Subject": "create_agents",
+      "Thread-ID": "2",
+      "body": [
+        {"from": "zero", "name": "ai1", "comment": "openai", "service": "pipe:gpt.py", "flags": ["history"]},
+        {"from": "zero", "name": "ai2", "comment": "anthropic", "service": "pipe:claude.py", "flags": ["history"]},
+        {"from": "zero", "name": "ai3", "comment": "openrouter", "service": "pipe:v1.py", "flags": ["history"]},
+        {"from": "zero", "name": "shell", "service": "pipe:shell", "flags": []},
+        {"from": "zero", "name": "login", "service": "pipe:login", "flags": ["clone"]}
+      ]
+  }
+]
