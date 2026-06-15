@@ -127,7 +127,6 @@ int Runtime::cmd_create_snapshot (Message const &msg, json *resp) {
     loadContext(msg, ctx);
 
     json params = json::parse(msg.body());
-    Domain *domain = ctx.from.domain;
     std::string name = params.at("name").get_ref<std::string const &>();
     if (snapshots.find(name) != snapshots.end()) {
         throw Error("snapshot {} already exists.", name);
@@ -143,7 +142,7 @@ int Runtime::cmd_create_snapshot (Message const &msg, json *resp) {
             {"domain_id", domain->id}};
     auto r = syscall(op);
     CHECK(r.tag == EntityRef::Tag::SNAPSHOT);
-    *resp = json{{"snapshot_id", r.snapshot->id}};
+    *resp = json{{"snapshot", r.snapshot->name}};
 
     return 0;
 }

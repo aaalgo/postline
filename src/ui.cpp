@@ -63,23 +63,18 @@ static std::shared_ptr<Sink> sink;
 void UI::initArena (json const &spec) {
     CHECK(spec.is_array());
 
-    for (std::size_t i = 0; i < spec.size(); ++i) {
-        auto const &agents = spec[i];
-        CHECK(agents.is_array(), "arena domain {} must be a list of agents", i);
-        for (auto const &agent: agents) {
-            CHECK(agent.is_object(), "arena domain {} contains a non-object agent", i);
-        }
+    for (auto msg_spec: spec) {
+        CHECK(msg_spec.is_object());
+        CHECK(msg_spec.contains("Thread-ID"));
+        CHECK(msg_spec["Thread-ID"].is_string());
+        CHECK(msg_spec.contains("body"));
 
-        if (i > 0) {
-            json h{{"To", "runtime"},
-                   {"Subject", "create_domain"}};
-            json op{{"detach", true}};
-            syscall(0, Message(std::move(h), op.dump()));
-        }
+        ThreadID thread_id = std::stoi(msg_spec["Thread-ID"].get<std::string>());
+        std::string body = msg_spec["body"].dump();
+        msg_spec.erase("Thread-ID");
+        msg_spec.erase("body");
 
-        json h{{"To", "runtime"},
-               {"Subject", "create_agents"}};
-        syscall(i, Message(std::move(h), agents.dump()));
+        syscall(thread_id, Message(std::move(msg_spec), std::move(body)));
     }
 }
 

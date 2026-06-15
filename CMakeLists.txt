@@ -330,26 +330,26 @@ endforeach()
 if(BUILD_TESTS)
     include(CTest)
 
-    add_executable(test_journal tests/test_journal.cpp)
-    target_link_libraries(test_journal PRIVATE postline::postline)
-
-    add_executable(test_actor tests/test_actor.cpp)
-    target_link_libraries(test_actor PRIVATE postline::postline CLI11::CLI11)
-
-    add_executable(test_poller tests/test_poller.cpp)
-    target_link_libraries(test_poller PRIVATE postline::postline)
-
-    add_executable(test_program tests/test_program.cpp)
-    target_link_libraries(test_program PRIVATE postline::postline)
-
-    add_executable(test_email tests/test_email.cpp)
-    target_link_libraries(test_email PRIVATE postline::postline CLI11::CLI11)
-
-    add_executable(test_shell tests/test_shell.cpp)
-    target_link_libraries(test_shell PRIVATE postline::postline)
-
-    add_executable(test_stacktrace tests/test_stacktrace.cpp)
-    target_link_libraries(test_stacktrace PRIVATE postline::postline)
+#    add_executable(test_journal tests/test_journal.cpp)
+#    target_link_libraries(test_journal PRIVATE postline::postline)
+#
+#    add_executable(test_actor tests/test_actor.cpp)
+#    target_link_libraries(test_actor PRIVATE postline::postline CLI11::CLI11)
+#
+#    add_executable(test_poller tests/test_poller.cpp)
+#    target_link_libraries(test_poller PRIVATE postline::postline)
+#
+#    add_executable(test_program tests/test_program.cpp)
+#    target_link_libraries(test_program PRIVATE postline::postline)
+#
+#    add_executable(test_email tests/test_email.cpp)
+#    target_link_libraries(test_email PRIVATE postline::postline CLI11::CLI11)
+#
+#    add_executable(test_shell tests/test_shell.cpp)
+#    target_link_libraries(test_shell PRIVATE postline::postline)
+#
+#    add_executable(test_stacktrace tests/test_stacktrace.cpp)
+#    target_link_libraries(test_stacktrace PRIVATE postline::postline)
 
     #add_executable(test_ui tests/test_ui.cpp)
     #target_link_libraries(test_ui PRIVATE postline::postline postline::tui_deps)

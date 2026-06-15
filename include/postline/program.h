@@ -367,9 +367,10 @@ private:
     }
 
     Snapshot *createSnapshot (std::string const &name, Domain *domain) {
-        // TODO
-        // create a snapshot from domain
-        // register under `name` (we already made sure name is not yet used)
+        CHECK(domain);
+        auto [it, inserted] = snapshots.emplace(name, domain->snapshot(name));
+        CHECK(inserted);
+        return &it->second;
     }
 
 private:

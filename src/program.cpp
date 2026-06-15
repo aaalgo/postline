@@ -596,7 +596,7 @@ EntityRef Program::commit (Message const &msg) {
         CHECK(domain_id >= 0 && domain_id < domains.size());
         Domain *domain = domains[domain_id].get();
         std::string name = m.at("name").get<std::string>();
-        auto it = snapshots.find(snapshot);
+        auto it = snapshots.find(name);
         CHECK(it == snapshots.end());
         result.tag = EntityRef::Tag::SNAPSHOT;
         result.snapshot = createSnapshot(name, domain);
