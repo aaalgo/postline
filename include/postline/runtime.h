@@ -1,9 +1,21 @@
 #pragma once
 #include "program.h"
+#include "accounting.h"
+#include "driver.h"
+#include "journal.h"
+#include "poller.h"
+#include "service.h"
 namespace postline {
 
 
 class Runtime: public Program, public LinearService {
+    struct AgentState {
+        bool dead = false;
+        std::unique_ptr<Driver> driver;
+        int obligation_count = 0;
+    };
+
+    std::vector<AgentState> agent_states;
 
     std::function<void(Message &&)> consume;
     Journal journal;
@@ -19,6 +31,11 @@ class Runtime: public Program, public LinearService {
     int cmd_create_snapshot (Message const &, json *resp);
 
     void updateMemory (Agent *, AccessID end);
+
+    AgentState &agentState (Agent const *);
+    AgentState const &agentState (Agent const *) const;
+    void syncAgentStates ();
+    json dumpAgent (Agent const *) const;
 
 public:
     struct Config {
@@ -36,17 +53,22 @@ public:
                   }),
           stop_requested(false) {
         log::info("Initializing runtime");
-        runtime->driver = std::make_unique<LoopDriver>(this);
-        user->driver = std::make_unique<LoopDriver>(user_service);
+        syncAgentStates();
+        agentState(runtime).driver = std::make_unique<LoopDriver>(this);
+        agentState(user).driver = std::make_unique<LoopDriver>(user_service);
     }
 
     ~Runtime() = default;
 
     int enqueueUser (Message && msg) {
-        auto *driver = dynamic_cast<LoopDriver*>(user->driver.get());
+        auto *driver = dynamic_cast<LoopDriver*>(agentState(user).driver.get());
         CHECK(driver);
         return driver->enqueue(std::move(msg));
     }
+
+    json dump () const;
+
+    EntityRef apply (Message const &msg);
 
     void call (Message &&msg, Response &) override; // runtime as a service
 

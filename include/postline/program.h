@@ -9,11 +9,6 @@
 #include <utility>
 #include <vector>
 #include "common.h"
-#include "journal.h"
-#include "driver.h"
-#include "poller.h"
-#include "service.h"
-#include "accounting.h"
 
 namespace postline {
 
@@ -84,18 +79,11 @@ struct Agent: immobile, AgentParams {
     AgentID id;
     Domain *domain;
     std::vector<AccessID> memory;
-    bool dead;                          // whether the agent has died
-    // begin: these fields are for runtime only
-    std::unique_ptr<Driver> driver;     // only used by runtime, need to separate later
-    int obligation_count;               // sanity check, for runtime only
-    // end runtime fields
 
     explicit Agent(AgentParams const &params, AgentID id_, Domain *domain_)
         : AgentParams(params),
         id(id_),
-        domain(domain_),
-        dead(false),
-        obligation_count(0)
+        domain(domain_)
     {}
 
     AccessID anchor () const {
@@ -119,12 +107,6 @@ struct Agent: immobile, AgentParams {
     }
 
     json dump () const;
-
-    ~Agent() {
-        if (driver) {
-            log::error("Deleting agent {} with open driver.", id);
-        }
-    }
 };
 
 // A template used to create domain

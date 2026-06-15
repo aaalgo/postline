@@ -70,9 +70,6 @@ json Agent::dump () const {
         {"id", id},
         {"domain_id", domain->id},
         {"domain_name", domain->name},
-        {"dead", dead},
-        {"obligation_count", obligation_count},
-        {"driver", driver ? json{{"read_fd", driver->read_fd()}} : json(nullptr)},
         {"memory", memory}
     };
 }
@@ -514,7 +511,6 @@ EntityRef Program::apply (Message const &msg) {
         auto const &f = ctx.thread->stack.back();
         to = f.from.agent;
         ctx.thread->stack.pop_back();
-        --ctx.from.agent->obligation_count;
     }
     else if (ctx.action == Action::CALL) {
         ctx.thread->stack.emplace_back();
@@ -523,7 +519,6 @@ EntityRef Program::apply (Message const &msg) {
         f.from = ctx.from;
         f.to = ctx.to;
         to = ctx.to.agent;
-        ++to->obligation_count;
     }
     else if (ctx.action == Action::REWIND) {
         to = ctx.from.agent;
@@ -532,7 +527,6 @@ EntityRef Program::apply (Message const &msg) {
             if (ctx.thread->stack.empty()) break;
             auto const &f = ctx.thread->stack.back();
             to = f.from.agent;
-            --f.to.agent->obligation_count;
             ctx.thread->stack.pop_back();
         } while (true);
     }

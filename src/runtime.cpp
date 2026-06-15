@@ -8,6 +8,59 @@
 
 namespace postline {
 
+Runtime::AgentState &Runtime::agentState (Agent const *agent) {
+    CHECK(agent);
+    CHECK(agent->id >= 0);
+    CHECK(static_cast<std::size_t>(agent->id) < agent_states.size());
+    return agent_states[agent->id];
+}
+
+Runtime::AgentState const &Runtime::agentState (Agent const *agent) const {
+    CHECK(agent);
+    CHECK(agent->id >= 0);
+    CHECK(static_cast<std::size_t>(agent->id) < agent_states.size());
+    return agent_states[agent->id];
+}
+
+void Runtime::syncAgentStates () {
+    agent_states.resize(agents.size());
+    for (auto &state: agent_states) {
+        state.obligation_count = 0;
+    }
+    for (auto const &thread: threads) {
+        for (auto const &frame: thread->stack) {
+            ++agentState(frame.to.agent).obligation_count;
+        }
+    }
+}
+
+json Runtime::dumpAgent (Agent const *agent) const {
+    json ret = agent->dump();
+    auto const &state = agentState(agent);
+    ret["dead"] = state.dead;
+    ret["obligation_count"] = state.obligation_count;
+    ret["driver"] = state.driver
+        ? json{{"read_fd", state.driver->read_fd()}}
+        : json(nullptr);
+    return ret;
+}
+
+json Runtime::dump () const {
+    json ret = Program::dump();
+    json &jagents = ret.at("agents");
+    CHECK(jagents.size() == agents.size());
+    for (std::size_t i = 0; i < agents.size(); ++i) {
+        jagents[i] = dumpAgent(agents[i].get());
+    }
+    return ret;
+}
+
+EntityRef Runtime::apply (Message const &msg) {
+    EntityRef ret = Program::apply(msg);
+    syncAgentStates();
+    return ret;
+}
+
 void Runtime::regularizeAgentParams (json &m, Domain *domain) {
     if (m.contains("from")) {
         ResolvedAddress from = resolve(m.at("from").get_ref<std::string const &>(), domain);
@@ -183,7 +236,7 @@ void Runtime::call (Message &&msg, Response &resp) {
             json j = json::array();
             if (list_all) {
                 for (auto const &a: agents) {
-                    j.push_back(a->dump());
+                    j.push_back(dumpAgent(a.get()));
                 }
             }
             else {
@@ -191,7 +244,7 @@ void Runtime::call (Message &&msg, Response &resp) {
                 Context ctx;
                 loadContext(msg, ctx);
                 for (auto const &p: ctx.from.domain->members) {
-                    j.push_back(p.second->dump());
+                    j.push_back(dumpAgent(p.second));
                 }
             }
             respBody.swap(j);
@@ -242,6 +295,8 @@ void Runtime::call (Message &&msg, Response &resp) {
 
 void Runtime::updateMemory (Agent *agent, AccessID end) {
     if ((agent->flags & AGENT_FLAG_MEMORY) == 0) return;
+    auto &state = agentState(agent);
+    CHECK(state.driver);
     std::vector<AgentLink> links;
     links.emplace_back(agent->id, agent->anchor());
     Agent *cur = agent;
@@ -255,7 +310,7 @@ void Runtime::updateMemory (Agent *agent, AccessID end) {
         }
     }
     
-    agent->driver->send(protocol::handshake::BeginMemory::make());
+    state.driver->send(protocol::handshake::BeginMemory::make());
     for (auto it = links.rbegin(); it != links.rend(); ++it) {
         auto link = *it;
         cur = agents[link.parent].get();
@@ -269,11 +324,11 @@ void Runtime::updateMemory (Agent *agent, AccessID end) {
                 });
             }
             if (msg.access_id() < end) {
-                agent->driver->send(msg);
+                state.driver->send(msg);
             }
         }
     }
-    agent->driver->send(protocol::handshake::EndMemory::make());
+    state.driver->send(protocol::handshake::EndMemory::make());
 }
 
 void Runtime::run() {
@@ -282,9 +337,9 @@ void Runtime::run() {
         Agent *agent;
     };
 
-    CHECK(user->driver, "Must attachUser first.");
-    poller.add(runtime->driver->read_fd(), runtime->id);
-    poller.add(user->driver->read_fd(), user->id);
+    CHECK(agentState(user).driver, "Must attachUser first.");
+    poller.add(agentState(runtime).driver->read_fd(), runtime->id);
+    poller.add(agentState(user).driver->read_fd(), user->id);
 
     while (!stop_requested) {
         auto events = poller.wait();
@@ -294,11 +349,12 @@ void Runtime::run() {
         for (auto const &e : events) {
             CHECK(e.token >= 0 && e.token < agents.size());
             Agent *agent = agents[e.token].get();
-            CHECK(agent->driver);
+            auto &state = agentState(agent);
+            CHECK(state.driver);
 
             std::vector<Message> tmp;
             try {
-                int err = agent->driver->recv(tmp);
+                int err = state.driver->recv(tmp);
                 for (auto &msg : tmp) {
                     //preprocess(agent, msg, this);
                     todos.emplace_back(Todo{.message = std::move(msg), .agent = agent});
@@ -306,9 +362,9 @@ void Runtime::run() {
             }
             catch (eof const &) {
                 // driver has crashed
-                agent->dead = true;
+                state.dead = true;
                 // TODO: record agent died
-                agent->driver.reset();
+                state.driver.reset();
                 // construct response messages to waiting parties
                 if (agent == user) {
                     log::error("User agent has died, stopping...");
@@ -339,8 +395,9 @@ void Runtime::run() {
             EntityRef r = apply(msg);
             Agent *agent = r.agent;
             CHECK(agent != nullptr);
-            if (!agent->driver) {
-                if (agent->dead) {
+            auto &state = agentState(agent);
+            if (!state.driver) {
+                if (state.dead) {
                     log::error("Agent is in error status.");
                 }
                 if (agent->service.empty()) {
@@ -351,12 +408,12 @@ void Runtime::run() {
                           agent->id,
                           agent->name,
                           agent->service);
-                agent->driver = create_driver(agent->service);
-                CHECK(agent->driver);
+                state.driver = create_driver(agent->service);
+                CHECK(state.driver);
                 updateMemory(agent, msg.access_id());
-                poller.add(agent->driver->read_fd(), agent->id);
+                poller.add(state.driver->read_fd(), agent->id);
             }
-            agent->driver->send(msg);
+            state.driver->send(msg);
             if (consume) consume(std::move(msg));
         }
     }
@@ -372,22 +429,23 @@ void Runtime::run() {
     size_t trailing = 0;
     for (std::size_t i = 0; i < agents.size(); ++i) {
         Agent *agent = agents[i].get();
-        while (agent->obligation_count > 0) {
-            CHECK(agent->driver);
-            log::info("Waiting for agent {} (oc: {}) to respond...", i, agent->obligation_count);
+        auto &state = agentState(agent);
+        while (state.obligation_count > 0) {
+            CHECK(state.driver);
+            log::info("Waiting for agent {} (oc: {}) to respond...", i, state.obligation_count);
 
             std::vector<Message> tmp;
-            agent->driver->recv(tmp);
+            state.driver->recv(tmp);
             for (auto &msg: tmp) {
-                --agent->obligation_count;
+                --state.obligation_count;
                 journal.append(msg);
             }
             trailing += tmp.size();
         }
-        if (agent->driver) {
+        if (state.driver) {
             log::info("Stopping agent {} driver...", i);
-            agent->driver->shutdown();
-            agent->driver.reset();
+            state.driver->shutdown();
+            state.driver.reset();
         }
     }
 
