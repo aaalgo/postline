@@ -24,14 +24,6 @@ Runtime::AgentState const &Runtime::agentState (Agent const *agent) const {
 
 void Runtime::syncAgentStates () {
     agent_states.resize(agents.size());
-    for (auto const &agent: agents) {
-        agent->obligation_count = 0;
-    }
-    for (auto const &thread: threads) {
-        for (auto const &frame: thread->stack) {
-            ++frame.to.agent->obligation_count;
-        }
-    }
 }
 
 json Runtime::dumpAgent (Agent const *agent) const {
