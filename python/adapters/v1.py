@@ -1,72 +1,251 @@
 #!/usr/bin/env python3
+
 import argparse
+import json
 import os
 
 from openai import OpenAI
-from postline import LLMAgent
+
+from postline import LLMAgent, Message
 
 
-OPENROUTER_URL = "https://openrouter.ai/api/v1"
-OPENROUTER_MODEL = "google/gemma-3-4b-it"
-DEFAULT_MODEL = OPENROUTER_MODEL
+DEFAULT_MODEL = "gpt-5-mini"
 
 
-class Agent (LLMAgent):
+SEND_MESSAGE_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "send_message",
+        "description": "Send a message.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "To": {
+                    "type": "string",
+                    "description": "Destination address"
+                },
+                "Subject": {
+                    "type": "string",
+                    "description": "Message subject"
+                },
+                "Content": {
+                    "type": "string",
+                    "description": "Message body"
+                }
+            },
+            "required": [
+                "To",
+                "Subject",
+                "Content"
+            ],
+            "additionalProperties": False
+        }
+    }
+}
 
-    def __init__ (self, url, model, headers):
-        if url.startswith("https://openrouter.ai/"):
-            api_key = os.environ.get("OPENROUTER_API_KEY")
-            provider = "openrouter"
-        else:
-            api_key = os.environ.get("OPENAI_API_KEY")
-            provider = "openai"
 
-        client = OpenAI(
-            api_key=api_key,
-            base_url=url,
-            default_headers=headers,
+SYSTEM_PROMPT = """
+You should always respond by calling the send_message tool to send the responding message.
+
+Respond with exactly one message each time.
+"""
+
+PROMPT = [
+"""From: user
+To: ai
+Subject: shell tutorial
+
+You can run shell commands by sending a message with `To: shell`, and set
+`Subject: the command to run`.  Try run the fortune command for me.
+""",
+"""From: ai
+To: shell
+Subject: fortune
+
+""",
+"""From: shell
+To: ai
+Subject: exit status 0
+
+--stdout
+Life is to you a dashing and bold adventure.
+""",
+"""From: ai
+To: user
+Subject: Re: shell tutorial
+
+I successfully ran the fortune command. Here's what it returned:
+
+"Life is to you a dashing and bold adventure."
+
+""",
+"""From: user
+To: ai
+Subject: shell tutorial 2
+
+If the email body is not empty, it will be fed to the command as stdin.  Try
+save the fortune you got into ./fortune.txt by running
+`Subject: cat > fortune.txt` and supply the text as email body.
+""",
+"""From: ai
+To: shell
+Subject: cat > fortune.txt
+
+Life is to you a dashing and bold adventure.
+""",
+"""From: shell
+To: ai
+Subject: exit status 0
+
+""",
+"""From: ai
+To: user
+Subject: Re: shell tutorial 2
+
+The file is created.
+"""
+]
+
+
+
+class Agent(LLMAgent):
+
+    def __init__(self, model):
+        super().__init__()
+        self.model = model
+        client_args = {
+            "base_url": os.environ.get("V1_BASE_URL", "https://api.openai.com/v1"),
+        }
+        if os.environ.get("V1_API_KEY"):
+            client_args["api_key"] = os.environ["V1_API_KEY"]
+        self.client = OpenAI(**client_args)
+
+    def list_models(self):
+
+        ret = []
+
+        try:
+            for model in self.client.models.list().data:
+                ret.append(model.id)
+        except Exception:
+            pass
+
+        return ret
+
+    def build_prompt(self):
+        messages = [{
+            "role": "system",
+            "content": SYSTEM_PROMPT,
+        }]
+
+        for msg in PROMPT:
+            if msg.startswith('From: ai\n'):
+                role = 'assistant'
+            else:
+                role = 'user'
+            messages.append({
+                "role": role,
+                "content": msg,
+            })
+
+
+        for msg in self.journal:
+
+            role = (
+                "user"
+                if msg.isReceiving()
+                else "assistant"
+            )
+
+            messages.append({
+                "role": role,
+                "content": msg.format(True),
+            })
+
+        return messages
+
+    def build_message(self, args):
+
+        header = {
+            "To": args["To"],
+            "Subject": args["Subject"],
+        }
+
+        return Message(
+            header,
+            args.get("Content", ""),
         )
-        super().__init__(client, model, provider)
 
-    def load_models(self):
-        self.models = {}
+    def generate(self):
 
-    def create_response(self):
-        return self.client.chat.completions.create(
+        response = self.client.chat.completions.create(
             model=self.model,
-            messages=self.history,
+            messages=self.build_prompt(),
+            tools=[SEND_MESSAGE_TOOL],
+            tool_choice="required",
         )
 
-    def extract_message_text(self, response):
-        return response.choices[0].message.content
+        assistant = response.choices[0].message
+
+        ret = []
+
+        for tc in assistant.tool_calls or []:
+
+            if tc.function.name != "send_message":
+                continue
+
+            args = json.loads(
+                tc.function.arguments
+            )
+
+            ret.append(
+                self.build_message(args)
+            )
+
+        return ret
 
 
 def parse_args():
+
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--provider",
-        default="openrouter",
-        help="provider",
-    )
+
     parser.add_argument(
         "--model",
-        default=None,
-        help=f"Model name. Defaults to {DEFAULT_MODEL}",
+        default=DEFAULT_MODEL,
     )
-    args = parser.parse_args()
-    if args.provider == 'openai':
-        assert False, "Not supported"
-    elif args.provider == 'openrouter':
-        args.url = OPENROUTER_URL
-        if args.model is None:
-            args.model = OPENROUTER_MODEL
-    else:
-        assert args.provider is None
 
-    return args
+    parser.add_argument(
+        "--test",
+        action="store_true",
+        help="Run a single test inference and exit.",
+    )
+
+    return parser.parse_args()
 
 
 if __name__ == "__main__":
+
     args = parse_args()
-    agent = Agent(args.url, args.model, {})
+
+    agent = Agent(
+        model=args.model,
+    )
+
+    if args.test:
+        agent.append(
+            Message(
+                {
+                    "From": "user",
+                    "To": "ai",
+                    "Subject": "test",
+                },
+                "Reply with exactly: LiteLLM test passed",
+            )
+        )
+
+        for msg in agent.generate():
+            print(msg.format(True))
+
+        raise SystemExit(0)
+
     agent.run()
