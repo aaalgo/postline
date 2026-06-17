@@ -65,6 +65,7 @@ GlobalTab::GlobalTab(GlobalData *d): data(d) {
             "Runtime Log",
             vbox({
                 log_list->Render() | flex,
+                separator(),
                 selected_log | size(HEIGHT, EQUAL, 5),
             }),
             right_renderer->Focused()) |

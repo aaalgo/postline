@@ -202,8 +202,10 @@ Component MessageReader::component() {
 }
 
 MessageEditor::MessageEditor(Thread const *thread_,
+                             AddressProvider address_provider_,
                              SendCallback on_send_)
     : thread(thread_),
+      address_provider(std::move(address_provider_)),
       on_send(std::move(on_send_)) {
     syncAddresses();
 
@@ -338,10 +340,11 @@ void MessageEditor::syncAddresses() {
     }
     CHECK(domain);
 
-    Agent *selected_agent = nullptr;
+    std::string selected_name;
     if (address_selected >= 0 &&
         address_selected < int(address_agents.size())) {
-        selected_agent = address_agents[address_selected];
+        CHECK(address_agents[address_selected]);
+        selected_name = address_agents[address_selected]->name;
     }
 
     address_agents.clear();
@@ -351,12 +354,24 @@ void MessageEditor::syncAddresses() {
         CHECK(name == agent->name);
         address_agents.push_back(agent);
     }
-    std::sort(
+    address_provider(&address_agents);
+    for (Agent const *agent: address_agents) {
+        CHECK(agent);
+    }
+
+    std::stable_sort(
         address_agents.begin(),
         address_agents.end(),
         [](Agent const *lhs, Agent const *rhs) {
             return lhs->name < rhs->name;
         });
+    auto last = std::unique(
+        address_agents.begin(),
+        address_agents.end(),
+        [](Agent const *lhs, Agent const *rhs) {
+            return lhs == rhs || lhs->name == rhs->name;
+        });
+    address_agents.erase(last, address_agents.end());
 
     address_labels.clear();
     address_labels.reserve(address_agents.size());
@@ -370,8 +385,13 @@ void MessageEditor::syncAddresses() {
         return;
     }
 
-    auto selected = std::find(
-        address_agents.begin(), address_agents.end(), selected_agent);
+    auto selected = std::find_if(
+        address_agents.begin(),
+        address_agents.end(),
+        [&selected_name](Agent const *agent) {
+            CHECK(agent);
+            return agent->name == selected_name;
+        });
     if (selected != address_agents.end()) {
         address_selected = int(selected - address_agents.begin());
         return;
@@ -410,8 +430,14 @@ Component MessageEditor::component() {
 
 void ThreadTab::appendTreeEntries(Domain const *domain, size_t depth) {
     CHECK(domain);
-    tree_entries.push_back(
-        std::string(depth * 2, ' ') + domain->name);
+    std::string label = std::string(depth * 2, ' ') + domain->name;
+    bool pruned = depth > 0 && domain->detached;
+    tree_entries.push_back(label);
+    tree_metadata.push_back({std::move(label), pruned});
+
+    if (pruned) {
+        return;
+    }
 
     std::vector<Domain const *> children;
     children.reserve(domain->children.size());
@@ -435,6 +461,7 @@ void ThreadTab::appendTreeEntries(Domain const *domain, size_t depth) {
 void ThreadTab::syncTreeEntries() {
     CHECK(data->root);
     tree_entries.clear();
+    tree_metadata.clear();
     appendTreeEntries(data->root, 0);
 
     if (nav_mode != 0) {
@@ -618,25 +645,30 @@ ThreadTab::ThreadTab(Observer *observer, Thread *data_,
       read_message(std::move(read_message_)),
       on_send(std::move(on_send_)),
       message_reader(&current_message),
-      message_editor(data_, [this](Agent *to,
-                                   std::string subject,
-                                   std::string body) {
-          CHECK(to);
-          json header{{"To", to->name},
-                      {"Subject", std::move(subject)}};
-          if (!data->stack.empty()) {
-              Frame const &frame = data->stack.back();
-              CHECK(frame.to.agent);
-              CHECK(frame.from.agent);
-              if (frame.to.agent == user &&
-                  frame.from.agent == to) {
-                  header["In-Reply-To"] =
-                      std::format("{}", frame.message_id);
+      message_editor(
+          data_,
+          [observer](std::vector<Agent *> *agents) {
+              CHECK(agents);
+              CHECK(observer->runtime);
+              agents->push_back(observer->runtime);
+          },
+          [this](Agent *to, std::string subject, std::string body) {
+              CHECK(to);
+              json header{{"To", to->name},
+                          {"Subject", std::move(subject)}};
+              if (!data->stack.empty()) {
+                  Frame const &frame = data->stack.back();
+                  CHECK(frame.to.agent);
+                  CHECK(frame.from.agent);
+                  if (frame.to.agent == user &&
+                      frame.from.agent == to) {
+                      header["In-Reply-To"] =
+                          std::format("{}", frame.message_id);
+                  }
               }
-          }
-          on_send(data->id,
-                  Message(std::move(header), std::move(body)));
-      }) {
+              on_send(data->id,
+                      Message(std::move(header), std::move(body)));
+          }) {
     CHECK(user);
 
     nav_mode_menu = Menu(
@@ -644,7 +676,27 @@ ThreadTab::ThreadTab(Observer *observer, Thread *data_,
         &nav_mode,
         MenuOption::Horizontal());
 
-    tree_list = Menu(&tree_entries, &nav_selected);
+    MenuOption tree_option;
+    tree_option.entries_option.transform = [this](EntryState const &state) {
+        CHECK(state.index >= 0);
+        CHECK(state.index < int(tree_metadata.size()));
+        TreeEntry const &entry = tree_metadata.at(state.index);
+        CHECK(state.label == entry.label);
+
+        Element element = text((state.active ? "> " : "  ") + state.label) |
+                          color(entry.pruned ? theme::muted() : theme::text());
+        if (entry.pruned) {
+            element |= dim;
+        }
+        if (state.focused) {
+            element |= inverted;
+        }
+        if (state.active) {
+            element |= bold;
+        }
+        return element;
+    };
+    tree_list = Menu(&tree_entries, &nav_selected, tree_option);
     stack_list = Menu(&stack_entries, &nav_selected);
     member_list = Menu(&member_entries, &nav_selected);
     nav_content = Container::Tab({

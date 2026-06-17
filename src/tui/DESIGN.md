@@ -194,9 +194,11 @@ position to the top.  The reader supports Arrow Up/Down, `j`/`k`, Page Up/Down,
 Home, and End.
 
 The message editor's `To:` dropdown lists the agents in the current domain by
-`Agent::name`.  The current domain is the thread root when the stack is empty,
-or the top frame's destination domain when the stack is non-empty.  The list
-is refreshed during rendering so stack and membership changes are reflected.
+`Agent::name`, plus additional agents supplied by the thread tab.  The current
+domain is the thread root when the stack is empty, or the top frame's
+destination domain when the stack is non-empty.  The list is refreshed during
+rendering so stack and membership changes are reflected.  The TUI currently
+adds `runtime` to this list.
 
 ## Rendering Rules
 

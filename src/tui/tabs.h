@@ -109,11 +109,13 @@ public:
 };
 
 class MessageEditor {
+    using AddressProvider = std::function<void(std::vector<Agent *> *)>;
     using SendCallback = std::function<void(Agent *,
                                             std::string,
                                             std::string)>;
 
     Thread const *thread;
+    AddressProvider address_provider;
     SendCallback on_send;
 
     std::vector<Agent *> address_agents;
@@ -132,6 +134,7 @@ class MessageEditor {
 
 public:
     explicit MessageEditor(Thread const *thread_,
+                           AddressProvider address_provider_,
                            SendCallback on_send_);
 
     bool sendCurrentMessage();
@@ -180,6 +183,11 @@ public:
     using SendCallback = std::function<void(ThreadID, Message&&)>;
 
 private:
+    struct TreeEntry {
+        std::string label;
+        bool pruned;
+    };
+
     Thread *data;
     Agent *user;
     MessageListDataRef trace;
@@ -211,6 +219,7 @@ private:
     };
 
     std::vector<std::string> tree_entries;
+    std::vector<TreeEntry> tree_metadata;
 
     std::vector<std::string> stack_entries;
 
