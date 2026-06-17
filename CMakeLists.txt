@@ -266,6 +266,11 @@ file(GLOB POSTLINE_SHELL_TOOL_SOURCES
     LIST_DIRECTORIES false
     "${CMAKE_CURRENT_SOURCE_DIR}/src/shell/*.cpp"
 )
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/python/shell/read_file.py")
+    list(REMOVE_ITEM POSTLINE_SHELL_TOOL_SOURCES
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/shell/read_file.cpp"
+    )
+endif()
 
 set(POSTLINE_SHELL_TOOL_TARGETS)
 foreach(shell_tool_source IN LISTS POSTLINE_SHELL_TOOL_SOURCES)
@@ -278,6 +283,28 @@ foreach(shell_tool_source IN LISTS POSTLINE_SHELL_TOOL_SOURCES)
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/install/bin/shell"
     )
     list(APPEND POSTLINE_SHELL_TOOL_TARGETS "${shell_tool_target}")
+endforeach()
+
+file(GLOB POSTLINE_PYTHON_SHELL_SCRIPTS
+    CONFIGURE_DEPENDS
+    LIST_DIRECTORIES false
+    "${CMAKE_CURRENT_SOURCE_DIR}/python/shell/*.py"
+)
+
+add_custom_target(copy_python_shell_scripts ALL
+    COMMAND ${CMAKE_COMMAND} -E make_directory
+        "${CMAKE_BINARY_DIR}/install/bin/shell"
+)
+
+foreach(script IN LISTS POSTLINE_PYTHON_SHELL_SCRIPTS)
+    get_filename_component(script_name "${script}" NAME_WE)
+    add_custom_command(
+        TARGET copy_python_shell_scripts
+        POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${script}"
+            "${CMAKE_BINARY_DIR}/install/bin/shell/${script_name}"
+    )
 endforeach()
 
 add_library(_postline MODULE
@@ -403,6 +430,14 @@ if(POSTLINE_SHELL_TOOL_TARGETS)
         RUNTIME DESTINATION bin/shell
     )
 endif()
+
+foreach(script IN LISTS POSTLINE_PYTHON_SHELL_SCRIPTS)
+    get_filename_component(script_name "${script}" NAME_WE)
+    install(PROGRAMS "${script}"
+        DESTINATION bin/shell
+        RENAME "${script_name}"
+    )
+endforeach()
 
 if(POSTLINE_INSTALL_BIN_SCRIPTS)
     install(PROGRAMS ${POSTLINE_INSTALL_BIN_SCRIPTS}
