@@ -46,8 +46,6 @@ SEND_MESSAGE_TOOL = {
 
 SYSTEM_PROMPT = """
 You should always respond by calling the send_message tool to send the responding message.
-
-Respond with exactly one message each time.
 """
 
 PROMPT = [

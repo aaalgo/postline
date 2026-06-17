@@ -156,6 +156,7 @@ PYBIND11_MODULE(_postline, module) {
                 },
                 py::arg("fiels"))
         .def("get", &Message::get, py::arg("key"))
+        .def("body", &Message::body)
         .def("write", &Message::write, py::arg("fd"))
         .def("isReceiving",
                 [](Message &msg) {
