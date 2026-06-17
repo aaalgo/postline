@@ -48,10 +48,9 @@ GlobalTab::GlobalTab(GlobalData *d): data(d) {
                     &log_follow_tail);
 
     left_renderer = Renderer(thread_list, [&] {
-        return vbox({
-            text("threads") | bold,
-            thread_list->Render() | flex,
-        });
+        return renderWindowPane("Threads",
+                                thread_list->Render() | flex,
+                                left_renderer->Focused());
     });
 
     right_renderer = Renderer(log_list, [&] {
@@ -61,12 +60,13 @@ GlobalTab::GlobalTab(GlobalData *d): data(d) {
             selected_log = renderLogDetail(data->log_entries.at(log_selected));
         }
 
-        return vbox({
-            text("runtime log") | bold,
-            log_list->Render() | flex,
-            separator(),
-            selected_log | size(HEIGHT, EQUAL, 5),
-        });
+        return renderWindowPane(
+            "Runtime Log",
+            vbox({
+                log_list->Render() | flex,
+                selected_log | size(HEIGHT, EQUAL, 5),
+            }),
+            right_renderer->Focused());
     });
 
     root = Container::Horizontal({
@@ -76,8 +76,7 @@ GlobalTab::GlobalTab(GlobalData *d): data(d) {
 
     renderer = Renderer(root, [&] {
         return hbox({
-            left_renderer->Render() | size(WIDTH, EQUAL, 16),
-            separator(),
+            left_renderer->Render() | size(WIDTH, EQUAL, 18),
             right_renderer->Render() | flex,
         }) | flex;
     });

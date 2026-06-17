@@ -18,6 +18,8 @@
 #include <ftxui/dom/elements.hpp>
 #include <postline/common.h>
 
+#include "render.h"
+
 namespace postline { namespace ui {
 
 using namespace ftxui;
@@ -137,10 +139,8 @@ StatTab::StatTab()
         return vbox({
             hbox({
                 renderProcessStats() | size(WIDTH, EQUAL, 36),
-                separator(),
                 renderSystemStats() | flex,
-            }) | size(HEIGHT, EQUAL, 12),
-            separator(),
+            }) | size(HEIGHT, EQUAL, 13),
             renderProcessTree() | flex,
         }) | flex;
     });
@@ -225,27 +225,24 @@ void StatTab::refresh() {
 }
 
 Element StatTab::renderProcessStats() const {
-    return vbox({
-        text("process") | bold,
-        vbox(lineElements(snapshot.process_lines)) | flex,
-    });
+    return renderWindowPane("Process",
+                            vbox(lineElements(snapshot.process_lines)) |
+                                flex);
 }
 
 Element StatTab::renderSystemStats() const {
-    return vbox({
-        text("system") | bold,
-        vbox(lineElements(snapshot.system_lines)) | flex,
-    });
+    return renderWindowPane("System",
+                            vbox(lineElements(snapshot.system_lines)) |
+                                flex);
 }
 
 Element StatTab::renderProcessTree() const {
-    return vbox({
-        text("process tree") | bold,
+    return renderWindowPane(
+        "Process Tree",
         vbox(lineElements(snapshot.pstree_lines)) |
             focusPosition(0, tree_scroll) |
             yframe |
-            flex,
-    });
+            flex);
 }
 
 std::string StatTab::label() const {

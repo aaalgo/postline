@@ -113,6 +113,17 @@ Element renderLogDetail(spdlog::details::log_msg const &msg) {
     });
 }
 
+Element renderWindowPane(std::string title, Element content, bool focused) {
+    if (focused) {
+        title += "[*]";
+    }
+    Element title_element = text(" " + title + " ") | bold;
+    if (focused) {
+        title_element |= color(Color::CyanLight);
+    }
+    return window(std::move(title_element), std::move(content));
+}
+
 static std::string renderHeaderValue(json const &value, bool force_list) {
     if (value.is_array()) {
         std::ostringstream os;
