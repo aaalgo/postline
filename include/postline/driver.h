@@ -220,7 +220,7 @@ public:
 
 };
 
-static inline std::unique_ptr<Driver> create_driver (std::string const &service) {
+static inline std::unique_ptr<Driver> create_driver (std::string const &service, std::string const &err) {
     std::string driver;
     std::string params;
     auto off = service.find(':');
@@ -232,7 +232,7 @@ static inline std::unique_ptr<Driver> create_driver (std::string const &service)
         params = service.substr(off + 1);
     }
     if (driver == "pipe") {
-        std::string command = (POSTLINE_HOME / "bin" / "adapters").string() + "/" + params;
+        std::string command = (POSTLINE_HOME / "bin" / "adapters").string() + "/" + params + " 2> " + err;
         return std::make_unique<ShellDriver>(std::string(command));
     }
     else CHECK(0, "dynamically createing driver {} not supported", driver);

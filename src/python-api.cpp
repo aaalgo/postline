@@ -157,9 +157,15 @@ PYBIND11_MODULE(_postline, module) {
                 py::arg("fiels"))
         .def("get", &Message::get, py::arg("key"))
         .def("write", &Message::write, py::arg("fd"))
-        .def("isReceiving", 
+        .def("isReceiving",
                 [](Message &msg) {
                     return msg.header().contains("Is-Receiving");
+                })
+        .def("setReceiving",
+                [](Message &msg) {
+                    msg.updateHeader([](json &h) {
+                        h["Is-Receiving"] = "1";
+                    });
                 })
         .def("format", 
                 [](Message &msg, bool compact) {

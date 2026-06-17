@@ -335,11 +335,8 @@ Message Program::makeRewindMessage (Agent *fromAgent, Domain *fromDomain, char c
     if (!fromDomain) {
         fromDomain = fromAgent->domain;
     }
-    CHECK(fromDomain != global);
-    // global:
-    //      - runtime: should never EOF
-    //      - user: user EOF should not a trigger a rewind, it should just
-    //              put the thread in paused state
+    CHECK(fromAgent != runtime);
+    CHECK(fromAgent != user);
     Message msg;
     Context ctx;
     ctx.thread = fromDomain->thread;   // cannot rewind from global agents
@@ -350,6 +347,9 @@ Message Program::makeRewindMessage (Agent *fromAgent, Domain *fromDomain, char c
     ctx.to.agent = nullptr;
     ctx.to.domain = nullptr;
     ctx.error = error;
+    msg.updateHeader([&ctx](json &h) {
+            h["Thread-ID"] = std::format("{}", ctx.thread->id);
+            });
     saveContext(msg, ctx);
     return msg;
 }

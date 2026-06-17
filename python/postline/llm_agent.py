@@ -42,6 +42,7 @@ class LLMAgent(Service):
             resp.append(Message({}, body))
             return
 
+        msg.setReceiving()
         self.append(msg)
 
         outgoing = self.generate()

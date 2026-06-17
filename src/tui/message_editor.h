@@ -5,15 +5,14 @@
 #include <vector>
 
 #include <ftxui/component/component.hpp>
+#include <postline/common.h>
 #include <postline/program.h>
 
 namespace postline { namespace ui {
 
 class MessageEditor {
     using AddressProvider = std::function<void(std::vector<Agent *> *)>;
-    using SendCallback = std::function<void(Agent *,
-                                            std::string,
-                                            std::string)>;
+    using SendCallback = std::function<void(Message&&)>;
 
     Thread const *thread;
     AddressProvider address_provider;
@@ -32,6 +31,7 @@ class MessageEditor {
     ftxui::Component renderer;
 
     void syncAddresses();
+    void sendMessageTo(Agent *to);
 
 public:
     explicit MessageEditor(Thread const *thread_,

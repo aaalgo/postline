@@ -398,7 +398,8 @@ void Runtime::run() {
                           agent->id,
                           agent->name,
                           agent->service);
-                state.driver = create_driver(agent->service);
+                std::string err_file = std::format("stderr.{}.{}", agent->name, agent->id);
+                state.driver = create_driver(agent->service, err_file);
                 CHECK(state.driver);
                 updateMemory(agent, msg.access_id());
                 poller.add(state.driver->read_fd(), agent->id);

@@ -1,6 +1,7 @@
 #include "message_editor.h"
 
 #include <algorithm>
+#include <format>
 #include <utility>
 
 #include <ftxui/component/component.hpp>
@@ -71,11 +72,7 @@ MessageEditor::MessageEditor(Thread const *thread_,
         CHECK(address_selected >= 0);
         CHECK(address_selected < int(address_agents.size()));
 
-        on_send(address_agents[address_selected],
-                subject_content,
-                body_content);
-        subject_content.clear();
-        body_content.clear();
+        sendMessageTo(address_agents[address_selected]);
     };
     send_option.transform = [this](EntryState const &state) {
         Element element = text(state.label);
@@ -202,6 +199,18 @@ void MessageEditor::syncAddresses() {
         address_selected, 0, int(address_agents.size()) - 1);
 }
 
+void MessageEditor::sendMessageTo(Agent *to) {
+    CHECK(thread);
+    CHECK(to);
+
+    json header{{"To", to->name},
+                {"Subject", std::move(subject_content)},
+                {"Thread-ID", std::format("{}", thread->id)}};
+    on_send(Message(std::move(header), std::move(body_content)));
+    subject_content.clear();
+    body_content.clear();
+}
+
 bool MessageEditor::sendCurrentMessage() {
     if (thread->pending) {
         return false;
@@ -217,11 +226,7 @@ bool MessageEditor::sendCurrentMessage() {
     CHECK(address_selected >= 0);
     CHECK(address_selected < int(address_agents.size()));
 
-    on_send(address_agents[address_selected],
-            subject_content,
-            body_content);
-    subject_content.clear();
-    body_content.clear();
+    sendMessageTo(address_agents[address_selected]);
     return true;
 }
 

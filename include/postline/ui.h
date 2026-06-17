@@ -1,5 +1,6 @@
 #pragma once
 #include <future>
+#include <fstream>
 #include <postline/runtime.h>
 #include <spdlog/details/log_msg.h>
 
@@ -79,6 +80,11 @@ namespace postline { namespace ui {
             //msg.formatEmail(std::cerr);
 
             int thread_id = msg.thread_id();
+
+            if (!(thread_id >= 0)) {
+                std::ofstream xx("xx");
+                msg.formatEmail(xx);
+            }
 
             CHECK(thread_id >= 0);
 

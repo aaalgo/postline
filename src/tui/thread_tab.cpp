@@ -169,22 +169,23 @@ ThreadTab::ThreadTab(Observer *observer, Thread *data_,
               CHECK(observer->runtime);
               agents->push_back(observer->runtime);
           },
-          [this](Agent *to, std::string subject, std::string body) {
-              CHECK(to);
-              json header{{"To", to->name},
-                          {"Subject", std::move(subject)}};
+          [this](Message &&msg) {
+              std::string to = msg.get("To");
+              CHECK(!to.empty());
+              CHECK(msg.get("Thread-ID") == std::format("{}", data->id));
               if (!data->stack.empty()) {
                   Frame const &frame = data->stack.back();
                   CHECK(frame.to.agent);
                   CHECK(frame.from.agent);
                   if (frame.to.agent == user &&
-                      frame.from.agent == to) {
-                      header["In-Reply-To"] =
-                          std::format("{}", frame.message_id);
+                      frame.from.agent->name == to) {
+                      msg.updateHeader([&frame](json &header) {
+                          header["In-Reply-To"] =
+                              std::format("{}", frame.message_id);
+                      });
                   }
               }
-              on_send(data->id,
-                      Message(std::move(header), std::move(body)));
+              on_send(data->id, std::move(msg));
           }) {
     CHECK(user);
 
