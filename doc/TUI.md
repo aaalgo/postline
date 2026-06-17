@@ -52,22 +52,33 @@ threads enqueue messages or logs, then wake the screen with a custom event.
   TUI mirror.
 
 - `src/tui/tabs.h`
-  Declares the tab interface and all current tab/component classes:
-  `GlobalTab`, `StatTab`, `MessageReader`, `MessageEditor`,
-  `MessageListDataRef`, and `ThreadTab`.
+  Declares only the abstract `Tab` interface shared by top-level tabs.
 
-- `src/tui/global_tab.cpp`
-  Implements the Global tab: thread list on the left, runtime log list and log
-  detail on the right.
+- `src/tui/global_tab.h`, `src/tui/global_tab.cpp`
+  Declare and implement the Global tab: thread list on the left, runtime log
+  list and log detail on the right.  `GlobalData` lives here.
 
-- `src/tui/stat_tab.cpp`
-  Implements the Stat tab.  It reads Linux `/proc` files and `pstree` once per
-  second and renders process, system, and process-tree panes.
+- `src/tui/stat_tab.h`, `src/tui/stat_tab.cpp`
+  Declare and implement the Stat tab.  It reads Linux `/proc` files and
+  `pstree` once per second and renders process, system, and process-tree panes.
 
-- `src/tui/thread_tab.cpp`
-  Implements most thread-screen behavior: split panes, navigation tree, stack
-  list, member list, trace list, message reader, composer, pane focus, and
-  F10/F12 shortcuts.
+- `src/tui/message_reader.h`
+  Declares `MessageReader`, the scrollable selected-message viewer.  Its
+  methods are currently implemented in `thread_tab.cpp`.
+
+- `src/tui/message_editor.h`
+  Declares `MessageEditor`, the composer for user messages.  Its methods are
+  currently implemented in `thread_tab.cpp`.
+
+- `src/tui/message_list_data_ref.h`
+  Declares `MessageListDataRef`, the list adapter that renders a thread trace
+  from `AccessID`s in `Thread::trace`.
+
+- `src/tui/thread_tab.h`, `src/tui/thread_tab.cpp`
+  Declare and implement `ThreadTab`.  The implementation still contains most
+  thread-screen behavior: split panes, navigation tree, stack list, member
+  list, trace list, message reader, composer, pane focus, and F10/F12
+  shortcuts.
 
 - `src/tui/thread_focus.h`
   Small focus-state helper for cycling the four thread panes with Tab and
@@ -139,20 +150,18 @@ Internal fields hidden from the reader are `type`, `Thinking`, `Trash`, and
 
 ## Maintenance Notes
 
-The most important cleanup target is `src/tui/thread_tab.cpp`.  It currently
-contains reusable split-pane plumbing, message-reading behavior, composer
-behavior, navigation model derivation, trace rendering, and tab layout in one
-file.  A natural split would be:
+The header split has already moved concrete declarations out of `tabs.h`; keep
+that direction.  The most important remaining cleanup target is
+`src/tui/thread_tab.cpp`.  It still contains reusable split-pane plumbing,
+message-reading behavior, composer behavior, navigation model derivation, trace
+rendering, and tab layout in one implementation file.  A natural next split
+would be:
 
 - `split_pane.{h,cpp}` for `BorderlessSplitLeft`;
-- `message_reader.{h,cpp}` for `MessageReader`;
-- `message_editor.{h,cpp}` for `MessageEditor`;
+- `message_reader.cpp` for `MessageReader`;
+- `message_editor.cpp` for `MessageEditor`;
 - `thread_nav.{h,cpp}` for tree, stack, member, and address list derivation;
-- `thread_tab.{h,cpp}` for layout, focus, shortcuts, and callbacks.
-
-`tabs.h` should then shrink to the abstract `Tab` interface and small shared
-data types.  Large concrete class declarations are easier to maintain in their
-own headers.
+- `thread_tab.cpp` for layout, focus, shortcuts, and callbacks.
 
 The next useful boundary is a small TUI view-model layer.  Today components
 often read `Program` objects directly and mutate cached labels while rendering.
