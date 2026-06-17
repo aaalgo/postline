@@ -54,7 +54,7 @@ void setup_environ()
 
         std::string path_str = bin_dir.string() + ':' + shell_dir.string();
 
-        char const* old = std::getenv("PYTHONPATH");
+        char const* old = std::getenv("PATH");
         std::string value;
         if (old && old[0] != '\0') {
             value = path_str + ":" + old;

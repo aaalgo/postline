@@ -8,27 +8,30 @@ one trailing LF or CRLF; file payload lines keep their original line endings.
 
 Grammar:
 
-    patch       := begin op* end
+    patch       := comment* begin item* end comment*
+    item        := comment | op
     begin       := "*** Begin Patch" eol
     end         := "*** End Patch" eol?
+    comment     := "#" bytes eol
 
     op          := add_file | delete_file | update_file
 
-    add_file    := "*** Add File: " path eol add_line*
+    add_file    := "*** Add File: " path eol (comment | add_line)*
     add_line    := "+" bytes
 
     delete_file := "*** Delete File: " path eol
 
-    update_file := "*** Update File: " path eol move_to? hunk*
+    update_file := "*** Update File: " path eol comment* move_to? (comment | hunk)*
     move_to     := "*** Move to: " path eol
-    hunk        := "@@" eol hunk_line+
+    hunk        := "@@" eol (comment | hunk_line)+
     hunk_line   := (" " | "-" | "+") bytes
 
 Operation boundaries are any line beginning with `*** Add File: `,
 `*** Delete File: `, `*** Update File: `, or the exact end marker. Add-file
 payload lines must begin with `+`; their stored payload is the remainder of the
 line, including its newline if present. Update hunk lines use a leading space
-for context, `-` for removed content, and `+` for inserted content.
+for context, `-` for removed content, and `+` for inserted content. Lines whose
+first byte is `#` are comments and are ignored.
 
 Paths are normalized before use:
 
@@ -312,18 +315,47 @@ std::vector<std::string> split_lines_keepends(std::string const &content)
     return lines;
 }
 
+bool is_comment(std::string const &line)
+{
+    return line.starts_with('#');
+}
+
+bool is_op_boundary(std::string const &line)
+{
+    return line == "*** End Patch" ||
+        line.starts_with("*** Add File: ") ||
+        line.starts_with("*** Delete File: ") ||
+        line.starts_with("*** Update File: ");
+}
+
+void skip_comments(std::vector<std::string> const &lines, size_t &index)
+{
+    while (index < lines.size() && is_comment(strip_eol(lines[index]))) {
+        ++index;
+    }
+}
+
 std::vector<PatchOp> parse_patch(std::string const &data)
 {
     auto lines = split_lines_keepends(data);
     check(!lines.empty(), "empty patch");
-    check(strip_eol(lines[0]) == "*** Begin Patch", "missing begin sentinel");
+    size_t i = 0;
+    skip_comments(lines, i);
+    check(i < lines.size(), "empty patch");
+    check(strip_eol(lines[i]) == "*** Begin Patch", "missing begin sentinel");
 
     std::vector<PatchOp> ops;
-    size_t i = 1;
+    ++i;
     while (i < lines.size()) {
+        skip_comments(lines, i);
+        if (i >= lines.size()) {
+            break;
+        }
         std::string line = strip_eol(lines[i]);
         if (line == "*** End Patch") {
-            check(i == lines.size() - 1, "content after end sentinel");
+            ++i;
+            skip_comments(lines, i);
+            check(i == lines.size(), "content after end sentinel");
             return ops;
         }
 
@@ -334,6 +366,10 @@ std::vector<PatchOp> parse_patch(std::string const &data)
             ++i;
             while (i < lines.size()) {
                 std::string marker = strip_eol(lines[i]);
+                if (is_comment(marker)) {
+                    ++i;
+                    continue;
+                }
                 if (marker.starts_with("*** ") && marker != "*** Move to: ") {
                     break;
                 }
@@ -360,6 +396,7 @@ std::vector<PatchOp> parse_patch(std::string const &data)
             op.kind = PatchOp::Kind::UpdateFile;
             op.path = safe_path(line.substr(std::strlen("*** Update File: ")));
             ++i;
+            skip_comments(lines, i);
             if (i < lines.size() &&
                 strip_eol(lines[i]).starts_with("*** Move to: ")) {
                 std::string marker = strip_eol(lines[i]);
@@ -368,11 +405,12 @@ std::vector<PatchOp> parse_patch(std::string const &data)
             }
 
             while (i < lines.size()) {
+                skip_comments(lines, i);
+                if (i >= lines.size()) {
+                    break;
+                }
                 std::string marker = strip_eol(lines[i]);
-                if (marker == "*** End Patch" ||
-                    marker.starts_with("*** Add File: ") ||
-                    marker.starts_with("*** Delete File: ") ||
-                    marker.starts_with("*** Update File: ")) {
+                if (is_op_boundary(marker)) {
                     break;
                 }
                 check(marker == "@@", "expected hunk header for update: " + op.path);
@@ -380,11 +418,11 @@ std::vector<PatchOp> parse_patch(std::string const &data)
                 PatchHunk hunk;
                 while (i < lines.size()) {
                     marker = strip_eol(lines[i]);
-                    if (marker == "@@" ||
-                        marker == "*** End Patch" ||
-                        marker.starts_with("*** Add File: ") ||
-                        marker.starts_with("*** Delete File: ") ||
-                        marker.starts_with("*** Update File: ")) {
+                    if (is_comment(marker)) {
+                        ++i;
+                        continue;
+                    }
+                    if (marker == "@@" || is_op_boundary(marker)) {
                         break;
                     }
                     check(!lines[i].empty(), "bad hunk line prefix in " + op.path);
@@ -993,6 +1031,40 @@ void rollback(fs::path const &record_path)
     }
 }
 
+void print_doc()
+{
+    std::cout <<
+        "# apply_patch accepts and applies a patch file from stdin.\n"
+        "# The patch file consists multiple patch operations.\n"
+        "# Lines begin with # are comments.\n"
+        "# Example:\n"
+        "*** Begin Patch\n"
+        "*** Add File: notes/todo.txt\n"
+        "+write patch docs\n"
+        "+add shell coverage\n"
+        "+keep examples copyable\n"
+        "#\n"
+        "*** Update File: src/example.txt\n"
+        "@@\n"
+        " first line\n"
+        "-old line\n"
+        "-old line2\n"
+        "-old line3\n"
+        "+new line\n"
+        "+new line2\n"
+        " last line\n"
+        "*** Update File: old/name.txt\n"
+        "*** Move to: new/name.txt\n"
+        "*** Update File: docs/draft.txt\n"
+        "*** Move to: docs/final.txt\n"
+        "@@\n"
+        " Title: Release Notes\n"
+        "-Status: draft\n"
+        "+Status: final\n"
+        "*** Delete File: generated/cache.txt\n"
+        "*** End Patch\n";
+}
+
 }
 
 int main(int argc, char **argv)
@@ -1006,6 +1078,10 @@ int main(int argc, char **argv)
     app.add_option("patch", patch_path, "patch file, or stdin if omitted");
     app.add_option("--root", root_arg, "repository root");
     app.add_flag("--check", check_only, "check only");
+    app.add_flag_function("--doc", [](int64_t) {
+        print_doc();
+        std::exit(0);
+    }, "print patch format examples");
     app.add_option("--rollback", rollback_arg, "rollback record path");
     CLI11_PARSE(app, argc, argv);
 

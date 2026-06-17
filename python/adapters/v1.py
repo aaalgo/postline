@@ -9,7 +9,7 @@ from openai import OpenAI
 from postline import LLMAgent, Message
 
 
-DEFAULT_MODEL = "gpt-5-mini"
+DEFAULT_MODEL = "gpt-5.5"
 
 
 SEND_MESSAGE_TOOL = {
