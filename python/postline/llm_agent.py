@@ -58,7 +58,7 @@ class LLMAgent(Service):
         top = self.stack[-1]
         if From == top.expect_from:
             # we are waiting reply from From
-            top.expected_from = None
+            top.expect_from = None
         else:
             top = Frame(return_to = From)
             self.stack.append(top)
@@ -75,7 +75,7 @@ class LLMAgent(Service):
                 out = top.pending.pop(i)
                 top.expect_from = To
                 resp.append(out)
-                self.append(msg)
+                self.append(out)
                 return
 
         # stack rewind
@@ -91,6 +91,6 @@ class LLMAgent(Service):
 
         self.stack.pop()
         resp.append(out)
-        self.append(msg)
+        self.append(out)
 
 
