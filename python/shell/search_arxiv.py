@@ -18,7 +18,6 @@ import argparse
 import json
 import re
 import sys
-import textwrap
 import time
 import urllib.parse
 import urllib.request
@@ -248,8 +247,7 @@ def parse_feed(xml_text: str) -> list[Paper]:
 def visible_authors(authors: list[str], limit: Optional[int]) -> str:
     if limit is None or limit <= 0 or len(authors) <= limit:
         return ", ".join(authors)
-    rest = len(authors) - limit
-    return ", ".join(authors[:limit]) + f", et al. (+{rest})"
+    return ", ".join(authors[:limit]) + ", et al."
 
 
 def date_only(dt: str) -> str:
@@ -264,38 +262,40 @@ def render_markdown(papers: list[Paper], args: argparse.Namespace) -> str:
 
     for i, p in enumerate(papers, 1):
         title = truncate(p.title, args.title_chars)
-        lines.append(f"## {i}. {title}")
+        paper_id = f"{p.arxiv_id}{p.version or ''}"
+        lines.append(f"# id: {paper_id}")
         lines.append("")
 
         if args.md == "tiny":
-            lines.append(f"- **arXiv:** {p.arxiv_id}{p.version or ''}")
+            lines.append(f"- Title: {title}")
+            if not args.no_authors and p.authors:
+                lines.append(f"- Authors: {visible_authors(p.authors, args.authors)}")
             if p.published:
-                lines.append(f"- **Date:** {date_only(p.published)}")
+                lines.append(f"- Date: {date_only(p.published)}")
             if not args.no_links:
-                lines.append(f"- **PDF:** {p.pdf_url}")
+                lines.append(f"- PDF: {p.pdf_url}")
             lines.append("")
             continue
 
-        lines.append(f"- **arXiv:** {p.arxiv_id}{p.version or ''}")
-        if p.published:
-            lines.append(f"- **Published:** {date_only(p.published)}")
-        if p.updated and p.updated[:10] != p.published[:10]:
-            lines.append(f"- **Updated:** {date_only(p.updated)}")
-
+        lines.append(f"- Title: {title}")
         if not args.no_authors and p.authors:
-            lines.append(f"- **Authors:** {visible_authors(p.authors, args.authors)}")
+            lines.append(f"- Authors: {visible_authors(p.authors, args.authors)}")
+
+        if p.published:
+            lines.append(f"- Published: {date_only(p.published)}")
+        if p.updated and p.updated[:10] != p.published[:10]:
+            lines.append(f"- Updated: {date_only(p.updated)}")
 
         if args.md == "full" and not args.no_categories and p.categories:
-            lines.append(f"- **Categories:** {', '.join(p.categories)}")
+            lines.append(f"- Categories: {', '.join(p.categories)}")
         elif args.md == "compact" and not args.no_categories and p.primary_category:
-            lines.append(f"- **Category:** {p.primary_category}")
+            lines.append(f"- Category: {p.primary_category}")
 
         if p.doi and args.md == "full":
-            lines.append(f"- **DOI:** {p.doi}")
+            lines.append(f"- DOI: {p.doi}")
 
         if not args.no_links:
-            lines.append(f"- **Abs:** {p.abs_url}")
-            lines.append(f"- **PDF:** {p.pdf_url}")
+            lines.append(f"- PDF: {p.pdf_url}")
 
         if not args.no_abstract:
             lines.append("")
@@ -332,8 +332,29 @@ def positive_int(s: str) -> int:
     return v
 
 
+def print_doc() -> None:
+    print(
+        "search_arxiv searches arXiv through the public API and prints concise "
+        "paper results for agents.\n"
+        "\n"
+        "Usage:\n"
+        "  search_arxiv \"QUERY TERMS\" [-n N]\n"
+        "\n"
+        "Common options:\n"
+        "  -n, --max-results N   Limit results. Default: 10\n"
+        "  --id ID [ID ...]      Fetch exact arXiv IDs instead of searching.\n"
+        "\n"
+        "Examples:\n"
+        "  search_arxiv \"RNA folding\" -n 5\n"
+        "  search_arxiv --id 2001.04020\n"
+        "\n"
+        "Use --help for all options."
+    )
+
+
 def make_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
+        prog="search_arxiv",
         description="Search arXiv and print token-efficient Markdown/JSON.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
@@ -363,7 +384,7 @@ def make_parser() -> argparse.ArgumentParser:
     p.add_argument("--abstract-chars", type=positive_int, default=None,
                    help="Truncate abstracts. 0 disables truncation.")
     p.add_argument("--title-chars", type=positive_int, default=220)
-    p.add_argument("--authors", type=positive_int, default=3, help="Max authors shown in Markdown. 0 means all.")
+    p.add_argument("--authors", type=positive_int, default=2, help="Max authors shown in Markdown. 0 means all.")
 
     p.add_argument("--no-abstract", action="store_true")
     p.add_argument("--no-authors", action="store_true")
@@ -386,10 +407,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     args = parser.parse_args(argv)
 
     if args.doc:
-        if __doc__:
-            print(textwrap.dedent(__doc__).strip())
-            print()
-        parser.print_help()
+        print_doc()
         return 0
 
     if args.delay > 0:
@@ -400,13 +418,13 @@ def main(argv: Optional[list[str]] = None) -> int:
         papers = parse_feed(xml_text)
     except urllib.error.HTTPError as e:
         print(f"HTTP error from arXiv: {e.code} {e.reason}", file=sys.stderr)
-        return 2
+        return 1
     except urllib.error.URLError as e:
         print(f"Network error: {e}", file=sys.stderr)
-        return 2
+        return 1
     except ET.ParseError as e:
         print(f"Could not parse arXiv response XML: {e}", file=sys.stderr)
-        return 2
+        return 1
 
     if args.pdf_only:
         for p in papers:
