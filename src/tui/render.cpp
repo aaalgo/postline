@@ -1,5 +1,6 @@
 #include "render.h"
 
+#include <algorithm>
 #include <chrono>
 #include <ctime>
 #include <format>
@@ -83,6 +84,70 @@ static std::string toString(spdlog::string_view_t view) {
     return std::string(view.data(), view.size());
 }
 
+class WindowBoundaryColor: public Node {
+    Color color_;
+    int title_width_;
+
+    void ComputeRequirement() override {
+        Node::ComputeRequirement();
+        requirement_ = children_[0]->requirement();
+    }
+
+    void SetBox(Box box) override {
+        Node::SetBox(box);
+        children_[0]->SetBox(box);
+    }
+
+    void Render(Screen &screen) override {
+        Node::Render(screen);
+
+        if (box_.x_min >= box_.x_max || box_.y_min >= box_.y_max) {
+            return;
+        }
+
+        int title_right =
+            std::min(box_.x_max - 1, box_.x_min + title_width_);
+
+        for (int x = box_.x_min; x <= box_.x_max; ++x) {
+            if (x < box_.x_min + 1 || x > title_right) {
+                screen.PixelAt(x, box_.y_min).foreground_color = color_;
+            }
+            screen.PixelAt(x, box_.y_max).foreground_color = color_;
+        }
+
+        for (int y = box_.y_min; y <= box_.y_max; ++y) {
+            screen.PixelAt(box_.x_min, y).foreground_color = color_;
+            screen.PixelAt(box_.x_max, y).foreground_color = color_;
+        }
+    }
+
+public:
+    WindowBoundaryColor(Element child, Color color, int title_width)
+        : Node(Elements{std::move(child)}),
+          color_(color),
+          title_width_(title_width) {}
+};
+
+static Decorator windowBoundaryColor(Color color, int title_width) {
+    return [color, title_width](Element child) {
+        return std::make_shared<WindowBoundaryColor>(
+            std::move(child), color, title_width);
+    };
+}
+
+static Element renderTitledBorderPane(std::string title,
+                                      Element content,
+                                      Color boundary_color,
+                                      Color title_color) {
+    std::string title_text = " " + std::move(title) + " ";
+
+    return window(text(title_text) | bold | color(title_color),
+                  std::move(content) | flex,
+                  ROUNDED)
+        | windowBoundaryColor(boundary_color,
+                              static_cast<int>(title_text.size()));
+}
+
 Element renderLogEntry(spdlog::details::log_msg const &msg) {
     std::string level = toString(spdlog::level::to_string_view(msg.level));
     std::string payload = toString(msg.payload);
@@ -153,15 +218,10 @@ Element renderWindowPane(std::string title, Element content, bool focused) {
     Color boundary_color = focused ? theme::accent() : theme::border();
     Color title_color = focused ? theme::accent() : theme::muted();
 
-    Element title_row = hbox({
-        text(" " + title + " ") | bold | color(title_color),
-        filler(),
-    });
-
-    return vbox({
-        std::move(title_row),
-        std::move(content) | flex,
-    }) | borderStyled(ROUNDED, boundary_color);
+    return renderTitledBorderPane(std::move(title),
+                                  std::move(content),
+                                  boundary_color,
+                                  title_color);
 }
 
 Element renderTopLevelWindowPane(std::string title,
@@ -169,17 +229,12 @@ Element renderTopLevelWindowPane(std::string title,
                                  bool focused) {
     Color boundary_color = focused ? theme::accent() : theme::border();
     Color title_color = focused ? theme::accent() : theme::muted();
-    Color title_background = focused ? theme::surfaceActive() : theme::surface();
 
-    Element title_row = hbox({
-        text(" " + title + " ") | bold | color(title_color),
-        filler(),
-    }) | bgcolor(title_background);
-
-    return vbox({
-        std::move(title_row),
-        std::move(content) | flex,
-    }) | borderStyled(ROUNDED, boundary_color) | bgcolor(theme::surface());
+    return renderTitledBorderPane(std::move(title),
+                                  std::move(content),
+                                  boundary_color,
+                                  title_color)
+        | bgcolor(theme::surface());
 }
 
 static std::string renderHeaderValue(json const &value, bool force_list) {

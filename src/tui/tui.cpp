@@ -65,6 +65,35 @@ class TUI: public UI, public Observer {
         return element;
     }
 
+    static Color topBarBackground() {
+        return Color::RGB(30, 41, 59);
+    }
+
+    static Color topBarText() {
+        return Color::RGB(125, 211, 252);
+    }
+
+    static Color topBarMutedText() {
+        return Color::RGB(167, 139, 250);
+    }
+
+    static Color topBarDangerText() {
+        return Color::RGB(248, 113, 113);
+    }
+
+    static Element renderTopBarButton(EntryState const& state,
+                                      Color normal,
+                                      Color focused) {
+        Element element = text(" " + state.label + " ") |
+                          color(state.focused ? focused : normal) |
+                          bgcolor(topBarBackground()) |
+                          bold;
+        if (state.focused) {
+            element |= underlined;
+        }
+        return element;
+    }
+
     bool handleShortcut(Event const &event) {
         if (event != Event::F10 && event != Event::F12) {
             return false;
@@ -155,14 +184,13 @@ public:
 
         MenuOption tab_option = MenuOption::Horizontal();
         tab_option.entries_option.transform = [](EntryState const& state) {
-            Element element = text(" " + state.label + " ");
+            Element element = text(" " + state.label + " ") |
+                              bgcolor(topBarBackground());
             if (state.active) {
-                element |= color(theme::accent()) |
-                           bgcolor(theme::surfaceActive()) |
-                           bold;
+                element |= color(topBarText()) | bold;
             }
             else {
-                element |= color(theme::muted());
+                element |= color(topBarMutedText());
             }
             if (state.focused) {
                 element |= underlined;
@@ -187,7 +215,7 @@ public:
             about_shown = true;
         };
         about_option.transform = [](EntryState const& state) {
-            return renderChromeButton(state, theme::accent(), theme::text());
+            return renderTopBarButton(state, topBarText(), topBarText());
         };
         about_button = Button(std::move(about_option));
 
@@ -218,7 +246,7 @@ public:
                          {"Subject", "exit"}}));
         };
         exit_option.transform = [this](EntryState const& state) {
-            return renderChromeButton(state, theme::danger(), theme::text());
+            return renderTopBarButton(state, topBarDangerText(), topBarDangerText());
         };
         exit_button = Button(std::move(exit_option));
 
@@ -238,8 +266,8 @@ public:
             return vbox({
                 hbox({
                     text(" Postline ") |
-                        color(theme::text()) |
-                        bgcolor(theme::surfaceActive()) |
+                        color(topBarText()) |
+                        bgcolor(topBarBackground()) |
                         bold,
                     text(" "),
                     tab_selection->Render(),
@@ -247,7 +275,7 @@ public:
                     about_button->Render(),
                     text(" "),
                     exit_button->Render(),
-                }) | bgcolor(theme::surface()),
+                }) | bgcolor(topBarBackground()),
                 tab_content->Render() | flex,
                 text("Tab: next pane | Shift-Tab: previous pane | F10: maximize | F12: send | ?: help") |
                     color(theme::muted()) |
