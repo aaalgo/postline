@@ -5,8 +5,6 @@
       "Thread-ID": "0",
       "body": [
         {"from": "zero", "name": "echo", "service": "pipe:echo", "flags": []},
-        {"from": "zero", "name": "ai1", "comment": "openai", "service": "pipe:gpt.py", "flags": ["history"]},
-        {"from": "zero", "name": "ai2", "comment": "anthropic", "service": "pipe:claude.py", "flags": ["history"]},
         {"from": "zero", "name": "ai", "comment": "openrouter", "service": "pipe:v1.py", "flags": ["history"]},
         {"from": "zero", "name": "shell", "service": "pipe:shell", "flags": []},
         {"from": "zero", "name": "mcp", "service": "pipe:mcp_bridge", "flags": []},
@@ -32,8 +30,6 @@
       "Thread-ID": "1",
       "body": [
             {"from": "zero", "name": "echo", "service": "pipe:echo", "flags": []},
-            {"from": "zero", "name": "ai1", "comment": "openai", "service": "pipe:gpt.py", "flags": ["history"]},
-            {"from": "zero", "name": "ai2", "comment": "anthropic", "service": "pipe:claude.py", "flags": ["history"]},
             {"from": "zero", "name": "ai", "comment": "openrouter", "service": "pipe:v1.py", "flags": ["history"]},
             {"from": "zero", "name": "shell", "service": "pipe:shell", "flags": []},
             {"from": "zero", "name": "mcp", "service": "pipe:mcp_bridge", "flags": []},
@@ -59,8 +55,6 @@
       "Subject": "create_agents",
       "Thread-ID": "2",
       "body": [
-        {"from": "zero", "name": "ai1", "comment": "openai", "service": "pipe:gpt.py", "flags": ["history"]},
-        {"from": "zero", "name": "ai2", "comment": "anthropic", "service": "pipe:claude.py", "flags": ["history"]},
         {"from": "zero", "name": "ai", "comment": "openrouter", "service": "pipe:v1.py", "flags": ["history"]},
         {"from": "zero", "name": "shell", "service": "pipe:shell", "flags": []},
         {"from": "zero", "name": "login", "service": "pipe:login", "flags": ["clone"]}
