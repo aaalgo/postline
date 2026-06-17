@@ -461,6 +461,73 @@ void ThreadTab::reloadCurrentMessage() {
     message_reader.resetScroll();
 }
 
+void ThreadTab::focusPane() {
+    switch (pane_focus.focusedPane()) {
+    case ThreadPaneFocus::FocusedPane::Navigation:
+        left_renderer->TakeFocus();
+        return;
+    case ThreadPaneFocus::FocusedPane::Trace:
+        trace_list->TakeFocus();
+        return;
+    case ThreadPaneFocus::FocusedPane::Reader:
+        message_reader.component()->TakeFocus();
+        return;
+    case ThreadPaneFocus::FocusedPane::Composer:
+        message_editor.component()->TakeFocus();
+        return;
+    }
+    CHECK(0);
+}
+
+bool ThreadTab::onFocusEvent(Event const &event) {
+    if (left_renderer->Focused()) {
+        pane_focus.setFocusedPane(
+            ThreadPaneFocus::FocusedPane::Navigation);
+    }
+    else if (trace_list->Focused()) {
+        pane_focus.setFocusedPane(ThreadPaneFocus::FocusedPane::Trace);
+    }
+    else if (message_reader.component()->Focused()) {
+        pane_focus.setFocusedPane(ThreadPaneFocus::FocusedPane::Reader);
+    }
+    else if (message_editor.component()->Focused()) {
+        pane_focus.setFocusedPane(ThreadPaneFocus::FocusedPane::Composer);
+    }
+
+    if (!pane_focus.onEvent(event)) {
+        return false;
+    }
+    focusPane();
+    return true;
+}
+
+bool ThreadTab::paneFocused(ThreadPaneFocus::FocusedPane pane) {
+    switch (pane) {
+    case ThreadPaneFocus::FocusedPane::Navigation:
+        return left_renderer->Focused();
+    case ThreadPaneFocus::FocusedPane::Trace:
+        return trace_list->Focused();
+    case ThreadPaneFocus::FocusedPane::Reader:
+        return message_reader.component()->Focused();
+    case ThreadPaneFocus::FocusedPane::Composer:
+        return message_editor.component()->Focused();
+    }
+    CHECK(0);
+}
+
+Element ThreadTab::renderPane(std::string title,
+                              Element content,
+                              bool focused) const {
+    if (focused) {
+        title += " [focused]";
+    }
+    Element title_element = text(" " + title + " ") | bold;
+    if (focused) {
+        title_element |= color(Color::CyanLight);
+    }
+    return window(std::move(title_element), std::move(content));
+}
+
 void ThreadTab::toggleMaximizeRightPane() {
     if (right_pane_mode != RightPaneMode::Normal) {
         right_pane_mode = RightPaneMode::Normal;
@@ -543,22 +610,29 @@ ThreadTab::ThreadTab(Observer *observer, Thread *data_,
                 });
             }
 
-            return vbox({
-                hbox({
-                    text("thread ") | bold,
-                    text(std::format("{}", data->id)) | color(Color::Yellow),
-                    thread_name,
+            return renderPane(
+                "Navigation",
+                vbox({
+                    hbox({
+                        text("thread ") | bold,
+                        text(std::format("{}", data->id)) |
+                            color(Color::Yellow),
+                        thread_name,
+                    }),
+                    nav_mode_menu->Render(),
+                    separator(),
+                    nav_content->Render() | flex,
                 }),
-                nav_mode_menu->Render(),
-                separator(),
-                nav_content->Render() | flex,
-            });
+                paneFocused(ThreadPaneFocus::FocusedPane::Navigation));
         });
 
     middle_renderer = Renderer(
         trace_list,
         [&] {
-            return trace_list->Render();
+            return renderPane(
+                "Trace",
+                trace_list->Render(),
+                paneFocused(ThreadPaneFocus::FocusedPane::Trace));
         });
 
     right_renderer = Renderer(
@@ -569,11 +643,15 @@ ThreadTab::ThreadTab(Observer *observer, Thread *data_,
         [&] {
             reloadCurrentMessage();
             return vbox({
-                message_reader.component()->Render() | flex,
-
-                separator(),
-
-                message_editor.component()->Render() | size(HEIGHT, EQUAL, 12),
+                renderPane(
+                    "Reader",
+                    message_reader.component()->Render() | flex,
+                    paneFocused(ThreadPaneFocus::FocusedPane::Reader)) | flex,
+                renderPane(
+                    "Composer",
+                    message_editor.component()->Render(),
+                    paneFocused(ThreadPaneFocus::FocusedPane::Composer)) |
+                    size(HEIGHT, EQUAL, 12),
             });
         });
 
@@ -586,14 +664,24 @@ ThreadTab::ThreadTab(Observer *observer, Thread *data_,
     renderer = Renderer(root, [&] {
         if (right_pane_mode == RightPaneMode::Message) {
             reloadCurrentMessage();
-            return message_reader.component()->Render() | flex;
+            return renderPane(
+                "Reader",
+                message_reader.component()->Render() | flex,
+                paneFocused(ThreadPaneFocus::FocusedPane::Reader)) | flex;
         }
         if (right_pane_mode == RightPaneMode::Editor) {
-            return message_editor.component()->Render() | flex;
+            return renderPane(
+                "Composer",
+                message_editor.component()->Render() | flex,
+                paneFocused(ThreadPaneFocus::FocusedPane::Composer)) | flex;
         }
 
         return root->Render() | flex;
     });
+    renderer |= CatchEvent([this](Event event) {
+        return onFocusEvent(event);
+    });
+    focusPane();
 }
 
 std::string ThreadTab::label() const {

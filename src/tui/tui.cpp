@@ -230,6 +230,9 @@ public:
                 }),
                 separator(),
                 tab_content->Render() | flex,
+                separator(),
+                text("Tab: next pane | Shift-Tab: previous pane | F10: maximize | F12: send | ?: help") |
+                    color(Color::GrayLight),
             });
         });
         main_renderer |= CatchEvent([this](Event event) {

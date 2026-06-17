@@ -13,6 +13,7 @@
 
 #include "ftx_list.hpp"
 #include "limits.h"
+#include "thread_focus.h"
 #include <postline/observer.h>
 
 namespace postline { namespace ui {
@@ -187,6 +188,7 @@ private:
     AccessID current_message_id = NO_ACCESS_ID;
     MessageReader message_reader;
     MessageEditor message_editor;
+    ThreadPaneFocus pane_focus;
 
     enum class RightPaneMode {
         Normal,
@@ -230,6 +232,12 @@ private:
     void syncStackEntries();
     void syncMemberEntries();
     void reloadCurrentMessage();
+    void focusPane();
+    bool onFocusEvent(ftxui::Event const &event);
+    bool paneFocused(ThreadPaneFocus::FocusedPane pane);
+    ftxui::Element renderPane(std::string title,
+                              ftxui::Element content,
+                              bool focused) const;
     void toggleMaximizeRightPane();
 
 public:

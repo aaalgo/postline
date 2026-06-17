@@ -228,22 +228,6 @@ class ListBase : public ComponentBase, public ListOption {
       follow_tail() = true;
     }
 
-    if (event == Event::Tab) {
-      if (selected() < 0) {
-        SelectFromViewport(/*from_bottom=*/false);
-        follow_tail() = false;
-      } else if (selected() + 1 < end()) {
-        selected()++;
-        follow_tail() = false;
-      }
-    }
-
-    if (event == Event::TabReverse) {
-      SelectFromTailOrViewport(/*from_bottom=*/true);
-      selected() = std::max(firstValid(), selected() - 1);
-      follow_tail() = false;
-    }
-
     NormalizeSelection(/*notify=*/false);
 
     if (selected() != old_selected) {

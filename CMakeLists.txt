@@ -330,6 +330,12 @@ endforeach()
 if(BUILD_TESTS)
     include(CTest)
 
+    add_executable(test_thread_focus tests/test_thread_focus.cpp)
+    target_include_directories(test_thread_focus PRIVATE src/tui)
+    target_link_libraries(test_thread_focus PRIVATE postline::tui_deps)
+
+    add_test(NAME test_thread_focus COMMAND test_thread_focus)
+
 #    add_executable(test_journal tests/test_journal.cpp)
 #    target_link_libraries(test_journal PRIVATE postline::postline)
 #
