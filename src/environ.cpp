@@ -27,26 +27,45 @@ void setup_environ()
         POSTLINE_HOME = exe.parent_path().parent_path();
     }
     log::info("POSTLINE_HOME: {}", POSTLINE_HOME.string());
-    // Expected:
-    //   .../bin/postline
-    //
-    // Therefore:
-    //   prefix = .../
-    //   python = .../python
-    fs::path python_dir = POSTLINE_HOME / "python";
+    {
+        // Expected:
+        //   .../bin/postline
+        //
+        // Therefore:
+        //   prefix = .../
+        //   python = .../python
+        fs::path python_dir = POSTLINE_HOME / "python";
 
-    std::string path_str = python_dir.string();
-    char const* old = std::getenv("PYTHONPATH");
-    std::string value;
-    if (old && old[0] != '\0') {
-        value = path_str + ":" + old;
-    } else {
-        value = path_str;
+        std::string path_str = python_dir.string();
+        char const* old = std::getenv("PYTHONPATH");
+        std::string value;
+        if (old && old[0] != '\0') {
+            value = path_str + ":" + old;
+        } else {
+            value = path_str;
+        }
+        int rc = ::setenv("PYTHONPATH", value.c_str(), 1);
+        CHECK(rc == 0, "errno: {} ({})", errno, std::strerror(errno));
+        log::info("PYTHONPATH updated: {}", value);
+    }
+    {
+        fs::path bin_dir = POSTLINE_HOME / "bin";
+        fs::path shell_dir = POSTLINE_HOME / "bin" / "shell";
+
+        std::string path_str = bin_dir.string() + ':' + shell_dir.string();
+
+        char const* old = std::getenv("PYTHONPATH");
+        std::string value;
+        if (old && old[0] != '\0') {
+            value = path_str + ":" + old;
+        } else {
+            value = path_str;
+        }
+        int rc = ::setenv("PATH", value.c_str(), 1);
+        CHECK(rc == 0, "errno: {} ({})", errno, std::strerror(errno));
+        log::info("PATH updated: {}", value);
     }
 
-    int rc = ::setenv("PYTHONPATH", value.c_str(), 1);
-    CHECK(rc == 0, "errno: {} ({})", errno, std::strerror(errno));
-    log::info("PYTHONPATH updated: {}", value);
 }
 
 #if 0

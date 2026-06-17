@@ -261,6 +261,25 @@ set_target_properties(inspect_journal PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${POSTLINE_INSTALL_BIN_DIR}"
 )
 
+file(GLOB POSTLINE_SHELL_TOOL_SOURCES
+    CONFIGURE_DEPENDS
+    LIST_DIRECTORIES false
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/shell/*.cpp"
+)
+
+set(POSTLINE_SHELL_TOOL_TARGETS)
+foreach(shell_tool_source IN LISTS POSTLINE_SHELL_TOOL_SOURCES)
+    get_filename_component(shell_tool_name "${shell_tool_source}" NAME_WE)
+    set(shell_tool_target "shell_${shell_tool_name}")
+    add_executable("${shell_tool_target}" "${shell_tool_source}")
+    target_link_libraries("${shell_tool_target}" PRIVATE CLI11::CLI11)
+    set_target_properties("${shell_tool_target}" PROPERTIES
+        OUTPUT_NAME "${shell_tool_name}"
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/install/bin/shell"
+    )
+    list(APPEND POSTLINE_SHELL_TOOL_TARGETS "${shell_tool_target}")
+endforeach()
+
 add_library(_postline MODULE
     src/python-api.cpp
     src/common.cpp
@@ -378,6 +397,12 @@ install(FILES arena.json
 install(TARGETS _postline
     LIBRARY DESTINATION python/postline
 )
+
+if(POSTLINE_SHELL_TOOL_TARGETS)
+    install(TARGETS ${POSTLINE_SHELL_TOOL_TARGETS}
+        RUNTIME DESTINATION bin/shell
+    )
+endif()
 
 if(POSTLINE_INSTALL_BIN_SCRIPTS)
     install(PROGRAMS ${POSTLINE_INSTALL_BIN_SCRIPTS}

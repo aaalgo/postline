@@ -17,7 +17,6 @@ DEFAULT_MCP_SERVER = [
     os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
 ]
 
-
 class McpClient:
     def __init__(self, argv):
         self.proc = subprocess.Popen(
