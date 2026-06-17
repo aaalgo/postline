@@ -44,6 +44,24 @@ class TUI: public UI, public Observer {
     Component main_renderer;
     ScreenInteractive screen;
 
+    static bool isPassiveMouseMove(Event event) {
+        return event.is_mouse() &&
+               event.mouse().motion == Mouse::Moved &&
+               event.mouse().button == Mouse::None;
+    }
+
+    static Element renderChromeButton(EntryState const& state,
+                                      Color normal,
+                                      Color focused) {
+        Element element = text(" " + state.label + " ") |
+                          color(state.focused ? focused : normal) |
+                          bold;
+        if (state.focused) {
+            element |= bgcolor(theme::surfaceActive());
+        }
+        return element;
+    }
+
     bool handleShortcut(Event const &event) {
         if (event != Event::F10 && event != Event::F12) {
             return false;
@@ -132,10 +150,29 @@ public:
         addTab(std::make_unique<GlobalTab>(&global));
         addTab(std::make_unique<StatTab>());
 
+        MenuOption tab_option = MenuOption::Horizontal();
+        tab_option.entries_option.transform = [](EntryState const& state) {
+            Element element = text(" " + state.label + " ");
+            if (state.active) {
+                element |= color(theme::accent()) |
+                           bgcolor(theme::surfaceActive()) |
+                           bold;
+            }
+            else {
+                element |= color(theme::muted());
+            }
+            if (state.focused) {
+                element |= underlined;
+            }
+            return element;
+        };
+        tab_option.elements_infix = [] {
+            return text(" ");
+        };
         tab_selection = Menu(
             &tab_labels,
             &tab_index,
-            MenuOption::Horizontal());
+            std::move(tab_option));
 
         tab_content = Container::Tab(
             tab_components,
@@ -147,13 +184,7 @@ public:
             about_shown = true;
         };
         about_option.transform = [](EntryState const& state) {
-            Element element = text(state.label) |
-                              color(Color::GreenLight) |
-                              bold;
-            if (state.focused) {
-                element |= inverted;
-            }
-            return element;
+            return renderChromeButton(state, theme::accent(), theme::text());
         };
         about_button = Button(std::move(about_option));
 
@@ -163,13 +194,7 @@ public:
             about_shown = false;
         };
         about_close_option.transform = [](EntryState const& state) {
-            Element element = text(" " + state.label + " ") |
-                              color(Color::Cyan) |
-                              bold;
-            if (state.focused) {
-                element |= inverted;
-            }
-            return element;
+            return renderChromeButton(state, theme::accent(), theme::text());
         };
         auto about_close_button = Button(std::move(about_close_option));
         about_modal = Renderer(about_close_button, [about_close_button] {
@@ -190,18 +215,7 @@ public:
                          {"Subject", "exit"}}));
         };
         exit_option.transform = [this](EntryState const& state) {
-            Element element = text(state.label) |
-                              color(Color::Red) |
-                              bold;
-            /*
-            if (!can_send_) {
-                element |= dim;
-            }
-            */
-            if (state.focused) {
-                element |= inverted;
-            }
-            return element;
+            return renderChromeButton(state, theme::danger(), theme::text());
         };
         exit_button = Button(std::move(exit_option));
 
@@ -220,22 +234,27 @@ public:
             drainLogs();
             return vbox({
                 hbox({
-                    text("Postline") | bold,
-                    text(" | "),
+                    text(" Postline ") |
+                        color(theme::text()) |
+                        bgcolor(theme::surfaceActive()) |
+                        bold,
+                    text(" "),
                     tab_selection->Render(),
                     filler(),
                     about_button->Render(),
                     text(" "),
                     exit_button->Render(),
-                }),
-                separator(),
+                }) | bgcolor(theme::surface()),
                 tab_content->Render() | flex,
-                separator(),
                 text("Tab: next pane | Shift-Tab: previous pane | F10: maximize | F12: send | ?: help") |
-                    color(Color::GrayLight),
-            });
+                    color(theme::muted()) |
+                    bgcolor(theme::surface()),
+            }) | bgcolor(theme::background());
         });
         main_renderer |= CatchEvent([this](Event event) {
+            if (isPassiveMouseMove(event)) {
+                return true;
+            }
             return handleShortcut(event);
         });
         main_renderer |= Modal(about_modal, &about_shown);

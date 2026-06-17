@@ -225,19 +225,19 @@ void StatTab::refresh() {
 }
 
 Element StatTab::renderProcessStats() const {
-    return renderWindowPane("Process",
-                            vbox(lineElements(snapshot.process_lines)) |
-                                flex);
+    return renderTopLevelWindowPane("Process",
+                                    vbox(lineElements(snapshot.process_lines)) |
+                                        flex);
 }
 
 Element StatTab::renderSystemStats() const {
-    return renderWindowPane("System",
-                            vbox(lineElements(snapshot.system_lines)) |
-                                flex);
+    return renderTopLevelWindowPane("System",
+                                    vbox(lineElements(snapshot.system_lines)) |
+                                        flex);
 }
 
 Element StatTab::renderProcessTree() const {
-    return renderWindowPane(
+    return renderTopLevelWindowPane(
         "Process Tree",
         vbox(lineElements(snapshot.pstree_lines)) |
             focusPosition(0, tree_scroll) |

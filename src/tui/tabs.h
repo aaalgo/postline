@@ -50,6 +50,8 @@ class GlobalTab : public Tab {
     ftxui::Component right_renderer;
     ftxui::Component root;
     ftxui::Component renderer;
+    ftxui::Box left_pane_box;
+    ftxui::Box right_pane_box;
 
 public:
     explicit GlobalTab(GlobalData *d);
@@ -226,6 +228,10 @@ private:
     ftxui::Component right_renderer;
     ftxui::Component root;
     ftxui::Component renderer;
+    ftxui::Box navigation_pane_box;
+    ftxui::Box trace_pane_box;
+    ftxui::Box reader_pane_box;
+    ftxui::Box composer_pane_box;
 
     void appendTreeEntries(Domain const *domain, size_t depth);
     void syncTreeEntries();

@@ -48,9 +48,10 @@ GlobalTab::GlobalTab(GlobalData *d): data(d) {
                     &log_follow_tail);
 
     left_renderer = Renderer(thread_list, [&] {
-        return renderWindowPane("Threads",
-                                thread_list->Render() | flex,
-                                left_renderer->Focused());
+        return renderTopLevelWindowPane("Threads",
+                                        thread_list->Render() | flex,
+                                        left_renderer->Focused()) |
+            reflect(left_pane_box);
     });
 
     right_renderer = Renderer(log_list, [&] {
@@ -60,13 +61,14 @@ GlobalTab::GlobalTab(GlobalData *d): data(d) {
             selected_log = renderLogDetail(data->log_entries.at(log_selected));
         }
 
-        return renderWindowPane(
+        return renderTopLevelWindowPane(
             "Runtime Log",
             vbox({
                 log_list->Render() | flex,
                 selected_log | size(HEIGHT, EQUAL, 5),
             }),
-            right_renderer->Focused());
+            right_renderer->Focused()) |
+            reflect(right_pane_box);
     });
 
     root = Container::Horizontal({
@@ -79,6 +81,20 @@ GlobalTab::GlobalTab(GlobalData *d): data(d) {
             left_renderer->Render() | size(WIDTH, EQUAL, 18),
             right_renderer->Render() | flex,
         }) | flex;
+    });
+    renderer |= CatchEvent([this](Event event) {
+        if (!event.is_mouse() ||
+            event.mouse().button != Mouse::Left ||
+            event.mouse().motion != Mouse::Pressed) {
+            return false;
+        }
+        if (left_pane_box.Contain(event.mouse().x, event.mouse().y)) {
+            left_renderer->TakeFocus();
+        }
+        else if (right_pane_box.Contain(event.mouse().x, event.mouse().y)) {
+            right_renderer->TakeFocus();
+        }
+        return false;
     });
 }
 

@@ -24,6 +24,42 @@ using namespace ftxui;
 
 static constexpr char POSTLINE_WEB_URL[] = "https://github.com/aaalgo/postline";
 
+namespace theme {
+
+Color background() {
+    return Color::RGB(10, 14, 20);
+}
+
+Color surface() {
+    return Color::RGB(18, 25, 35);
+}
+
+Color surfaceActive() {
+    return Color::RGB(24, 36, 50);
+}
+
+Color text() {
+    return Color::RGB(226, 232, 240);
+}
+
+Color muted() {
+    return Color::RGB(148, 163, 184);
+}
+
+Color border() {
+    return Color::RGB(71, 85, 105);
+}
+
+Color accent() {
+    return Color::RGB(45, 212, 191);
+}
+
+Color danger() {
+    return Color::RGB(248, 113, 113);
+}
+
+}
+
 static Decorator logLevelColor(spdlog::level::level_enum level) {
     switch (level) {
     case spdlog::level::trace:
@@ -114,14 +150,36 @@ Element renderLogDetail(spdlog::details::log_msg const &msg) {
 }
 
 Element renderWindowPane(std::string title, Element content, bool focused) {
-    if (focused) {
-        title += "[*]";
-    }
-    Element title_element = text(" " + title + " ") | bold;
-    if (focused) {
-        title_element |= color(Color::CyanLight);
-    }
-    return window(std::move(title_element), std::move(content));
+    Color boundary_color = focused ? theme::accent() : theme::border();
+    Color title_color = focused ? theme::accent() : theme::muted();
+
+    Element title_row = hbox({
+        text(" " + title + " ") | bold | color(title_color),
+        filler(),
+    });
+
+    return vbox({
+        std::move(title_row),
+        std::move(content) | flex,
+    }) | borderStyled(ROUNDED, boundary_color);
+}
+
+Element renderTopLevelWindowPane(std::string title,
+                                 Element content,
+                                 bool focused) {
+    Color boundary_color = focused ? theme::accent() : theme::border();
+    Color title_color = focused ? theme::accent() : theme::muted();
+    Color title_background = focused ? theme::surfaceActive() : theme::surface();
+
+    Element title_row = hbox({
+        text(" " + title + " ") | bold | color(title_color),
+        filler(),
+    }) | bgcolor(title_background);
+
+    return vbox({
+        std::move(title_row),
+        std::move(content) | flex,
+    }) | borderStyled(ROUNDED, boundary_color) | bgcolor(theme::surface());
 }
 
 static std::string renderHeaderValue(json const &value, bool force_list) {

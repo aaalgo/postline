@@ -688,7 +688,8 @@ ThreadTab::ThreadTab(Observer *observer, Thread *data_,
                     separator(),
                     nav_content->Render() | flex,
                 }),
-                paneFocused(ThreadPaneFocus::FocusedPane::Navigation));
+                paneFocused(ThreadPaneFocus::FocusedPane::Navigation)) |
+                reflect(navigation_pane_box);
         });
 
     middle_renderer = Renderer(
@@ -697,7 +698,8 @@ ThreadTab::ThreadTab(Observer *observer, Thread *data_,
             return renderPane(
                 "Trace",
                 trace_list->Render(),
-                paneFocused(ThreadPaneFocus::FocusedPane::Trace));
+                paneFocused(ThreadPaneFocus::FocusedPane::Trace)) |
+                reflect(trace_pane_box);
         });
 
     right_renderer = Renderer(
@@ -711,11 +713,13 @@ ThreadTab::ThreadTab(Observer *observer, Thread *data_,
                 renderPane(
                     "Reader",
                     message_reader.component()->Render() | flex,
-                    paneFocused(ThreadPaneFocus::FocusedPane::Reader)) | flex,
+                    paneFocused(ThreadPaneFocus::FocusedPane::Reader)) |
+                    reflect(reader_pane_box) | flex,
                 renderPane(
                     "Composer",
                     message_editor.component()->Render(),
                     paneFocused(ThreadPaneFocus::FocusedPane::Composer)) |
+                    reflect(composer_pane_box) |
                     size(HEIGHT, EQUAL, 12),
             });
         });
@@ -732,18 +736,37 @@ ThreadTab::ThreadTab(Observer *observer, Thread *data_,
             return renderPane(
                 "Reader",
                 message_reader.component()->Render() | flex,
-                paneFocused(ThreadPaneFocus::FocusedPane::Reader)) | flex;
+                paneFocused(ThreadPaneFocus::FocusedPane::Reader)) |
+                reflect(reader_pane_box) | flex;
         }
         if (right_pane_mode == RightPaneMode::Editor) {
             return renderPane(
                 "Composer",
                 message_editor.component()->Render() | flex,
-                paneFocused(ThreadPaneFocus::FocusedPane::Composer)) | flex;
+                paneFocused(ThreadPaneFocus::FocusedPane::Composer)) |
+                reflect(composer_pane_box) | flex;
         }
 
         return root->Render() | flex;
     });
     renderer |= CatchEvent([this](Event event) {
+        if (event.is_mouse() &&
+            event.mouse().button == Mouse::Left &&
+            event.mouse().motion == Mouse::Pressed) {
+            if (navigation_pane_box.Contain(event.mouse().x, event.mouse().y)) {
+                left_renderer->TakeFocus();
+            }
+            else if (trace_pane_box.Contain(event.mouse().x, event.mouse().y)) {
+                trace_list->TakeFocus();
+            }
+            else if (reader_pane_box.Contain(event.mouse().x, event.mouse().y)) {
+                message_reader.component()->TakeFocus();
+            }
+            else if (composer_pane_box.Contain(event.mouse().x,
+                                              event.mouse().y)) {
+                message_editor.component()->TakeFocus();
+            }
+        }
         return onFocusEvent(event);
     });
     focusPane();
