@@ -35,7 +35,6 @@ namespace postline { namespace ui {
 
 inline void welcome ()
 {
-    
     std::cout << ansi::green << banner
               << ansi::reset
               << ansi::cyan << "Postline Agent Runtime\nBy Ann Arbor Algorithms\n" << ansi::reset
