@@ -10,6 +10,414 @@ public:
 // public stuff
 };
 
+# Postline Runtime Overview
+
+Postline is an AI agent runtime built around durable message passing. Agents,
+the runtime itself, and the user interface all communicate by exchanging
+`postline::Message` values. Every meaningful runtime transition is represented
+as a message, appended to a journal, and replayed into an in-memory program
+state.
+
+This document summarizes the code in `include/postline/*` and top-level
+`src/*.cpp`.
+
+## Runtime Shape
+
+The runtime has three major layers:
+
+- `Message` and `Journal`: binary framing, JSON headers, raw bodies, durable
+  append/read, and replay.
+- `Program`: pure in-memory state for agents, domains, snapshots, threads, and
+  call stacks.
+- `Runtime`: the active event loop that owns drivers, polls agent file
+  descriptors, preprocesses messages, writes the journal, applies messages, and
+  dispatches them to the next agent.
+
+The process entry point in `src/main.cpp` creates a UI service, constructs a
+`Runtime`, starts `Runtime::run()` on a background thread, optionally initializes
+the arena, and then runs the selected UI on the main thread.
+
+## Messages
+
+`postline::Message` is the fundamental data unit. It has:
+
+- a JSON header;
+- a raw string body;
+- an `AccessID`, which is assigned only after journal append or pread replay.
+
+The serialized representation is implemented in `src/common.cpp`:
+
+```text
+RecordHeader {
+    magic       = "POST"
+    header_size = byte length of JSON header
+    body_size   = byte length of raw body
+    crc         = CRC32(header + body)
+}
+header JSON bytes
+body bytes
+```
+
+`Message::read(fd)` is used for stream I/O with adapters. `Message::read(fd,
+offset, segment)` is used for journal reads and returns a message with a valid
+`AccessID`.
+
+Common logical headers include:
+
+- `type`: protocol message type;
+- `From`, `To`, `Cc`, `Subject`: email-like routing and presentation headers;
+- `Thread-ID`: selected thread;
+- `Message-ID`: assigned from the journal `AccessID`;
+- `In-Reply-To`: marks a return to the caller at the top call frame;
+- `In-Response-To`: marks a continued call sequence related to the top frame;
+- `__context`: runtime-owned routing authority added during preprocessing;
+- `Postline-Cost:*`: accounting values accumulated by `Accounting`.
+
+The body is intentionally not parsed by the runtime for normal agent traffic.
+Protocol structs parse only the pieces they own.
+
+## Access IDs
+
+`AccessID` identifies a message on disk. It encodes a journal segment and byte
+offset. The current implementation uses:
+
+- high bit: local "receiving" marker;
+- segment bits;
+- offset bits.
+
+`mark_receiving()` and `unmark_receiving()` are bookkeeping helpers for memory
+views. They do not change message identity on disk. Code that compares message
+identity should unmark first or avoid comparing marked IDs directly.
+
+## Journal
+
+`Journal` is an append-only segmented log. Each segment starts with a
+`journal:root` message that points to the previous segment path. On startup the
+journal discovers the chain from the resume path backward, opens the segments in
+chronological order, and replays every message after each segment root.
+
+Two modes are supported:
+
+- read/write mode when `journal_path` is provided: a new segment is created and
+  linked to `resume_path`;
+- read-only replay mode when only `resume_path` is provided.
+
+Appending a message assigns its `AccessID`, writes the binary record, and
+updates the message header's `Message-ID`.
+
+## Protocol Messages
+
+Protocol wrappers live in `include/postline/protocol.h`.
+
+Journal-local messages:
+
+- `journal:root`: first record in a segment; links to the previous segment.
+
+Runtime state messages:
+
+- `runtime:commit`: durable structural operation. Its body is a JSON object.
+- `runtime:begin_shutdown` / `runtime:end_shutdown` / `runtime:flush`: declared
+  protocol messages, though shutdown currently uses `runtime:commit` ops.
+
+Handshake messages:
+
+- `handshake:hello`: adapter/server startup handshake.
+- `handshake:begin_memory` / `handshake:end_memory`: delimit memory replay sent
+  to an adapter.
+- `handshake:multi`: reserved but not implemented in `Server::run()`.
+- `handshake:bye`: graceful adapter shutdown.
+
+Handshake messages are transport control messages; they are not journaled as
+normal runtime traffic.
+
+## Program State
+
+`Program` is the replayable model. It owns:
+
+- `domains`: hierarchical communication scopes;
+- `agents`: named entities with service strings, flags, memory, lineage, and
+  obligation counts;
+- `snapshots`: reusable domain templates;
+- `threads`: independent call stacks and traces.
+
+The initial state is hard-coded:
+
+- one global domain named `global`;
+- three global agents: `zero`, `runtime`, and `user`;
+- the user has `CATCH` and `THREAD` flags;
+- the global entry route is `user -> zero`;
+- thread 0 is rooted at the global domain.
+
+### Agents
+
+Agents are created from `AgentParams`:
+
+- `link`: parent agent and anchor access ID for inherited memory;
+- `name`;
+- `comment`;
+- `service`: driver spec such as `pipe:echo`;
+- `flags`.
+
+Supported flags are:
+
+- `MEMORY`: send historical memory to the adapter on driver startup;
+- `CATCH`: may catch rewinds;
+- `THREAD`: permission marker for creating detached domains;
+- `CLONE`: address resolution should clone this agent before delivery.
+
+Each agent keeps a `memory` vector of access IDs. Sent messages are stored as
+plain IDs. Received messages are stored with the receiving bit set.
+
+### Domains and Snapshots
+
+A `Domain` is a named scope with members and child domains. An attached domain
+has entry agents `from` and `to`; when a message targets a domain, it is routed
+to the domain's `entry.to`.
+
+A detached domain becomes the root of a `Thread`. The code treats detached
+domains as thread roots.
+
+A `Snapshot` stores a domain template: member agent params plus the entry
+agent names. Snapshot calls can create fresh domains from the template.
+
+### Threads and Frames
+
+A `Thread` owns:
+
+- root domain;
+- pending bit used by UI/user flow;
+- stack of call `Frame`s;
+- trace of message access IDs.
+
+A `Frame` records the calling message ID plus from/to endpoints. `CALL` pushes a
+frame. `RETURN` pops the top frame. `REWIND` unwinds until a catching agent or
+an empty stack is reached.
+
+## Address Resolution
+
+`Program::resolve()` interprets `To` addresses relative to the sender's current
+domain.
+
+Resolution order:
+
+1. agent in the current domain;
+2. agent in the global domain;
+3. child domain of the current domain;
+4. snapshot by name.
+
+Address prefixes modify behavior:
+
+- `&name`: detach a domain or snapshot;
+- `*name`: clone an agent or domain.
+
+Agents with `AGENT_FLAG_CLONE` automatically request clone delivery even without
+the `*` prefix.
+
+Current constraints:
+
+- detach is allowed only for domains and snapshots;
+- clone is allowed only for agents and domains;
+- cloned domains are recognized by resolution but not implemented in message
+  preprocessing;
+- snapshot delivery creates a new domain from the snapshot.
+
+## Message Preprocessing and Apply
+
+`Program::preprocess()` converts an incoming agent message into an authoritative
+runtime context saved under the `__context` header. It validates the expected
+sender, resolves the target, creates clones or snapshot domains when needed via
+runtime syscalls, and chooses an action:
+
+- `CALL`: target another agent/domain/snapshot;
+- `RETURN`: reply to the current top frame;
+- `REWIND`: error path or explicit synthetic rewind;
+- `YIELD`: declared but not used.
+
+`Program::apply()` mutates replayable state using the saved context:
+
+- `runtime:commit` is passed to `Program::commit()`;
+- `CALL` pushes a frame, increments target obligation count, and routes to the
+  target agent;
+- `RETURN` pops a frame, decrements the sender obligation count, and routes to
+  the caller;
+- `REWIND` walks back through frames until it finds an agent with `CATCH` or the
+  stack empties.
+
+Every applied normal message is appended to the thread trace, written into the
+sender memory, and written into the receiver memory with the receiving bit set.
+
+## Runtime Commit Operations
+
+Structural mutations are made durable through `runtime:commit` messages. The
+body is a JSON object with `op`.
+
+Implemented ops:
+
+- `create_agent`: add an agent to a domain;
+- `create_domain`: add a child domain;
+- `create_domain_snapshot`: instantiate a domain from a named snapshot;
+- `create_snapshot`: store a snapshot from an existing domain;
+- `create_thread`: detach a domain into a new thread;
+- `begin_shutdown`, `end_shutdown`: recognized no-op structural markers.
+
+`Runtime::syscall()` wraps an op in `runtime:commit`, appends it to the journal,
+applies it immediately, and forwards the committed message to observers.
+
+## Runtime Event Loop
+
+`Runtime` extends both `Program` and `LinearService`. It is therefore both the
+owner of active drivers and an addressable service named `runtime`.
+
+Startup:
+
+1. construct `Program` initial state;
+2. construct `Journal`, which replays prior messages into `Runtime::apply()`;
+3. create loopback drivers for `runtime` and `user`;
+4. poll the runtime and user driver fds.
+
+Main loop:
+
+1. `Poller` waits on agent driver fds;
+2. ready drivers return one or more messages;
+3. each message is preprocessed, unless it is a synthetic rewind;
+4. the message is appended to the journal;
+5. accounting headers are accumulated;
+6. the message is applied to program state;
+7. if the recipient has no driver yet, the runtime creates one from the
+   recipient's `service` string and optionally sends memory;
+8. the recipient driver receives the message;
+9. observers receive the journaled message via `consume`.
+
+If a driver reaches EOF, the agent is marked dead. User EOF stops the runtime.
+Other agent EOF creates a rewind message.
+
+Shutdown:
+
+- append `begin_shutdown`;
+- wait for outstanding agent obligations and append trailing responses without
+  processing them further;
+- call each driver's `shutdown()`;
+- append `end_shutdown`.
+
+## Drivers and Services
+
+`Driver` is the runtime side of an agent connection:
+
+- `send(Message const&)`;
+- `recv(std::vector<Message>&)`;
+- `shutdown()`;
+- optional `read_fd()` for polling.
+
+Implemented drivers:
+
+- `ShellDriver`: forks `/bin/sh -c <command>`, speaks Postline records over
+  pipes, and requires a `handshake:hello` from the child.
+- `LoopDriver`: in-process service adapter backed by `eventfd`; used for the
+  runtime service and UI/user service.
+
+`create_driver()` currently supports `pipe:<adapter>`, resolved under
+`$POSTLINE_HOME/bin/adapters/<adapter>`.
+
+`Service` is the adapter-side interface. `LinearService` is a helper for
+request/response style services. It maintains its own stack, fills standard
+reply headers, and requires each call to append exactly one response.
+
+`Server` is the standalone adapter transport harness. It sends
+`handshake:hello`, forwards messages to a `Service`, handles memory replay
+blocks, and exits on `handshake:bye`. It can read/write stdio, files, or a
+single TCP connection.
+
+## Runtime Message API
+
+Messages addressed to `runtime` are parsed in `Runtime::call()` with CLI11.
+The command is taken from the message `Subject`.
+
+Supported commands:
+
+- `exit`: request runtime stop;
+- `cost`: return accumulated accounting JSON;
+- `list_agents [-a|--all]`: list agents in the caller's domain or all agents;
+- `create_agents`: create agents from a JSON array body;
+- `create_domain`: create a child domain, optionally detached;
+- `create_snapshot`: snapshot a child domain;
+- `dump [path]`: return or write the full runtime dump.
+
+Responses are normal messages generated through `LinearService`.
+
+## UI Layer
+
+`UI` is also a `Service`. It represents the user agent. `UI::send()` and
+`UI::syscall()` stamp `Thread-ID`, enqueue a message into the runtime's user
+loopback driver, and track per-thread pending state.
+
+Implemented top-level UIs:
+
+- `null`: sends `runtime` `exit` and waits for shutdown;
+- `cli`: simple line-based UI with `/t`, `/s`, and `/x` commands;
+- `tui`: implemented under `src/tui`;
+- `web`: HTTP API exposing `/api/program/dump/` and `/api/exit/`.
+
+`Observer` is a replay mirror used by UIs. It derives from `Program`, consumes
+journaled messages, applies them to its own copy, and caches messages by
+unmarked access ID for display.
+
+## Python Adapter API
+
+`src/python-api.cpp` builds the `_postline` Python extension. It exposes:
+
+- `Message`: construction, read, parse, updateHeader, get, write, format, and
+  isReceiving;
+- `Response`: append;
+- `Service`: Python subclass hook for `on_call()` and `on_memory()`, backed by
+  `Server::run()`.
+
+This is the bridge used by Python adapters to speak the same binary Postline
+protocol over stdio/files/sockets.
+
+## Email Formatting and Parsing
+
+`src/parser.cpp` provides an email-like textual representation for messages.
+It parses canonical headers into JSON and leaves the body raw. Formatting can
+be full or compact:
+
+- full format includes noncanonical headers and runtime context;
+- compact format hides runtime-only context and summarizes multipart bodies.
+
+Multipart messages are represented by a generated boundary named
+`========== POSTLINE MESSAGE ==========`. The runtime still stores the body as
+raw text.
+
+## Environment and Logging
+
+`setup_environ()` sets `POSTLINE_HOME` from the environment or derives it from
+`/proc/self/exe`, then prepends `$POSTLINE_HOME/python` to `PYTHONPATH`.
+
+`init_logging()` installs a custom spdlog sink that buffers log messages until a
+UI attaches, plus a rotating `postline.log` file sink. `CHECK` failures restore
+the terminal, print a stack trace, stop the process with `SIGSTOP`, and then
+abort if continued.
+
+## Utility Binaries
+
+Top-level sources also provide journal inspection tools:
+
+- `dump_journal`: replay a journal and print every message;
+- `inspect_journal`: read access IDs from stdin and print those messages.
+
+Both use the same `Journal` and `Message::formatEmail()` paths as the runtime.
+
+## Replay Contract
+
+The important design constraint is that runtime state is reconstructible from
+the journal. `Program::apply()` and `Program::commit()` are the replay boundary.
+Any durable change to agents, domains, snapshots, threads, call stacks, traces,
+or memory should either be encoded in a normal preprocessed message or in a
+`runtime:commit` message.
+
+Transport handshakes, UI pending state, driver file descriptors, live child
+processes, and log sinks are runtime process state. They are rebuilt after
+replay rather than stored in the journal.
+
 # Utilities
 
 ## Error Checking

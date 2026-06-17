@@ -63,22 +63,30 @@ threads enqueue messages or logs, then wake the screen with a custom event.
   `pstree` once per second and renders process, system, and process-tree panes.
 
 - `src/tui/message_reader.h`
-  Declares `MessageReader`, the scrollable selected-message viewer.  Its
-  methods are currently implemented in `thread_tab.cpp`.
+  Declares `MessageReader`, the scrollable selected-message viewer.
+  `src/tui/message_reader.cpp` implements it.
 
 - `src/tui/message_editor.h`
-  Declares `MessageEditor`, the composer for user messages.  Its methods are
-  currently implemented in `thread_tab.cpp`.
+  Declares `MessageEditor`, the composer for user messages.
+  `src/tui/message_editor.cpp` implements it.
 
 - `src/tui/message_list_data_ref.h`
   Declares `MessageListDataRef`, the list adapter that renders a thread trace
   from `AccessID`s in `Thread::trace`.
 
+- `src/tui/split_pane.h`, `src/tui/split_pane.cpp`
+  Declare and implement the borderless draggable split-pane component used to
+  size the thread tab columns.
+
+- `src/tui/thread_nav.h`, `src/tui/thread_nav.cpp`
+  Build thread navigation view-model data from `Program` objects: tree entries,
+  stack entries, member entries, current-domain derivation, and composer
+  address candidates.
+
 - `src/tui/thread_tab.h`, `src/tui/thread_tab.cpp`
-  Declare and implement `ThreadTab`.  The implementation still contains most
-  thread-screen behavior: split panes, navigation tree, stack list, member
-  list, trace list, message reader, composer, pane focus, and F10/F12
-  shortcuts.
+  Declare and implement `ThreadTab`.  The implementation owns thread-screen
+  layout, focus, shortcuts, selected-message loading, and callbacks into the
+  message reader, composer, split panes, and navigation builders.
 
 - `src/tui/thread_focus.h`
   Small focus-state helper for cycling the four thread panes with Tab and
@@ -108,14 +116,17 @@ Each `ThreadTab` is bound to one mirrored `Thread *` from `Observer::threads`.
 The tab does not own the thread.  It owns:
 
 - generated navigation labels for tree, stack, and member views;
+- navigation metadata produced by `thread_nav`;
 - a `MessageListDataRef` over the thread's `trace`;
 - a selected message pointer loaded from `Observer::cache`;
 - `MessageReader` and `MessageEditor` child components;
 - split-pane widths, focus state, and maximized-right-pane mode.
 
 `MessageReader` renders the selected `Message` through a pointer supplied by
-`ThreadTab`.  `MessageEditor` builds a user message from the current domain's
-agents plus extra addresses supplied by `ThreadTab`.
+`ThreadTab`.  `MessageEditor` refreshes its address choices from
+`thread_nav`, then asks its address provider callback for extra entries such as
+the runtime agent.  `ThreadTab` owns the send callback that turns editor input
+into a `Message`.
 
 ## Rendering Model
 
@@ -123,9 +134,10 @@ FTXUI component construction and data refresh are currently mixed.  Several
 render lambdas call sync methods immediately before drawing:
 
 - `TUI` drains observer messages and logs.
-- `ThreadTab` rebuilds navigation labels.
+- `ThreadTab` rebuilds navigation labels through `thread_nav`.
 - `ThreadTab` reloads the selected full message.
-- `MessageEditor` refreshes available addresses.
+- `MessageEditor` refreshes available addresses through `thread_nav` and its
+  address provider callback.
 - `StatTab` refreshes its `/proc` snapshot.
 
 This keeps the UI current, but it also means rendering has side effects.
@@ -151,23 +163,16 @@ Internal fields hidden from the reader are `type`, `Thinking`, `Trash`, and
 ## Maintenance Notes
 
 The header split has already moved concrete declarations out of `tabs.h`; keep
-that direction.  The most important remaining cleanup target is
-`src/tui/thread_tab.cpp`.  It still contains reusable split-pane plumbing,
-message-reading behavior, composer behavior, navigation model derivation, trace
-rendering, and tab layout in one implementation file.  A natural next split
-would be:
+that direction.  `src/tui/thread_tab.cpp` delegates reusable split-pane
+plumbing, message-reading behavior, composer behavior, and navigation model
+derivation to smaller implementation files.  Keep it focused on layout, focus,
+shortcuts, selected-message loading, and callbacks.
 
-- `split_pane.{h,cpp}` for `BorderlessSplitLeft`;
-- `message_reader.cpp` for `MessageReader`;
-- `message_editor.cpp` for `MessageEditor`;
-- `thread_nav.{h,cpp}` for tree, stack, member, and address list derivation;
-- `thread_tab.cpp` for layout, focus, shortcuts, and callbacks.
-
-The next useful boundary is a small TUI view-model layer.  Today components
+The next useful boundary is a broader TUI view-model layer.  Thread navigation
+and composer address derivation now live in `thread_nav`, but components still
 often read `Program` objects directly and mutate cached labels while rendering.
-Explicit view-model builders for thread navigation, trace rows, and composer
-addresses would make the code easier to test without FTXUI and would reduce
-friend access to `Observer`.
+Explicit view-model builders for trace rows and other tab state would make the
+code easier to test without FTXUI and would reduce friend access to `Observer`.
 
 The observer cache is unbounded even though visible lists have retention
 limits.  If long-running sessions are expected, add a retention policy for
@@ -186,4 +191,5 @@ easier to test if moved behind small free functions or a snapshot provider.
 There is currently little test coverage for TUI behavior beyond
 `ThreadPaneFocus`.  Good low-cost tests would cover `ftxui::ListData` index
 retention, list tail-follow selection transitions, navigation view-model
-generation, address selection preservation, and message header ordering.
+generation in `thread_nav`, address selection preservation, and message header
+ordering.

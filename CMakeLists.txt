@@ -126,9 +126,13 @@ add_library(postline
     src/program.cpp
     src/ui.cpp
     src/tui/global_tab.cpp
+    src/tui/message_editor.cpp
+    src/tui/message_reader.cpp
     src/observer.cpp
     src/tui/render.cpp
+    src/tui/split_pane.cpp
     src/tui/stat_tab.cpp
+    src/tui/thread_nav.cpp
     src/tui/thread_tab.cpp
     src/tui/tui.cpp
     src/cli.cpp
