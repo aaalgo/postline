@@ -1,4 +1,4 @@
-#include "tabs.h"
+#include "global_tab.h"
 
 #include <format>
 

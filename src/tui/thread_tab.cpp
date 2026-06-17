@@ -1,4 +1,4 @@
-#include "tabs.h"
+#include "thread_tab.h"
 
 #include <algorithm>
 #include <format>
@@ -637,8 +637,8 @@ void ThreadTab::toggleMaximizeRightPane() {
 }
 
 ThreadTab::ThreadTab(Observer *observer, Thread *data_,
-                     ReadMessageCallback read_message_,
-                     SendCallback on_send_)
+                     std::function<Message const *(AccessID)> read_message_,
+                     std::function<void(ThreadID, Message&&)> on_send_)
     : data(data_),
       user(observer->user),
       trace(observer, &data_->trace),

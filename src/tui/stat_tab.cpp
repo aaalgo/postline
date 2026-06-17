@@ -1,4 +1,4 @@
-#include "tabs.h"
+#include "stat_tab.h"
 
 #include <algorithm>
 #include <array>

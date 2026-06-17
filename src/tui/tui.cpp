@@ -14,8 +14,11 @@
 #include <spdlog/details/log_msg_buffer.h>
 
 #include <postline/observer.h>
+#include "global_tab.h"
 #include "render.h"
+#include "stat_tab.h"
 #include "tabs.h"
+#include "thread_tab.h"
 
 namespace postline { namespace ui {
 
