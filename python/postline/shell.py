@@ -1,24 +1,68 @@
+import os
+import subprocess
+from pathlib import Path
 
 
-def generate_shell_instruction ():
-    # obtain environment variable POSTLINE_HOME
-    # enumerate files in glob(POSTLINE_HOME/bin/shell/*)
-    # for each one, document can be obtained by running the tool using subprocess.check_output with --doc
+def _postline_home():
+    if os.environ.get("POSTLINE_HOME"):
+        return Path(os.environ["POSTLINE_HOME"])
 
-    # maintain a list of messages
-    # for each tool,
-    # append one with:
-    #   From: ai
-    #   To: shell
-    #   Subject: tool_name --doc
-    
-    # with no content
-    # and append one with
-    #   From: shell
-    #   To: ai
-    #   Subject: tool_name --doc
-    
-    # With the document as content
+    return Path(__file__).resolve().parents[2]
 
 
-    # then return the list
+def _tool_dir():
+    return _postline_home() / "bin" / "shell"
+
+
+def _shell_instruction_records():
+    tool_dir = _tool_dir()
+    if not tool_dir.exists():
+        return []
+
+    records = []
+    for path in sorted(tool_dir.glob("*")):
+        if not path.is_file() or path.name.startswith("."):
+            continue
+
+        tool_name = path.name
+        subject = f"{tool_name} --doc"
+        doc = subprocess.check_output(
+            [str(path), "--doc"],
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+
+        records.append(("ai", "shell", subject, ""))
+        records.append(("shell", "ai", subject, doc))
+
+    return records
+
+
+def _plain_message(From, To, Subject, body=""):
+    return f"""From: {From}
+To: {To}
+Subject: {Subject}
+
+{body}"""
+
+
+def generate_shell_instruction(plain=True):
+    records = _shell_instruction_records()
+    if plain:
+        return [_plain_message(*record) for record in records]
+
+    from ._postline import Message
+
+    return [
+        Message({
+            "From": From,
+            "To": To,
+            "Subject": Subject,
+        }, body)
+        for From, To, Subject, body in records
+    ]
+
+
+if __name__ == "__main__":
+    for msg in generate_shell_instruction():
+        print(msg)

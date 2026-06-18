@@ -7,6 +7,7 @@ import os
 from openai import OpenAI
 
 from postline import LLMAgent, Message
+from postline.shell import generate_shell_instruction
 
 
 DEFAULT_MODEL = "gpt-5.5"
@@ -102,6 +103,12 @@ Subject: Re: shell tutorial 2
 
 The file is created.
 """
+"""From: user
+To: ai
+Subject: shell tutorial 3
+
+In addition to standard binaries that are typically available on Linux, some additional Postline-specific tools are available.  These tools comes as shell commands, and when you run each with --doc usage document will be displayed.  The following message enumerates the Postline tools available.
+""",
 ]
 
 
@@ -136,7 +143,7 @@ class Agent(LLMAgent):
             "content": SYSTEM_PROMPT,
         }]
 
-        for msg in PROMPT:
+        for msg in PROMPT + generate_shell_instruction():
             if msg.startswith('From: ai\n'):
                 role = 'assistant'
             else:
