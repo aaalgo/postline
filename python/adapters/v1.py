@@ -10,7 +10,7 @@ from postline import LLMAgent, Message
 from postline.shell import generate_shell_instruction
 
 
-DEFAULT_MODEL = "gpt-5-mini"
+DEFAULT_MODEL = "gpt-5.5"
 
 
 SEND_MESSAGE_TOOL = {
@@ -111,6 +111,21 @@ In addition to standard binaries that are typically available on Linux, some add
 """,
 ]
 
+FORUM_PROMPT = [
+"""From: user
+To: ai
+Subject: forum (themitbbs) tutorial
+
+You can access the forum newmitbbs by sending message To: themitbbs
+and put command in Subject:,
+
+- To read the topic list,   Subject: list
+- To read a topic,          Subject: read topic_id
+- To reply a post,          Subject: reply topic_id
+        with reply content in message body
+- To create a post,         Subject: post title
+        with content in message body
+"""]
 
 
 class Agent(LLMAgent):
@@ -143,7 +158,7 @@ class Agent(LLMAgent):
             "content": SYSTEM_PROMPT,
         }]
 
-        for msg in PROMPT + generate_shell_instruction():
+        for msg in PROMPT + generate_shell_instruction() + FORUM_PROMPT:
             if msg.startswith('From: ai\n'):
                 role = 'assistant'
             else:

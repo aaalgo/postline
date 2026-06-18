@@ -36,10 +36,11 @@
             {"from": "zero", "name": "memory", "service": "pipe:echo -m", "flags": ["MEMORY"]},
             {"from": "zero", "name": "login", "service": "pipe:login", "flags": ["CLONE"]},
             {"from": "zero", "name": "benchmark", "service": "pipe:benchmark", "flags": []},
-            {"from": "zero", "name": "web_search", "service": "pipe:web_search.py", "flags": []},
+            {"from": "zero", "name": "web_search", "service": "pipe:web_search", "flags": []},
             {"from": "zero", "name": "chaos", "service": "pipe:chaos", "flags": []},
             {"from": "zero", "name": "delegate", "service": "pipe:delegate.py", "flags": []},
-            {"from": "zero", "name": "delegate2", "service": "pipe:delegate.py", "flags": []}
+            {"from": "zero", "name": "delegate2", "service": "pipe:delegate.py", "flags": []},
+            {"from": "zero", "name": "themitbbs", "service": "pipe:themitbbs.py", "flags": []}
           ]
   },
   {
