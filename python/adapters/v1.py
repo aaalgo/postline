@@ -10,7 +10,7 @@ from postline import LLMAgent, Message
 from postline.shell import generate_shell_instruction
 
 
-DEFAULT_MODEL = "gpt-5.5"
+DEFAULT_MODEL = "gpt-5-mini"
 
 
 SEND_MESSAGE_TOOL = {

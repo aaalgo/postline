@@ -95,7 +95,7 @@ struct Agent: immobile, AgentParams {
             return link.anchor;
         }
         else {
-            return memory.back();
+            return unmark_receiving(memory.back());
         }
     }
 

@@ -97,6 +97,21 @@ MessageEditor::MessageEditor(Thread const *thread_,
         return false;
     });
 
+    CheckboxOption clone_option;
+    clone_option.label = "Clone";
+    clone_option.checked = &clone_checked;
+    clone_option.transform = [](EntryState const &state) {
+        Element element = hbox({
+            text(state.state ? "[X] " : "[ ] ") | bold,
+            text(state.label),
+        });
+        if (state.focused) {
+            element |= inverted;
+        }
+        return element;
+    };
+    clone_checkbox = Checkbox(std::move(clone_option));
+
     auto subject_option = InputOption::Default();
     subject_option.multiline = false;
     subject_option.transform = [](InputState state) {
@@ -121,6 +136,7 @@ MessageEditor::MessageEditor(Thread const *thread_,
         Container::Vertical({
             address_choice,
             send_button,
+            clone_checkbox,
             subject_editor,
             body_editor,
         }),
@@ -137,6 +153,8 @@ MessageEditor::MessageEditor(Thread const *thread_,
                 hbox({
                     text("Subject: ") | color(Color::Magenta) | bold,
                     subject_editor->Render() | flex,
+                    filler(),
+                    clone_checkbox->Render(),
                 }),
                 body_editor->Render() | flex,
             }) | flex;
@@ -203,7 +221,12 @@ void MessageEditor::sendMessageTo(Agent *to) {
     CHECK(thread);
     CHECK(to);
 
-    json header{{"To", to->name},
+    std::string to_address = to->name;
+    if (clone_checked) {
+        to_address.insert(to_address.begin(), ADDRESS_CHAR_CLONE);
+    }
+
+    json header{{"To", std::move(to_address)},
                 {"Subject", std::move(subject_content)},
                 {"Thread-ID", std::format("{}", thread->id)}};
     on_send(Message(std::move(header), std::move(body_content)));

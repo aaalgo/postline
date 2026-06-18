@@ -455,7 +455,7 @@ void Program::preprocess (Agent *from, Message &msg, Runtime *runtime) {
             }
             else if (to.tag == ResolvedAddress::Tag::AGENT) {
                 if (to.clone) {
-                    std::string name = std::format("agent_{}", agents.size());
+                    std::string name = std::format("{}_{}", to.agent->name, agents.size());
                     if (ctx.from.domain->getMember(name) != nullptr) {
                         ctx.error = "cannot create agent";
                         break;

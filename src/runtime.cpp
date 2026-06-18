@@ -303,6 +303,7 @@ void Runtime::updateMemory (Agent *agent, AccessID end) {
     state.driver->send(protocol::handshake::BeginMemory::make());
     for (auto it = links.rbegin(); it != links.rend(); ++it) {
         auto link = *it;
+        CHECK(!is_receiving(link.anchor));
         cur = agents[link.parent].get();
         for (AccessID id: cur->memory) {
             if (id > link.anchor) break;
