@@ -230,6 +230,7 @@ void MessageEditor::sendMessageTo(Agent *to) {
                 {"Subject", std::move(subject_content)},
                 {"Thread-ID", std::format("{}", thread->id)}};
     on_send(Message(std::move(header), std::move(body_content)));
+    clone_checked = false;
     subject_content.clear();
     body_content.clear();
 }

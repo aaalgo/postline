@@ -306,15 +306,16 @@ void Runtime::updateMemory (Agent *agent, AccessID end) {
         CHECK(!is_receiving(link.anchor));
         cur = agents[link.parent].get();
         for (AccessID id: cur->memory) {
-            if (id > link.anchor) break;
-            Message msg = journal.read(id);
+            AccessID message_id = unmark_receiving(id);
+            if (message_id > link.anchor) break;
+            Message msg = journal.read(message_id);
             //std::string const &type = msg.type();
             if (is_receiving(id)) {
                 msg.updateHeader([id](json &h) {
                     h["Is-Receiving"] = "1";
                 });
             }
-            if (msg.access_id() < end) {
+            if (message_id < end) {
                 state.driver->send(msg);
             }
         }

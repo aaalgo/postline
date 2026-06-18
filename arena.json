@@ -5,11 +5,11 @@
       "Thread-ID": "0",
       "body": [
         {"from": "zero", "name": "echo", "service": "pipe:echo", "flags": []},
-        {"from": "zero", "name": "ai", "comment": "openrouter", "service": "pipe:v1.py", "flags": ["history"]},
+        {"from": "zero", "name": "ai", "comment": "openrouter", "service": "pipe:v1.py", "flags": ["MEMORY"]},
         {"from": "zero", "name": "shell", "service": "pipe:shell", "flags": []},
         {"from": "zero", "name": "mcp", "service": "pipe:mcp_bridge", "flags": []},
-        {"from": "zero", "name": "memory", "service": "pipe:echo -m", "flags": ["history"]},
-        {"from": "zero", "name": "login", "service": "pipe:login", "flags": ["clone"]},
+        {"from": "zero", "name": "memory", "service": "pipe:echo -m", "flags": ["MEMORY"]},
+        {"from": "zero", "name": "login", "service": "pipe:login", "flags": ["CLONE"]},
         {"from": "zero", "name": "benchmark", "service": "pipe:benchmark", "flags": []},
         {"from": "zero", "name": "chaos", "service": "pipe:chaos", "flags": []},
         {"from": "zero", "name": "delegate", "service": "pipe:delegate.py", "flags": []},
@@ -30,11 +30,11 @@
       "Thread-ID": "1",
       "body": [
             {"from": "zero", "name": "echo", "service": "pipe:echo", "flags": []},
-            {"from": "zero", "name": "ai", "comment": "openrouter", "service": "pipe:v1.py", "flags": ["history"]},
+            {"from": "zero", "name": "ai", "comment": "openrouter", "service": "pipe:v1.py", "flags": ["MEMORY"]},
             {"from": "zero", "name": "shell", "service": "pipe:shell", "flags": []},
             {"from": "zero", "name": "mcp", "service": "pipe:mcp_bridge", "flags": []},
-            {"from": "zero", "name": "memory", "service": "pipe:echo -m", "flags": ["history"]},
-            {"from": "zero", "name": "login", "service": "pipe:login", "flags": ["clone"]},
+            {"from": "zero", "name": "memory", "service": "pipe:echo -m", "flags": ["MEMORY"]},
+            {"from": "zero", "name": "login", "service": "pipe:login", "flags": ["CLONE"]},
             {"from": "zero", "name": "benchmark", "service": "pipe:benchmark", "flags": []},
             {"from": "zero", "name": "web_search", "service": "pipe:web_search.py", "flags": []},
             {"from": "zero", "name": "chaos", "service": "pipe:chaos", "flags": []},
@@ -55,9 +55,9 @@
       "Subject": "create_agents",
       "Thread-ID": "2",
       "body": [
-        {"from": "zero", "name": "ai", "comment": "openrouter", "service": "pipe:v1.py", "flags": ["history"]},
+        {"from": "zero", "name": "ai", "comment": "openrouter", "service": "pipe:v1.py", "flags": ["MEMORY"]},
         {"from": "zero", "name": "shell", "service": "pipe:shell", "flags": []},
-        {"from": "zero", "name": "login", "service": "pipe:login", "flags": ["clone"]}
+        {"from": "zero", "name": "login", "service": "pipe:login", "flags": ["CLONE"]}
       ]
   }
 ]
