@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <set>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -79,6 +80,7 @@ struct Agent: immobile, AgentParams {
     AgentID id;
     Domain *domain;
     std::vector<AccessID> memory;
+    std::set<std::string> tags;
     bool dead;
     int obligation_count;
 

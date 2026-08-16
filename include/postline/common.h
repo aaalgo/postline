@@ -90,6 +90,7 @@ namespace postline {
     };
 
     constexpr char const *CONTEXT_HEADER_NAME = "__context";
+    constexpr char const *POSTLINE_TAGS_HEADER_NAME = "Postline-Tags";
 
     // High-level message abstraction
     class Message: noncopyable {

@@ -22,12 +22,14 @@ class MessageEditor {
     std::vector<std::string> address_labels;
     int address_selected = 0;
     bool clone_checked = false;
+    std::string tags_content;
     std::string subject_content;
     std::string body_content;
 
     ftxui::Component address_choice;
     ftxui::Component send_button;
     ftxui::Component clone_checkbox;
+    ftxui::Component tags_editor;
     ftxui::Component subject_editor;
     ftxui::Component body_editor;
     ftxui::Component renderer;

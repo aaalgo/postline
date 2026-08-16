@@ -7,6 +7,33 @@
 
 namespace postline {
 
+static std::set<std::string> load_tags(json const &value) {
+    CHECK(value.is_array(), "{} must be an array", POSTLINE_TAGS_HEADER_NAME);
+    std::set<std::string> tags;
+    for (json const &tag: value.get_ref<json::array_t const &>()) {
+        CHECK(tag.is_string(), "{} entries must be strings", POSTLINE_TAGS_HEADER_NAME);
+        auto const &name = tag.get_ref<std::string const &>();
+        CHECK(tags.insert(name).second, "duplicate tag {}", name);
+    }
+    return tags;
+}
+
+static json dump_tags(std::set<std::string> const &tags) {
+    json result = json::array();
+    for (std::string const &tag: tags) {
+        result.push_back(tag);
+    }
+    return result;
+}
+
+static std::set<std::string> load_message_tags(json const &header) {
+    auto it = header.find(POSTLINE_TAGS_HEADER_NAME);
+    if (it == header.end()) {
+        return {};
+    }
+    return load_tags(*it);
+}
+
 
 json dump_agent_flags (AgentFlags flags) {
     json flag_strings = json::array();
@@ -71,6 +98,7 @@ json Agent::dump () const {
         {"domain_id", domain->id},
         {"domain_name", domain->name},
         {"memory", memory},
+        {"tags", dump_tags(tags)},
         {"dead", dead},
         {"obligation_count", obligation_count}
     };
@@ -349,6 +377,7 @@ Message Program::makeRewindMessage (Agent *fromAgent, Domain *fromDomain, char c
     ctx.error = error;
     msg.updateHeader([&ctx](json &h) {
             h["Thread-ID"] = std::format("{}", ctx.thread->id);
+            h[POSTLINE_TAGS_HEADER_NAME] = json::array();
             });
     saveContext(msg, ctx);
     return msg;
@@ -494,6 +523,18 @@ void Program::preprocess (Agent *from, Message &msg, Runtime *runtime) {
         }
     }
     while (false);
+    msg.updateHeader([this, from, &ctx](json &header) {
+        std::set<std::string> proposed_tags = load_message_tags(header);
+
+        std::set<std::string> message_tags;
+        if (ctx.action != Action::REWIND) {
+            message_tags = from->tags;
+            if (from == user) {
+                message_tags.insert(proposed_tags.begin(), proposed_tags.end());
+            }
+        }
+        header[POSTLINE_TAGS_HEADER_NAME] = dump_tags(message_tags);
+    });
     if (ctx.action == Action::REWIND) {
         ;
     }
@@ -540,6 +581,12 @@ EntityRef Program::apply (Message const &msg) {
     }
     CHECK(ctx.from.agent);
     CHECK(to);
+    if (ctx.action == Action::CALL || ctx.action == Action::RETURN) {
+        auto tags = load_message_tags(msg.header());
+        ctx.from.agent->tags.insert(tags.begin(), tags.end());
+        // Initial policy: the receiver accepts every offered tag.
+        to->tags.insert(tags.begin(), tags.end());
+    }
     AccessID message_id = msg.access_id();
     ctx.thread->trace.push_back(message_id);
     if (ctx.from.agent == user && to != user) {

@@ -16,6 +16,8 @@ std::string trim(const std::string& s) {
 }
 
 class CLI : public UI {
+    std::vector<std::string> tags{"genesis"};
+
     struct Thread {
         ThreadID thread_id;
         std::string to;
@@ -87,11 +89,13 @@ public:
                 {"type", "agent:message"},
                 {"To", current->to},
                 {"Subject", current->subject},
+                {POSTLINE_TAGS_HEADER_NAME, tags},
             };
             if (current->to == "runtime" && current->subject == "exit") {
                 stop = true;
             }
             send(current->thread_id, Message(std::move(h), std::move(body)));
+            tags.clear();
         }
         std::cerr << "Stopping..." << std::endl;
     }

@@ -45,3 +45,13 @@ endif()
 if(NOT journal_dump MATCHES "hello runtime")
     message(FATAL_ERROR "Echo response body is missing")
 endif()
+
+if(NOT journal_dump MATCHES
+        "From: user\nTo: echo[^=]*Postline-Tags: genesis")
+    message(FATAL_ERROR "User birth message does not carry genesis")
+endif()
+
+if(NOT journal_dump MATCHES
+        "From: echo\nTo: user[^=]*Postline-Tags: genesis")
+    message(FATAL_ERROR "Echo response did not inherit genesis")
+endif()

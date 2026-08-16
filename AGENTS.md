@@ -10,6 +10,11 @@ public:
 // public stuff
 };
 
+# Git
+
+After making a code change, update git by staging and committing the completed
+change.  Do not include unrelated working-tree changes in the commit.
+
 # Postline Runtime Overview
 
 Postline is an AI agent runtime built around durable message passing. Agents,

@@ -1,7 +1,9 @@
 #include "message_editor.h"
 
 #include <algorithm>
+#include <cctype>
 #include <format>
+#include <set>
 #include <utility>
 
 #include <ftxui/component/component.hpp>
@@ -15,6 +17,50 @@
 namespace postline { namespace ui {
 
 using namespace ftxui;
+
+namespace {
+
+std::vector<std::string> parseTags(std::string const &input) {
+    std::set<std::string> tags;
+    size_t begin = 0;
+    while (begin <= input.size()) {
+        size_t end = input.find(',', begin);
+        if (end == std::string::npos) {
+            end = input.size();
+        }
+
+        auto first = input.begin() + begin;
+        auto last = input.begin() + end;
+        while (first != last && std::isspace(static_cast<unsigned char>(*first))) {
+            ++first;
+        }
+        while (first != last && std::isspace(static_cast<unsigned char>(*(last - 1)))) {
+            --last;
+        }
+        if (first != last) {
+            tags.emplace(first, last);
+        }
+
+        if (end == input.size()) {
+            break;
+        }
+        begin = end + 1;
+    }
+    return {tags.begin(), tags.end()};
+}
+
+std::string formatTags(std::vector<std::string> const &tags) {
+    std::string result;
+    for (std::string const &tag: tags) {
+        if (!result.empty()) {
+            result += ", ";
+        }
+        result += tag;
+    }
+    return result;
+}
+
+}
 
 MessageEditor::MessageEditor(Thread const *thread_,
                              AddressProvider address_provider_,
@@ -112,6 +158,16 @@ MessageEditor::MessageEditor(Thread const *thread_,
     };
     clone_checkbox = Checkbox(std::move(clone_option));
 
+    auto tags_option = InputOption::Default();
+    tags_option.multiline = false;
+    tags_option.transform = [](InputState state) {
+        if (state.is_placeholder) {
+            state.element |= dim;
+        }
+        return state.element;
+    };
+    tags_editor = Input(&tags_content, "comma-separated tags", tags_option);
+
     auto subject_option = InputOption::Default();
     subject_option.multiline = false;
     subject_option.transform = [](InputState state) {
@@ -138,6 +194,7 @@ MessageEditor::MessageEditor(Thread const *thread_,
             send_button,
             clone_checkbox,
             subject_editor,
+            tags_editor,
             body_editor,
         }),
         [&] {
@@ -155,6 +212,10 @@ MessageEditor::MessageEditor(Thread const *thread_,
                     subject_editor->Render() | flex,
                     filler(),
                     clone_checkbox->Render(),
+                }),
+                hbox({
+                    text("Tags: ") | color(Color::Yellow) | bold,
+                    tags_editor->Render() | flex,
                 }),
                 body_editor->Render() | flex,
             }) | flex;
@@ -226,11 +287,14 @@ void MessageEditor::sendMessageTo(Agent *to) {
         to_address.insert(to_address.begin(), ADDRESS_CHAR_CLONE);
     }
 
+    std::vector<std::string> tags = parseTags(tags_content);
     json header{{"To", std::move(to_address)},
                 {"Subject", std::move(subject_content)},
-                {"Thread-ID", std::format("{}", thread->id)}};
+                {"Thread-ID", std::format("{}", thread->id)},
+                {POSTLINE_TAGS_HEADER_NAME, tags}};
     on_send(Message(std::move(header), std::move(body_content)));
     clone_checked = false;
+    tags_content = formatTags(tags);
     subject_content.clear();
     body_content.clear();
 }
