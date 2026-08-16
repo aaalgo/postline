@@ -1,4 +1,5 @@
 #pragma once
+#include <condition_variable>
 #include <future>
 #include <fstream>
 #include <postline/runtime.h>
@@ -14,6 +15,7 @@ namespace postline { namespace ui {
         };
         std::vector<std::unique_ptr<State>> threads;
         std::mutex mutex;
+        std::condition_variable state_changed;
 
         void ensure_threads (ThreadID id) {
             CHECK(id >= 0);
@@ -23,6 +25,16 @@ namespace postline { namespace ui {
         }
     protected:
         Runtime *rt;
+
+        void waitUntilIdle(ThreadID thread_id) {
+            CHECK(thread_id >= 0);
+
+            std::unique_lock lock(mutex);
+            ensure_threads(thread_id);
+            state_changed.wait(lock, [&] {
+                return !threads[thread_id]->pending;
+            });
+        }
 
         Message syscall(ThreadID thread_id, Message &&msg) {
             CHECK(thread_id >= 0);
@@ -112,6 +124,7 @@ namespace postline { namespace ui {
                 thread.wants_result = false;
                 log::info("thread {} clear pending", thread_id);
             }
+            state_changed.notify_all();
 
             if (wants_result) {
                 promise.set_value(std::move(msg));

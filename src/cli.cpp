@@ -49,6 +49,7 @@ public:
             std::cout << "To: " << current->to << "\t" << "Subject: " << current->subject << std::endl;
             std::string body;
             if ((!std::getline(std::cin, body)) || body.starts_with("/x")) {
+                waitUntilIdle(0);
                 json h{
                     {"To", "runtime"},
                     {"Subject", "exit"},

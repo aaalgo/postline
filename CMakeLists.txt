@@ -379,12 +379,43 @@ endforeach()
 
 if(BUILD_TESTS)
     include(CTest)
+    enable_testing()
 
     add_executable(test_thread_focus tests/test_thread_focus.cpp)
     target_include_directories(test_thread_focus PRIVATE src/tui)
     target_link_libraries(test_thread_focus PRIVATE postline::tui_deps)
 
     add_test(NAME test_thread_focus COMMAND test_thread_focus)
+
+    add_test(
+        NAME runtime_smoke
+        COMMAND ${CMAKE_COMMAND}
+            -DPOSTLINE_BIN=$<TARGET_FILE:postline_bin>
+            -DDUMP_JOURNAL_BIN=$<TARGET_FILE:dump_journal>
+            -DTEST_WORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/test-runtime-smoke
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/runtime_smoke.cmake
+    )
+
+    add_test(
+        NAME echo_round_trip
+        COMMAND ${CMAKE_COMMAND}
+            -DPOSTLINE_BIN=$<TARGET_FILE:postline_bin>
+            -DDUMP_JOURNAL_BIN=$<TARGET_FILE:dump_journal>
+            -DTEST_WORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/test-echo-round-trip
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/echo_round_trip.cmake
+    )
+
+    add_test(
+        NAME cli_exit_while_pending
+        COMMAND ${CMAKE_COMMAND}
+            -DPOSTLINE_BIN=$<TARGET_FILE:postline_bin>
+            -DTEST_WORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/test-cli-exit-while-pending
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/cli_exit_while_pending.cmake
+    )
+
+    set_tests_properties(runtime_smoke echo_round_trip cli_exit_while_pending
+        PROPERTIES TIMEOUT 15
+    )
 
 #    add_executable(test_journal tests/test_journal.cpp)
 #    target_link_libraries(test_journal PRIVATE postline::postline)

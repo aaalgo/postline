@@ -46,6 +46,20 @@ The main binaries and launch scripts are in:
 build/install/bin
 ```
 
+# Testing
+
+Enable the small test suite when configuring the build, then run it with
+CTest:
+
+```sh
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTS=ON
+cmake --build build
+ctest --test-dir build --output-on-failure
+```
+
+The suite covers thread-pane focus, runtime startup and clean shutdown, an echo
+adapter round trip, and exiting the CLI while a request is still pending.
+
 
 # Running
 
