@@ -177,6 +177,14 @@ The middle trace is a bounded list of message summaries rendered as:
 From -> To: Subject
 ```
 
+Agent-generated trace entries observed after a thread tab is created are
+tracked as unread presentation state.  Unread rows have a leading `*`, and the
+thread's top-level tab and Global thread-list entry also have a trailing `*`.
+Displaying a selected message in the active thread tab marks only that message
+read.  User-authored messages and trace entries present when the tab is created
+are treated as read.  Unread state is owned by the TUI and is neither journaled
+nor added to `Program`.
+
 The right pane is split into two components:
 
 - `MessageReader` renders `ThreadTab::current_message`;

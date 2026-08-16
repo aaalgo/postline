@@ -17,6 +17,7 @@
 #include "tabs.h"
 #include "thread_focus.h"
 #include "thread_nav.h"
+#include "thread_unread_state.h"
 
 namespace postline { namespace ui {
 
@@ -38,6 +39,8 @@ class ThreadTab : public Tab {
     MessageReader message_reader;
     MessageEditor message_editor;
     ThreadPaneFocus pane_focus;
+    ThreadUnreadState unread;
+    size_t observed_trace_size;
 
     RightPaneMode right_pane_mode = RightPaneMode::Normal;
 
@@ -80,6 +83,7 @@ class ThreadTab : public Tab {
     void syncStackEntries();
     void syncMemberEntries();
     void reloadCurrentMessage();
+    void observeNewMessages();
     void focusPane();
     bool onFocusEvent(ftxui::Event const &event);
     bool paneFocused(ThreadPaneFocus::FocusedPane pane);
@@ -93,6 +97,7 @@ public:
                        std::function<Message const *(AccessID)> read_message_,
                        std::function<void(ThreadID, Message&&)> on_send_);
 
+    void sync(bool active_) override;
     std::string label() const override;
     ftxui::Component component() override;
     bool onShortcut(ftxui::Event const &event) override;

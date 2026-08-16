@@ -387,6 +387,12 @@ if(BUILD_TESTS)
 
     add_test(NAME test_thread_focus COMMAND test_thread_focus)
 
+    add_executable(test_thread_unread_state tests/test_thread_unread_state.cpp)
+    target_include_directories(test_thread_unread_state PRIVATE src)
+    target_link_libraries(test_thread_unread_state PRIVATE postline::postline)
+
+    add_test(NAME test_thread_unread_state COMMAND test_thread_unread_state)
+
     add_test(
         NAME runtime_smoke
         COMMAND ${CMAKE_COMMAND}

@@ -10,6 +10,7 @@ namespace postline { namespace ui {
 
 struct Tab {
     virtual ~Tab() = default;
+    virtual void sync(bool active);
     virtual std::string label() const = 0;
     virtual ftxui::Component component() = 0;
     virtual bool onShortcut(ftxui::Event const &event);

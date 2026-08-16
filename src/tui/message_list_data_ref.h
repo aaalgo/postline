@@ -1,6 +1,7 @@
 #pragma once
 
 #include <format>
+#include <functional>
 #include <vector>
 
 #include <ftxui/dom/elements.hpp>
@@ -13,11 +14,14 @@ namespace postline { namespace ui {
 class MessageListDataRef: public ftxui::ListDataRef {
     Observer *observer;
     std::vector<AccessID> *data;
+    std::function<bool(AccessID)> is_unread;
 
 public:
-    MessageListDataRef(Observer *observer_, std::vector<AccessID> *data_)
+    MessageListDataRef(Observer *observer_, std::vector<AccessID> *data_,
+                       std::function<bool(AccessID)> is_unread_)
         : observer(observer_),
-          data(data_) {
+          data(data_),
+          is_unread(std::move(is_unread_)) {
     }
 
     int firstValid() const override {
@@ -39,7 +43,8 @@ public:
             AgentID to_agent_id = ctx.at("to_agent_id").get<AgentID>();
             Agent *from = observer->agents[from_agent_id].get();
             Agent *to = observer->agents[to_agent_id].get();
-            return ftxui::text(std::format("{} -> {}: {}",
+            return ftxui::text(std::format("{}{} -> {}: {}",
+                                           is_unread(data->at(index)) ? "* " : "  ",
                                            from->name,
                                            to->name,
                                            msg.subject()));

@@ -71,6 +71,11 @@ class ListData : public ListDataRef {
     return items_[index - first_valid_];
   }
 
+  void set(int index, T item) {
+    CHECK(contains(index));
+    items_[index - first_valid_] = std::move(item);
+  }
+
   Element Render(int index) const override {
     return renderer_(at(index));
   }

@@ -2,6 +2,7 @@
 #include <format>
 #include <memory>
 #include <mutex>
+#include <unordered_map>
 #include <vector>
 
 #include <ftxui/component/component.hpp>
@@ -30,6 +31,7 @@ class TUI: public UI, public Observer {
     std::vector<spdlog::details::log_msg_buffer> pending_logs;
 
     std::vector<std::unique_ptr<Tab>> tabs;
+    std::unordered_map<ThreadID, size_t> thread_tab_indexes;
 
     std::vector<std::string> tab_labels;
     std::vector<Component> tab_components;
@@ -131,13 +133,9 @@ class TUI: public UI, public Observer {
         CHECK(id >= 0);
         CHECK(id < int(Observer::threads.size()));
 
-        for (size_t i = 0; i < tabs.size(); ++i) {
-            if (tabs[i]->threadId() == id) {
-                tab_index = int(i);
-                return;
-            }
-        }
-        CHECK(0);
+        auto it = thread_tab_indexes.find(id);
+        CHECK(it != thread_tab_indexes.end());
+        tab_index = int(it->second);
     }
 
     void syncObserver() {
@@ -151,6 +149,7 @@ class TUI: public UI, public Observer {
                 name = std::format("{}: {}", th->id, th->name);
             }
             global.threads.push_back(std::move(name));
+            size_t tab_position = tabs.size();
             addTab(std::make_unique<ThreadTab>(
                 this, th,
                 [this](AccessID access_id) {
@@ -159,6 +158,29 @@ class TUI: public UI, public Observer {
                 [this](ThreadID thread_id, Message &&msg) {
                     send(thread_id, std::move(msg));
                 }));
+            CHECK(thread_tab_indexes.emplace(th->id, tab_position).second);
+        }
+
+        for (size_t i = 0; i < tabs.size(); ++i) {
+            tabs[i]->sync(int(i) == tab_index);
+            tab_labels[i] = tabs[i]->label();
+        }
+
+        for (int i = global.threads.firstValid();
+             i < global.threads.end(); ++i) {
+            CHECK(i >= 0);
+            CHECK(i < int(Observer::threads.size()));
+            Thread const *thread = Observer::threads.at(i).get();
+            std::string name = thread->name.empty()
+                ? std::format("{}", thread->id)
+                : std::format("{}: {}", thread->id, thread->name);
+            auto tab_it = thread_tab_indexes.find(thread->id);
+            CHECK(tab_it != thread_tab_indexes.end());
+            CHECK(tab_it->second < tabs.size());
+            if (tabs[tab_it->second]->label().ends_with('*')) {
+                name += "*";
+            }
+            global.threads.set(i, std::move(name));
         }
     }
 

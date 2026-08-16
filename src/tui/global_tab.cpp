@@ -21,6 +21,9 @@ bool Tab::onShortcut(Event const &) {
     return false;
 }
 
+void Tab::sync(bool) {
+}
+
 GlobalData::GlobalData()
     : log_entries(MAX_VISIBLE_LOGS,
           [](spdlog::details::log_msg const &msg) {

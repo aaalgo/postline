@@ -77,6 +77,21 @@ void ThreadTab::reloadCurrentMessage() {
     message_reader.resetScroll();
 }
 
+void ThreadTab::observeNewMessages() {
+    CHECK(observed_trace_size <= data->trace.size());
+    while (observed_trace_size < data->trace.size()) {
+        AccessID id = data->trace.at(observed_trace_size++);
+        Message const *msg = read_message(id);
+        CHECK(msg);
+        CHECK(msg->header().contains(CONTEXT_HEADER_NAME));
+        json const &ctx = msg->header().at(CONTEXT_HEADER_NAME);
+        AgentID from_agent_id = ctx.at("from_agent_id").get<AgentID>();
+        if (from_agent_id != user->id) {
+            unread.observe(id);
+        }
+    }
+}
+
 void ThreadTab::focusPane() {
     switch (pane_focus.focusedPane()) {
     case ThreadPaneFocus::FocusedPane::Navigation:
@@ -158,7 +173,10 @@ ThreadTab::ThreadTab(Observer *observer, Thread *data_,
                      std::function<void(ThreadID, Message&&)> on_send_)
     : data(data_),
       user(observer->user),
-      trace(observer, &data_->trace),
+      trace(observer, &data_->trace,
+            [this](AccessID id) {
+                return unread.isUnread(id);
+            }),
       read_message(std::move(read_message_)),
       on_send(std::move(on_send_)),
       message_reader(&current_message),
@@ -186,7 +204,8 @@ ThreadTab::ThreadTab(Observer *observer, Thread *data_,
                   }
               }
               on_send(data->id, std::move(msg));
-          }) {
+          }),
+      observed_trace_size(data_->trace.size()) {
     CHECK(user);
 
     nav_mode_menu = Menu(
@@ -343,7 +362,19 @@ ThreadTab::ThreadTab(Observer *observer, Thread *data_,
 }
 
 std::string ThreadTab::label() const {
-    return "T" + std::to_string(data->id);
+    return "T" + std::to_string(data->id) +
+           (unread.hasUnread() ? "*" : "");
+}
+
+void ThreadTab::sync(bool active_) {
+    observeNewMessages();
+    if (!active_) {
+        return;
+    }
+    if (trace_selected >= 0 &&
+        trace_selected < int(data->trace.size())) {
+        unread.markRead(data->trace.at(trace_selected));
+    }
 }
 
 Component ThreadTab::component() {
