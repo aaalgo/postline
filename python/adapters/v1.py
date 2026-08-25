@@ -173,6 +173,9 @@ class Agent(LLMAgent):
 
         for msg in self.journal:
 
+            if msg.get("type") == "agent:data":
+                continue
+
             role = (
                 "user"
                 if msg.isReceiving()
@@ -259,7 +262,7 @@ if __name__ == "__main__":
     )
 
     if args.test:
-        agent.append(
+        agent._append(
             Message(
                 {
                     "From": "user",

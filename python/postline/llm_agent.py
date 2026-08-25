@@ -7,6 +7,7 @@ from .accounting import updateAccounting
 
 
 DEFAULT_PROMPT = []
+EMIT_DUMMY_DATA = True
 
 @dataclass
 class Frame:
@@ -36,14 +37,17 @@ class LLMAgent(Service):
         # return a list of str, each is the string ID of a model
         raise NotImplementedError()
 
-    def append(self, msg):
+    def _append(self, msg):
         self.journal.append(msg)
 
 
     def on_memory(self, msg):
-        self.append(msg)
+        self._append(msg)
 
     def on_call(self, msg, resp):
+        if EMIT_DUMMY_DATA:
+            resp.append(Message({"type": "agent:data", "Type": "dummy"}))
+
         if msg.get("Subject") == "/list_models":
             if self.models is None:
                 self.models = self.list_models()
@@ -52,7 +56,7 @@ class LLMAgent(Service):
             return
 
         msg.setReceiving()
-        self.append(msg)
+        self._append(msg)
 
         From = msg.get("From")
         top = self.stack[-1]
@@ -64,8 +68,13 @@ class LLMAgent(Service):
             self.stack.append(top)
 
         if len(top.pending) == 0:
-            top.pending = self.generate()
+            generated = self.generate()
+            data = [out for out in generated if out.get("type") == "agent:data"]
+            top.pending = [out for out in generated if out.get("type") != "agent:data"]
             assert len(top.pending) > 0
+
+            for out in data:
+                resp.append(out)
 
         # find non-returning message to send out
         for i in range(len(top.pending)):
@@ -75,7 +84,7 @@ class LLMAgent(Service):
                 out = top.pending.pop(i)
                 top.expect_from = To
                 resp.append(out)
-                self.append(out)
+                self._append(out)
                 return
 
         # stack rewind
@@ -91,6 +100,4 @@ class LLMAgent(Service):
 
         self.stack.pop()
         resp.append(out)
-        self.append(out)
-
-
+        self._append(out)
