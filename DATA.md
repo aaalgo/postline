@@ -1,5 +1,18 @@
 # Agent Data Records
 
+## Status
+
+This file is the standalone design and implementation handoff for
+`agent:data`. The feature is not implemented by the commits that created this
+document. Existing journals contain no DATA records unless another change has
+added the feature.
+
+Once DATA records are written, binaries that do not recognize the DATA action
+will not be able to replay those journal entries through `Program::apply()`.
+Deploy the reader/runtime support before allowing adapters to emit the new
+record type. The physical journal framing itself does not need a version
+change.
+
 ## Motivation
 
 An AI agent may produce useful durable data while preparing its routed response.
@@ -113,6 +126,12 @@ agent's memory. It does not execute AI inference or any external operation.
 `LinearService` distinguishes `agent:data` from the one final routed message.
 It validates the entire response vector before returning any records.
 
+Classification is deliberately simple: every record before the last must have
+`type == "agent:data"`, and the last record must not. The final record is an
+ordinary message; `LinearService` determines CALL versus RETURN using its
+existing destination and reply-header rules. CALL and RETURN are authoritative
+runtime context actions, not protocol `type` values supplied by the adapter.
+
 For each `agent:data` record, `LinearService` supplies or validates the current
 sender and thread provenance, but it does not add routing or reply headers. It
 does not modify its service-side call stack for a data record.
@@ -214,3 +233,112 @@ This design deliberately does not introduce:
 Operation-specific schemas, retention policy, model-facing formatting, and any
 future system-generated data records can be designed after experience with the
 basic `agent:data` mechanism.
+
+## Implementation Handoff
+
+The following is the expected implementation map in the current codebase. It
+records code locations, not a requirement to preserve their present APIs
+exactly.
+
+### Protocol and program state
+
+- Declare the `agent:data` protocol type in `include/postline/protocol.h`.
+- Add `DATA` to `Program::Action` in `include/postline/program.h`.
+- Ensure `Context::to_needed(Action::DATA)` is false.
+- Extend `Program::preprocess()` in `src/program.cpp` to recognize
+  `agent:data`, validate the actual producer and current thread, avoid address
+  resolution, and save an authoritative DATA context.
+- Extend `Program::apply()` in `src/program.cpp` so DATA appends the journaled
+  ID only to `ctx.from.agent->memory` and returns `EntityRef::Tag::NONE`.
+- DATA apply must return before the common code that updates a destination,
+  thread trace, pending state, call frames, and obligation counts. Handle any
+  eventual DATA tag policy separately because DATA has no destination.
+
+The journal must append the record before apply, as it does for normal
+messages, because DATA memory stores the resulting journal `AccessID`.
+
+### Runtime dispatch
+
+- In the normal event loop in `src/runtime.cpp`, accept
+  `EntityRef::Tag::NONE` as the successful result of applying DATA.
+- Still run observer consumption for DATA.
+- Skip recipient validation, driver creation, memory replay to a new recipient,
+  and `driver->send()` for DATA.
+- Preserve transport order. `Server` already writes a service response vector
+  in order. `ShellDriver` may continue reading one record per readiness event;
+  no batch read or batch boundary is required.
+
+### LinearService
+
+- Replace the current `CHECK(msgs.size() == 1)` in
+  `include/postline/service.h` with validation of the full response vector.
+- Require a nonempty vector, require every item except the last to be
+  `agent:data`, and require the last item not to be `agent:data`.
+- Stamp the current `From` and `Thread-ID` provenance on each DATA record.
+- Reject or remove routing headers on DATA according to the validation policy
+  selected below.
+- Run the existing `To`, `In-Reply-To`, `In-Response-To`, and service-stack
+  logic only for the last routed message.
+- Perform all vector validation before returning any records to the transport.
+
+### Shutdown
+
+- The shutdown receive loop in `src/runtime.cpp` currently decrements an
+  obligation for every raw record. It must not decrement for `agent:data` and
+  must continue reading until the routed response is received.
+- Shutdown processing must preserve DATA's sender-only memory semantics.
+- The existing shutdown behavior of appending trailing responses without
+  preprocessing is already a replay concern. It is not solved by batch
+  atomicity, which remains out of scope, but the DATA implementation must not
+  silently append unreplayable DATA records.
+
+### Observer and tests
+
+- `Observer::process()` should continue applying and caching every consumed
+  record. DATA becomes safe there through `Program::apply()`.
+- No thread-list or message-reader rendering path should be added for DATA.
+- Add focused tests for LinearService ordering, preprocessing authority,
+  sender-only memory, no trace entry, no obligation change, no dispatch,
+  replay, observer processing, and a partial sequence ending before its routed
+  message.
+- Add a shutdown test in which an obligated agent emits DATA before its final
+  response.
+
+## Settled Rules
+
+The following choices were explicitly settled during design and should not be
+reopened merely because the first implementation could be made simpler by
+changing them:
+
+- The protocol type is exactly `agent:data`.
+- A round is `agent:data*` followed by exactly one routed message.
+- `LinearService`, not the runtime, enforces the round shape and ordering.
+- The runtime understands individual DATA semantics but has no batch model.
+- There is no atomicity, rollback, or `handshake:multi` support.
+- A crash may leave durable DATA without a final routed message.
+- DATA is journaled and stored only in the producing agent's memory.
+- DATA is never receiving-marked, dispatched, or inserted into a thread trace.
+- DATA has thread provenance despite being absent from the thread trace.
+- DATA never changes pending state, call frames, or obligation counts.
+- The current UI does not display DATA, but observers still replay it.
+- The existing physical journal format and `Agent::memory` vector remain in
+  use.
+
+## Open Implementation Policies
+
+The core behavior does not depend on the following details, which were not
+settled during design. An implementation should make each choice explicit and
+add it to this document rather than relying on accidental behavior:
+
+- Whether malformed routing headers on `agent:data` are rejected or stripped.
+  The fail-fast style favors rejection.
+- Whether DATA participates in accounting when it carries `Postline-Cost:*`
+  headers. The current event loop calls `accounting.update()` before apply.
+- Whether DATA may propose or inherit Postline tags. It must not accidentally
+  require a destination merely to apply tag policy.
+- The schema, if any, inside the opaque DATA body.
+- Whether `Observer::cache` retains DATA indefinitely; current cache retention
+  is already unbounded for ordinary messages.
+- Whether the runtime accepts `agent:data` from every service or restricts it
+  to configured AI agents. The current agent model has no dedicated AI flag.
+- The broader correction for unpreprocessed trailing shutdown responses.
