@@ -290,7 +290,8 @@ struct Program: immobile {
         YIELD = 0,          // not used for now
         CALL = 1,           // must have a to
         RETURN = 2,         // must have a to
-        REWIND = 3          // to not needed
+        REWIND = 3,         // to not needed
+        DATA = 4            // agent-local durable data; to not needed
     };
 
     struct Context {

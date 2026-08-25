@@ -393,6 +393,11 @@ if(BUILD_TESTS)
 
     add_test(NAME test_thread_unread_state COMMAND test_thread_unread_state)
 
+    add_executable(test_data tests/test_data.cpp)
+    target_link_libraries(test_data PRIVATE postline::postline)
+
+    add_test(NAME test_data COMMAND test_data)
+
     add_test(
         NAME runtime_smoke
         COMMAND ${CMAKE_COMMAND}

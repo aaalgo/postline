@@ -85,36 +85,57 @@ public:
         this->call(std::move(msg), resp);
 
         std::vector<Message> msgs = resp.get();
-        CHECK(msgs.size() == 1);
-        for (auto &msg: msgs) {
-            CHECK(!stack.empty());
-            auto const &e = stack.back();
-            CHECK(e.is_incoming);
-            msg.updateHeader([this, &e](json &header) {
+        CHECK(!msgs.empty());
+        CHECK(!stack.empty());
+        auto const &e = stack.back();
+        CHECK(e.is_incoming);
+        for (std::size_t i = 0; i + 1 < msgs.size(); ++i) {
+            auto const &header = msgs[i].header();
+            CHECK(msgs[i].type() == protocol::agent::Data::type);
+            CHECK(!header.contains("To"));
+            CHECK(!header.contains("In-Reply-To"));
+            CHECK(!header.contains("In-Response-To"));
+            CHECK(!header.contains(CONTEXT_HEADER_NAME));
+            if (header.contains("From")) {
+                CHECK(msgs[i].from() == e.my_address);
+            }
+            if (header.contains("Thread-ID")) {
+                CHECK(msgs[i].get("Thread-ID") == e.thread_id);
+            }
+        }
+        CHECK(msgs.back().type() != protocol::agent::Data::type);
+
+        for (std::size_t i = 0; i + 1 < msgs.size(); ++i) {
+            msgs[i].updateHeader([&e](json &header) {
                 header["From"] = e.my_address;
-                if (!header.contains("To")) {
-                    header["To"] = e.peer_address;
-                }
-                // we are not responsible to set To-Domain-ID
                 header["Thread-ID"] = e.thread_id;
             });
-            std::string const &to = msg.to();
-            if (e.peer_address == to) {   // this is a reply
-                msg.updateHeader([&e](json &header) {
-                    header["In-Reply-To"] = e.message_id;
-                        });
-                stack.pop_back();
-            }
-            else {
-                msg.updateHeader([&e](json &header) {
-                    header["In-Response-To"] = e.message_id;
-                        });
-                stack.emplace_back();
-                auto &e = stack.back();
-                e.is_incoming = false;
-                e.peer_address = to;
+        }
 
+        Message &routed = msgs.back();
+        routed.updateHeader([&e](json &header) {
+            header["From"] = e.my_address;
+            if (!header.contains("To")) {
+                header["To"] = e.peer_address;
             }
+            // we are not responsible to set To-Domain-ID
+            header["Thread-ID"] = e.thread_id;
+        });
+        std::string const &to = routed.to();
+        if (e.peer_address == to) {   // this is a reply
+            routed.updateHeader([&e](json &header) {
+                header["In-Reply-To"] = e.message_id;
+            });
+            stack.pop_back();
+        }
+        else {
+            routed.updateHeader([&e](json &header) {
+                header["In-Response-To"] = e.message_id;
+            });
+            stack.emplace_back();
+            auto &outgoing = stack.back();
+            outgoing.is_incoming = false;
+            outgoing.peer_address = to;
         }
         return msgs;
     }

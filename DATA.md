@@ -2,10 +2,9 @@
 
 ## Status
 
-This file is the standalone design and implementation handoff for
-`agent:data`. The feature is not implemented by the commits that created this
-document. Existing journals contain no DATA records unless another change has
-added the feature.
+This file describes the implemented `agent:data` feature. Journals created
+before its implementation contain no DATA records unless another change wrote
+them independently.
 
 Once DATA records are written, binaries that do not recognize the DATA action
 will not be able to replay those journal entries through `Program::apply()`.
@@ -324,21 +323,18 @@ changing them:
 - The existing physical journal format and `Agent::memory` vector remain in
   use.
 
-## Open Implementation Policies
+## Implementation Policies
 
-The core behavior does not depend on the following details, which were not
-settled during design. An implementation should make each choice explicit and
-add it to this document rather than relying on accidental behavior:
+The initial implementation makes these choices:
 
-- Whether malformed routing headers on `agent:data` are rejected or stripped.
-  The fail-fast style favors rejection.
-- Whether DATA participates in accounting when it carries `Postline-Cost:*`
-  headers. The current event loop calls `accounting.update()` before apply.
-- Whether DATA may propose or inherit Postline tags. It must not accidentally
-  require a destination merely to apply tag policy.
-- The schema, if any, inside the opaque DATA body.
-- Whether `Observer::cache` retains DATA indefinitely; current cache retention
-  is already unbounded for ordinary messages.
-- Whether the runtime accepts `agent:data` from every service or restricts it
-  to configured AI agents. The current agent model has no dedicated AI flag.
-- The broader correction for unpreprocessed trailing shutdown responses.
+- DATA records containing `To`, `In-Reply-To`, or `In-Response-To` are rejected.
+- DATA records participate in the existing accounting pass.
+- Adapter-proposed Postline tags on DATA are discarded; DATA neither requires a
+  destination nor changes agent tags.
+- DATA bodies remain opaque and have no runtime schema.
+- Observers retain DATA in the existing unbounded cache.
+- Every service may emit DATA; there is no AI-only agent flag.
+
+Shutdown now preprocesses and applies trailing records before journaling them,
+so DATA retains authoritative replay context and a routed response, rather than
+DATA itself, fulfills the outstanding obligation.

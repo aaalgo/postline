@@ -14,6 +14,23 @@ struct View {
     }
 };
 
+namespace agent {
+
+struct Data : public View {
+    static constexpr std::string_view type = "agent:data";
+
+    explicit Data(Message const& msg)
+        : View(msg, type)
+    {
+    }
+
+    static Message make(std::string body = "") {
+        return Message(json{{"type", type}}, std::move(body));
+    }
+};
+
+}
+
 namespace journal {
 
     // these messages never go above Journal

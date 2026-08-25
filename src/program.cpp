@@ -427,6 +427,23 @@ void Program::preprocess (Agent *from, Message &msg, Runtime *runtime) {
             // want all non-global agent to send from their own domains
             CHECK(from->domain == ctx.from.domain);
         }
+        if (msg.type() == protocol::agent::Data::type) {
+            protocol::agent::Data data(msg);
+            auto const &header = msg.header();
+            CHECK(!header.contains("To"));
+            CHECK(!header.contains("In-Reply-To"));
+            CHECK(!header.contains("In-Response-To"));
+            msg.updateHeader([&ctx](json &h) {
+                if (h.contains("From") && h["From"] != ctx.from.agent->name) {
+                    h["Original-From"] = h["From"];
+                }
+                h["From"] = ctx.from.agent->name;
+                h["Thread-ID"] = std::format("{}", ctx.thread->id);
+                h[POSTLINE_TAGS_HEADER_NAME] = json::array();
+            });
+            ctx.action = Action::DATA;
+            break;
+        }
         msg.updateHeader([&ctx](json &header) {
             if (header["From"] != ctx.from.agent->name) {
                 header["Original-From"] = header["From"];
@@ -550,6 +567,14 @@ EntityRef Program::apply (Message const &msg) {
     Context ctx;
     Agent *to = nullptr;
     loadContext(msg, ctx);
+    if (ctx.action == Action::DATA) {
+        CHECK(ctx.from.agent);
+        CHECK(msg.access_id() != NO_ACCESS_ID);
+        ctx.from.agent->memory.push_back(msg.access_id());
+        EntityRef r;
+        r.tag = EntityRef::Tag::NONE;
+        return r;
+    }
     if (ctx.action == Action::RETURN) {
         auto const &f = ctx.thread->stack.back();
         to = f.from.agent;

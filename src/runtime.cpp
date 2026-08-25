@@ -385,6 +385,11 @@ void Runtime::run() {
             journal.append(msg);
             accounting.update(msg);
             EntityRef r = apply(msg);
+            if (r.tag == EntityRef::Tag::NONE) {
+                if (consume) consume(std::move(msg));
+                continue;
+            }
+            CHECK(r.tag == EntityRef::Tag::AGENT);
             Agent *agent = r.agent;
             CHECK(agent != nullptr);
             auto &state = agentState(agent);
@@ -430,8 +435,11 @@ void Runtime::run() {
             std::vector<Message> tmp;
             state.driver->recv(tmp);
             for (auto &msg: tmp) {
-                --agent->obligation_count;
+                preprocess(agent, msg, this);
                 journal.append(msg);
+                accounting.update(msg);
+                EntityRef r = apply(msg);
+                CHECK(r.tag == EntityRef::Tag::NONE || r.tag == EntityRef::Tag::AGENT);
             }
             trailing += tmp.size();
         }
