@@ -564,6 +564,30 @@ EntityRef Program::apply (Message const &msg) {
     if (msg.type() == "runtime:commit") {
         return commit(msg);
     }
+    if (!msg.header().contains(CONTEXT_HEADER_NAME)) {
+        CHECK(replaying_legacy_shutdown_,
+              "Message {} has no {} outside legacy shutdown",
+              msg.access_id(), CONTEXT_HEADER_NAME);
+        ThreadID thread_id = parse_i64(msg.get("Thread-ID"));
+        CHECK(thread_id >= 0 && thread_id < threads.size());
+        Thread *thread = threads[thread_id].get();
+        CHECK(!thread->stack.empty());
+        Frame const &frame = thread->stack.back();
+        Agent *from = frame.to.agent;
+        CHECK(from);
+        CHECK(msg.from() == from->name);
+        CHECK(msg.in_reply_to() == frame.message_id);
+        CHECK(from->obligation_count > 0);
+        --from->obligation_count;
+        thread->stack.pop_back();
+        if (msg.to() == user->name) {
+            thread->pending = false;
+        }
+        log::warn("Skipping legacy unprocessed shutdown message {}", msg.access_id());
+        EntityRef result;
+        result.tag = EntityRef::Tag::NONE;
+        return result;
+    }
     Context ctx;
     Agent *to = nullptr;
     loadContext(msg, ctx);
@@ -685,8 +709,12 @@ EntityRef Program::commit (Message const &msg) {
     }
     // the two below have to go to runtime
     else if (op == "begin_shutdown") {
+        replaying_legacy_shutdown_ = true;
+        result.tag = EntityRef::Tag::NONE;
     }
     else if (op == "end_shutdown") {
+        replaying_legacy_shutdown_ = false;
+        result.tag = EntityRef::Tag::NONE;
     } else {
         CHECK(0, "UNKNOWN OP");
     }

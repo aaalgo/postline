@@ -232,7 +232,10 @@ struct EntityRef {
     };
 };
 
-struct Program: immobile {
+class Program: public immobile {
+    bool replaying_legacy_shutdown_;
+
+public:
     std::vector<std::unique_ptr<Domain>> domains;
     std::vector<std::unique_ptr<Agent>> agents;
     std::unordered_map<std::string, Snapshot> snapshots;
@@ -243,7 +246,9 @@ struct Program: immobile {
     Agent *runtime;
     Agent *user;
 
-    Program () {    // called in constructor via hook before journal replay
+    Program ()
+        : replaying_legacy_shutdown_(false)
+    {    // called in constructor via hook before journal replay
         // hard-coded initial state:
         //      thread-0  --  domain-0 -- {runtime, user, agent}
         // root cannot be created with createDomain

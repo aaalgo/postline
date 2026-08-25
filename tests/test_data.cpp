@@ -106,11 +106,69 @@ void test_program_and_observer_apply() {
            "observer did not cache DATA");
 }
 
+void test_legacy_shutdown_replay() {
+    postline::Program program;
+
+    postline::Message call(postline::json{
+        {"From", "user"},
+        {"To", "runtime"},
+        {"Thread-ID", "0"},
+    });
+    program.preprocess(program.user, call, nullptr);
+    call.set_access_id(199);
+    auto call_result = program.apply(call);
+    expect(call_result.tag == postline::EntityRef::Tag::AGENT &&
+           call_result.agent == program.runtime,
+           "failed to set up legacy shutdown obligation");
+
+    std::size_t trace_size = program.threads[0]->trace.size();
+    std::size_t runtime_memory_size = program.runtime->memory.size();
+    std::size_t user_memory_size = program.user->memory.size();
+    std::size_t stack_size = program.threads[0]->stack.size();
+    expect(program.runtime->obligation_count == 1,
+           "legacy shutdown test has no outstanding obligation");
+
+    auto begin = postline::protocol::runtime::Commit::make({{"op", "begin_shutdown"}});
+    begin.set_access_id(200);
+    auto begin_result = program.apply(begin);
+    expect(begin_result.tag == postline::EntityRef::Tag::NONE,
+           "begin_shutdown unexpectedly produced an entity");
+
+    postline::Message legacy_reply(postline::json{
+        {"From", "runtime"},
+        {"To", "user"},
+        {"In-Reply-To", "199"},
+        {"Thread-ID", "0"},
+    }, "null");
+    legacy_reply.set_access_id(201);
+    auto legacy_result = program.apply(legacy_reply);
+    expect(legacy_result.tag == postline::EntityRef::Tag::NONE,
+           "legacy shutdown reply unexpectedly produced an entity");
+    expect(program.threads[0]->trace.size() == trace_size,
+           "legacy shutdown reply changed the thread trace");
+    expect(program.runtime->memory.size() == runtime_memory_size &&
+           program.user->memory.size() == user_memory_size,
+           "legacy shutdown reply changed agent memory");
+    expect(program.threads[0]->stack.size() + 1 == stack_size,
+           "legacy shutdown reply did not complete the call stack");
+    expect(!program.threads[0]->pending,
+           "legacy shutdown reply did not clear pending state");
+    expect(program.runtime->obligation_count == 0,
+           "legacy shutdown reply did not clear the responder obligation");
+
+    auto end = postline::protocol::runtime::Commit::make({{"op", "end_shutdown"}});
+    end.set_access_id(202);
+    auto end_result = program.apply(end);
+    expect(end_result.tag == postline::EntityRef::Tag::NONE,
+           "end_shutdown unexpectedly produced an entity");
+}
+
 } // namespace
 
 int main() {
     test_linear_service_round();
     test_program_and_observer_apply();
+    test_legacy_shutdown_replay();
     std::cout << "DATA tests passed\n";
     return 0;
 }
