@@ -7,6 +7,7 @@ from postline import LLMAgent
 
 DEFAULT_MODEL = "claude-sonnet-4-5"
 PROVIDER = "anthropic"
+DEFAULT_CONTEXT_WINDOW = 200000
 
 
 class Agent (LLMAgent):

@@ -6,11 +6,13 @@ import os
 
 from openai import OpenAI
 
-from postline import LLMAgent, Message
+from postline import LLMAgent, Message, updateAccounting
 from postline.shell import generate_shell_instruction
 
 
 DEFAULT_MODEL = "gpt-5.5"
+PROVIDER = "openai"
+DEFAULT_CONTEXT_WINDOW = int(os.environ.get("POSTLINE_CONTEXT_WINDOW", "200000"))
 
 
 SEND_MESSAGE_TOOL = {
@@ -218,9 +220,14 @@ class Agent(LLMAgent):
                 tc.function.arguments
             )
 
-            ret.append(
-                self.build_message(args)
+            msg = self.build_message(args)
+            updateAccounting(
+                response,
+                msg,
+                PROVIDER,
+                DEFAULT_CONTEXT_WINDOW,
             )
+            ret.append(msg)
 
         return ret
 
