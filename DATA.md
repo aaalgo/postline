@@ -157,9 +157,47 @@ mirrored `Program` reconstructs agent memory correctly. Because these records
 are absent from `Thread::trace`, they do not appear in the existing thread
 message list by default.
 
-A future agent-memory or journal-inspection view may display them independently.
-Their absence from a thread trace is a presentation and state-model decision,
-not an instruction to omit them from observer replay.
+There is no natural place in the current UI to display `agent:data`. The TUI is
+organized primarily around `Thread::trace`, and `agent:data` is deliberately
+excluded from that trace. The initial UI therefore ignores these records for
+presentation. A future agent-memory or journal-inspection view may display them
+independently.
+
+Ignoring `agent:data` in the UI does not mean ignoring it during observer
+replay. The expected observer flow is:
+
+```text
+observer receives agent:data
+observer applies it to reconstruct agent memory
+observer may cache it by AccessID
+no Thread::trace entry is created
+the TUI never selects or renders it
+```
+
+The user-facing `UI::on_message()` also does not receive `agent:data`, because
+the record has no dispatch recipient. It therefore cannot be mistaken for a
+routed reply or alter UI pending state.
+
+The implementation must preserve the following safety boundaries:
+
+- `Program::apply()` recognizes `DATA` before executing code that expects a
+  destination;
+- the runtime skips recipient lookup and delivery when apply returns no
+  recipient;
+- `Observer::process()` applies and may cache `agent:data`;
+- applying `DATA` never appends the record to `Thread::trace`; and
+- UI synchronization code does not interpret entries in `Agent::memory` as
+  routed messages without first checking their type.
+
+Current thread-message components load records exclusively through
+`Thread::trace`. They may continue to require routing context, including a
+destination, because the trace invariant excludes `agent:data`. The UI should
+not add broad exception handling or synthetic routing fields to accommodate a
+record that is prohibited from appearing there.
+
+Tests should verify that observer processing of `agent:data` succeeds, updates
+only the producing agent's memory, leaves the thread trace unchanged, and does
+not cause UI delivery.
 
 ## Deferred Scope
 
